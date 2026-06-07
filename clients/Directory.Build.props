@@ -1,0 +1,12 @@
+<Project>
+
+  <!-- Client apps are isolated from the API's strict analyzer/warnings-as-errors props (this is the
+       nearest Directory.Build.props for everything under clients/, so the root one is not imported). -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>
