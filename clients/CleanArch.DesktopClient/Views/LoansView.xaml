@@ -1,0 +1,36 @@
+<UserControl x:Class="CleanArch.DesktopClient.Views.LoansView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             prism:ViewModelLocator.AutoWireViewModel="True">
+    <DockPanel Margin="10">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Content="Back" Command="{Binding BackCommand}" />
+            <TextBlock Text="{Binding StudentName}" FontSize="16" Margin="10,0" VerticalAlignment="Center" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Book:" VerticalAlignment="Center" />
+                <TextBox Text="{Binding BookTitle, UpdateSourceTrigger=PropertyChanged}" Width="160" Margin="5,0" />
+                <TextBlock Text="Due (yyyy-MM-dd):" VerticalAlignment="Center" />
+                <TextBox Text="{Binding DueOnText, UpdateSourceTrigger=PropertyChanged}" Width="110" Margin="5,0" />
+                <Button Content="Borrow" Command="{Binding BorrowCommand}" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                <TextBlock Text="Fine amount:" VerticalAlignment="Center" />
+                <TextBox Text="{Binding FineAmount, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="5,0" />
+                <Button Content="Assess fine on selected loan" Command="{Binding AssessFineCommand}" />
+            </StackPanel>
+            <TextBlock Text="{Binding Error}" Foreground="Red" Margin="0,5,0,0" />
+        </StackPanel>
+        <DataGrid ItemsSource="{Binding Loans}" SelectedItem="{Binding SelectedLoan}"
+                  AutoGenerateColumns="False" IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Book" Binding="{Binding BookTitle}" Width="*" />
+                <DataGridTextColumn Header="Borrowed" Binding="{Binding BorrowedOn}" Width="110" />
+                <DataGridTextColumn Header="Due" Binding="{Binding DueOn}" Width="110" />
+                <DataGridTextColumn Header="Fine" Binding="{Binding FineAmount}" Width="80" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>
