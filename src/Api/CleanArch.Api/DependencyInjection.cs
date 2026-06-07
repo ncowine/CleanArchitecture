@@ -18,14 +18,14 @@ internal static class DependencyInjection
             {
                 Title = "CleanArchitecture API",
                 Version = "v1",
-                Description = "College API — multi-database (Students, Staff, Vendors, Alumni)."
+                Description = "College API — database-per-domain modular monolith (Students + Library)."
             });
         });
 
         services.AddProblemDetails();
         services.AddExceptionHandler<GlobalExceptionHandler>();
 
-        // Audit actor (stub until auth): reads the X-Actor header, defaults to "system". Registered
+        // Audit actor: the authenticated user, else the dev X-Actor header, else "system". Registered
         // after AddMediator's default SystemActor, so this wins.
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentActor, HttpContextActor>();
