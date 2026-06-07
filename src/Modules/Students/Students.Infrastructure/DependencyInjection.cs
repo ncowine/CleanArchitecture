@@ -10,6 +10,7 @@ using Students.Infrastructure.Caching;
 using Students.Infrastructure.Contracts;
 using Students.Infrastructure.Outbox;
 using Students.Infrastructure.Persistence;
+using Students.Infrastructure.Reads;
 using Students.Infrastructure.Repositories;
 using Students.Contracts;
 
@@ -38,6 +39,9 @@ public static class DependencyInjection
             provider.GetRequiredService<HybridCache>()));
         services.AddScoped<IStudentCacheInvalidator, StudentCacheInvalidator>();
         services.AddScoped<IStudentHoldService, StudentHoldService>();
+
+        // Read side: purpose-built projections for this module's own endpoints (summary vs detail).
+        services.AddScoped<IStudentReadService, StudentReadService>();
 
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
 

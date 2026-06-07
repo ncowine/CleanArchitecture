@@ -21,6 +21,39 @@ public static class StudentEndpoints
         .WithName("CreateStudent")
         .WithSummary("Enroll a new student.");
 
+        app.MapGet("/students/{studentId:guid}", async (
+            Guid studentId,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var student = await sender.Send(new GetStudent.Query(studentId), cancellationToken);
+            return student is null ? Results.NotFound() : Results.Ok(student);
+        })
+        .WithName("GetStudent")
+        .WithSummary("Student summary — light projection (few fields, no related data).");
+
+        app.MapGet("/students/{studentId:guid}/detail", async (
+            Guid studentId,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var student = await sender.Send(new GetStudentDetail.Query(studentId), cancellationToken);
+            return student is null ? Results.NotFound() : Results.Ok(student);
+        })
+        .WithName("GetStudentDetail")
+        .WithSummary("Student detail — rich projection (address, contacts, enrollments + computed count).");
+
+        app.MapPost("/students/search", async (
+            SearchStudents.Query query,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(query, cancellationToken);
+            return Results.Ok(result);
+        })
+        .WithName("SearchStudents")
+        .WithSummary("Paged student search — paging/filters in the body (POST), returns a PagedResult.");
+
         app.MapGet("/students/{studentId:guid}/holds", async (
             Guid studentId,
             ISender sender,
