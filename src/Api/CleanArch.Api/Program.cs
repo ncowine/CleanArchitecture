@@ -17,6 +17,7 @@ var libraryConnectionString =
 
 builder.Services
     .AddApiServices()
+    .AddApiAuthentication(builder.Configuration)
     .AddMediator()
     .AddStudentsModule(studentsConnectionString)
     .AddLibraryModule(libraryConnectionString);
@@ -25,6 +26,8 @@ var app = builder.Build();
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
 await app.UseDevelopmentSetupAsync();
 
 app.MapGet("/", () => "Hello World!")

@@ -19,7 +19,8 @@ public static class StudentEndpoints
             return Results.Created($"/students/{id}", new { id });
         })
         .WithName("CreateStudent")
-        .WithSummary("Enroll a new student.");
+        .WithSummary("Enroll a new student.")
+        .RequireAuthorization();
 
         app.MapGet("/students/{studentId:guid}", async (
             Guid studentId,
@@ -74,7 +75,8 @@ public static class StudentEndpoints
             return Results.Ok(new { id, status = "Withdrawn" });
         })
         .WithName("WithdrawStudent")
-        .WithSummary("Withdraw a student. A withdrawn student causes later hold requests to be rejected.");
+        .WithSummary("Withdraw a student. A withdrawn student causes later hold requests to be rejected.")
+        .RequireAuthorization();
 
         return app;
     }

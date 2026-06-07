@@ -20,7 +20,8 @@ public static class LibraryEndpoints
             return Results.Created($"/library/loans/{id}", new { id });
         })
         .WithName("BorrowBook")
-        .WithSummary("Lend a book to a student. Writes the Library DB; validates the student against the main DB.");
+        .WithSummary("Lend a book to a student. Writes the Library DB; validates the student against the main DB.")
+        .RequireAuthorization();
 
         app.MapGet("/library/students/{studentId:guid}/loans", async (
             Guid studentId,
@@ -43,7 +44,8 @@ public static class LibraryEndpoints
             return Results.Ok(result);
         })
         .WithName("AssessFine")
-        .WithSummary("Assess a fine. Crossing the limit enqueues a hold for the main DB via the outbox.");
+        .WithSummary("Assess a fine. Crossing the limit enqueues a hold for the main DB via the outbox.")
+        .RequireAuthorization();
 
         app.MapGet("/library/outbox/dead-letter", async (
             ISender sender,
@@ -66,7 +68,8 @@ public static class LibraryEndpoints
                 : Results.NotFound();
         })
         .WithName("ReplayDeadLetter")
-        .WithSummary("Requeue a dead-lettered outbox message so the dispatcher attempts delivery again.");
+        .WithSummary("Requeue a dead-lettered outbox message so the dispatcher attempts delivery again.")
+        .RequireAuthorization();
 
         return app;
     }

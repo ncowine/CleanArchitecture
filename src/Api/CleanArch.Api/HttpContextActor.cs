@@ -3,8 +3,8 @@ using BuildingBlocks.Auditing;
 namespace CleanArch.Api;
 
 /// <summary>
-/// Stub actor source until real authentication exists: reads an <c>X-Actor</c> request header, falling
-/// back to "system". Replace with one that reads the authenticated user once auth is in place.
+/// The actor for the current request: the authenticated user's name when present, else the dev
+/// <c>X-Actor</c> header, else "system" (background work / unauthenticated reads).
 /// </summary>
 internal sealed class HttpContextActor : ICurrentActor
 {
@@ -19,8 +19,14 @@ internal sealed class HttpContextActor : ICurrentActor
     {
         get
         {
-            var actor = _accessor.HttpContext?.Request.Headers["X-Actor"].ToString();
-            return string.IsNullOrWhiteSpace(actor) ? "system" : actor;
+            var user = _accessor.HttpContext?.User;
+            if (user?.Identity is { IsAuthenticated: true })
+            {
+                return user.Identity.Name ?? "authenticated";
+            }
+
+            var header = _accessor.HttpContext?.Request.Headers["X-Actor"].ToString();
+            return string.IsNullOrWhiteSpace(header) ? "system" : header;
         }
     }
 }

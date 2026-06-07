@@ -51,5 +51,14 @@ internal static class WebApplicationExtensions
         })
         .WithName("InjectPoisonOutboxMessage")
         .WithSummary("DEV ONLY: enqueue an unroutable message to exercise the retry + dead-letter path.");
+
+        // DEV-ONLY: mint a JWT for testing protected endpoints without a real identity provider.
+        app.MapPost("/dev/token", (DevTokenRequest request, IConfiguration configuration) =>
+        {
+            var token = DevTokenFactory.Create(configuration, request.Actor, request.Roles ?? []);
+            return Results.Ok(new { token });
+        })
+        .WithName("MintDevToken")
+        .WithSummary("DEV ONLY: mint a JWT for the given actor to call protected endpoints.");
     }
 }
