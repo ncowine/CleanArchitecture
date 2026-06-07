@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BuildingBlocks.Correlation;
 using Microsoft.EntityFrameworkCore;
 
 namespace BuildingBlocks.Outbox;
@@ -12,10 +13,12 @@ namespace BuildingBlocks.Outbox;
 internal sealed class OutboxWriter<TContext> : IOutbox where TContext : DbContext
 {
     private readonly TContext _db;
+    private readonly ICorrelationContext _correlation;
 
-    public OutboxWriter(TContext db)
+    public OutboxWriter(TContext db, ICorrelationContext correlation)
     {
         _db = db;
+        _correlation = correlation;
     }
 
     public void Enqueue<TEvent>(TEvent integrationEvent) where TEvent : class
@@ -28,6 +31,7 @@ internal sealed class OutboxWriter<TContext> : IOutbox where TContext : DbContex
             Type = typeof(TEvent).Name,
             Content = JsonSerializer.Serialize(integrationEvent),
             OccurredOnUtc = DateTime.UtcNow,
+            CorrelationId = _correlation.CorrelationId,
         });
     }
 }

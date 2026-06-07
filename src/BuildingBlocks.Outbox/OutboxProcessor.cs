@@ -1,3 +1,4 @@
+using BuildingBlocks.Correlation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -48,6 +49,7 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
         var dispatcher = scope.ServiceProvider.GetRequiredService<IOutboxDispatcher<TContext>>();
+        var correlation = scope.ServiceProvider.GetRequiredService<ICorrelationContext>();
 
         var messages = await db.Set<OutboxMessage>()
             .Where(message => message.ProcessedOnUtc == null && message.DeadLetteredOnUtc == null)
@@ -65,6 +67,13 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
         foreach (var message in messages)
         {
             message.Attempts++;
+            // Restore the originating correlation id so the consumer's work and logs trace back to the
+            // request that produced this message.
+            if (message.CorrelationId is not null)
+            {
+                correlation.Set(message.CorrelationId);
+            }
+
             try
             {
                 await dispatcher.DispatchAsync(message.Id, message.Type, message.Content, cancellationToken);

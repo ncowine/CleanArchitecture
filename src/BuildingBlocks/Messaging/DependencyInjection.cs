@@ -1,5 +1,6 @@
 using System.Reflection;
 using BuildingBlocks.Auditing;
+using BuildingBlocks.Correlation;
 using BuildingBlocks.Messaging.Behaviors;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -17,6 +18,10 @@ public static class DependencyInjection
     public static IServiceCollection AddMediator(this IServiceCollection services)
     {
         services.TryAddScoped<ISender, Sender>();
+
+        // Correlation id for the current scope; set by middleware per request, by the dispatcher per
+        // outbox message. Shared by audit and the outbox writer.
+        services.TryAddScoped<ICorrelationContext, CorrelationContext>();
 
         // Audit: structured-logging sink + a default actor; the host overrides the actor (last wins).
         services.TryAddScoped<IAuditSink, LoggingAuditSink>();

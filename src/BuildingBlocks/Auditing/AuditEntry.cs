@@ -5,6 +5,7 @@ namespace BuildingBlocks.Auditing;
 /// to a log store (e.g. Elasticsearch/Kibana), each field is independently searchable.
 /// </summary>
 public sealed record AuditEntry(
+    string CorrelationId,
     string Actor,
     string Action,
     DateTime OccurredOnUtc,

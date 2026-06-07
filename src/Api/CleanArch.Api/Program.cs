@@ -23,6 +23,7 @@ builder.Services
 
 var app = builder.Build();
 
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseExceptionHandler();
 await app.UseDevelopmentSetupAsync();
 

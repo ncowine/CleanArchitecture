@@ -15,6 +15,9 @@ public sealed class OutboxMessage
     public DateTime OccurredOnUtc { get; set; }
     public DateTime? ProcessedOnUtc { get; set; }
 
+    /// <summary>Correlation id of the operation that produced this message — carried across the async hop.</summary>
+    public string? CorrelationId { get; set; }
+
     /// <summary>How many delivery attempts have been made so far.</summary>
     public int Attempts { get; set; }
 

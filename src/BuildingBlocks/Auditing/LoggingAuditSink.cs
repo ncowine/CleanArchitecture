@@ -19,7 +19,8 @@ internal sealed class LoggingAuditSink : IAuditSink
 
     public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken)
     {
-        AuditLog.Recorded(_logger, entry.Action, entry.Actor, entry.Succeeded, entry.ElapsedMs, entry.Error);
+        AuditLog.Recorded(
+            _logger, entry.CorrelationId, entry.Action, entry.Actor, entry.Succeeded, entry.ElapsedMs, entry.Error);
         return Task.CompletedTask;
     }
 }
@@ -29,7 +30,7 @@ internal static partial class AuditLog
     [LoggerMessage(
         EventId = 1000,
         Level = LogLevel.Information,
-        Message = "AUDIT {Action} by {Actor} succeeded={Succeeded} in {ElapsedMs}ms {Error}")]
+        Message = "AUDIT [{CorrelationId}] {Action} by {Actor} succeeded={Succeeded} in {ElapsedMs}ms {Error}")]
     public static partial void Recorded(
-        ILogger logger, string action, string actor, bool succeeded, long elapsedMs, string? error);
+        ILogger logger, string correlationId, string action, string actor, bool succeeded, long elapsedMs, string? error);
 }

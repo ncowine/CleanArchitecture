@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BuildingBlocks.Auditing;
+using BuildingBlocks.Correlation;
 
 namespace BuildingBlocks.Messaging.Behaviors;
 
@@ -14,11 +15,13 @@ public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequ
 {
     private readonly IAuditSink _sink;
     private readonly ICurrentActor _actor;
+    private readonly ICorrelationContext _correlation;
 
-    public AuditBehavior(IAuditSink sink, ICurrentActor actor)
+    public AuditBehavior(IAuditSink sink, ICurrentActor actor, ICorrelationContext correlation)
     {
         _sink = sink;
         _actor = actor;
+        _correlation = correlation;
     }
 
     public async Task<TResponse> Handle(
@@ -39,7 +42,7 @@ public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequ
             var response = await next();
             stopwatch.Stop();
             await _sink.RecordAsync(
-                new AuditEntry(actor, action, occurredOnUtc, Succeeded: true, stopwatch.ElapsedMilliseconds, Error: null),
+                new AuditEntry(_correlation.CorrelationId, actor, action, occurredOnUtc, Succeeded: true, stopwatch.ElapsedMilliseconds, Error: null),
                 cancellationToken);
             return response;
         }
@@ -47,7 +50,7 @@ public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequ
         {
             stopwatch.Stop();
             await _sink.RecordAsync(
-                new AuditEntry(actor, action, occurredOnUtc, Succeeded: false, stopwatch.ElapsedMilliseconds, exception.Message),
+                new AuditEntry(_correlation.CorrelationId, actor, action, occurredOnUtc, Succeeded: false, stopwatch.ElapsedMilliseconds, exception.Message),
                 cancellationToken);
             throw;
         }
