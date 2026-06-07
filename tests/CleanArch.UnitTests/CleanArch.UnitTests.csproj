@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- Test code shouldn't be held to the production analyzer bar. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CA1707;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BuildingBlocks\BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Students\Students.Domain\Students.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Students\Students.Application\Students.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Students\Students.Contracts\Students.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Library\Library.Domain\Library.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Library\Library.Application\Library.Application.csproj" />
+  </ItemGroup>
+
+</Project>

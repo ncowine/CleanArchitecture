@@ -22,4 +22,7 @@
     <Project Path="src/Modules/Library/Library.Infrastructure/Library.Infrastructure.csproj" />
     <Project Path="src/Modules/Library/Library.Presentation/Library.Presentation.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CleanArch.UnitTests/CleanArch.UnitTests.csproj" />
+  </Folder>
 </Solution>
