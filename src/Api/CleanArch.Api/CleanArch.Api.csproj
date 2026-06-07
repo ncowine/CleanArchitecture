@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\BuildingBlocks\BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\Modules\Students\Students.Infrastructure\Students.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Students\Students.Presentation\Students.Presentation.csproj" />
+    <ProjectReference Include="..\..\Modules\Library\Library.Infrastructure\Library.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Library\Library.Presentation\Library.Presentation.csproj" />
+  </ItemGroup>
+
+</Project>

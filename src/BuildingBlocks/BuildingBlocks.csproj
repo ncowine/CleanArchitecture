@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The mediator API intentionally mirrors the familiar MediatR shape (RequestHandlerDelegate,
+         a 'next' parameter). CA1711/CA1716 are cross-language public-library naming rules we
+         knowingly accept for this internal abstraction. -->
+    <NoWarn>$(NoWarn);CA1711;CA1716</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>

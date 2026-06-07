@@ -1,0 +1,25 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/BuildingBlocks.csproj" />
+    <Project Path="src/BuildingBlocks.Outbox/BuildingBlocks.Outbox.csproj" />
+  </Folder>
+  <Folder Name="/src/Api/">
+    <Project Path="src/Api/CleanArch.Api/CleanArch.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/" />
+  <Folder Name="/src/Modules/Students/">
+    <Project Path="src/Modules/Students/Students.Application/Students.Application.csproj" />
+    <Project Path="src/Modules/Students/Students.Domain/Students.Domain.csproj" />
+    <Project Path="src/Modules/Students/Students.Infrastructure/Students.Infrastructure.csproj" />
+    <Project Path="src/Modules/Students/Students.Presentation/Students.Presentation.csproj" />
+    <Project Path="src/Modules/Students/Students.Contracts/Students.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Library/">
+    <Project Path="src/Modules/Library/Library.Application/Library.Application.csproj" />
+    <Project Path="src/Modules/Library/Library.Contracts/Library.Contracts.csproj" />
+    <Project Path="src/Modules/Library/Library.Domain/Library.Domain.csproj" />
+    <Project Path="src/Modules/Library/Library.Infrastructure/Library.Infrastructure.csproj" />
+    <Project Path="src/Modules/Library/Library.Presentation/Library.Presentation.csproj" />
+  </Folder>
+</Solution>

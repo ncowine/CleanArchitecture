@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Students.Application\Students.Application.csproj" />
+    <ProjectReference Include="..\Students.Contracts\Students.Contracts.csproj" />
+    <ProjectReference Include="..\..\Library\Library.Contracts\Library.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks.Outbox\BuildingBlocks.Outbox.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

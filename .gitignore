@@ -1,0 +1,26 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local SQLite databases (created at runtime / design time)
+*.db
+*.db-shm
+*.db-wal
+
+# Test results & coverage
+[Tt]est[Rr]esult*/
+*.coverage
+*.coveragexml
+
+# OS noise
+.DS_Store
+Thumbs.db

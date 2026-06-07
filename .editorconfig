@@ -1,0 +1,6 @@
+root = true
+
+# EF Core migrations are tool-generated. We can't control their codegen style, so treat them as
+# generated code — Roslyn analyzers (e.g. CA1861) then skip them and don't fail the build.
+[**/Migrations/*.cs]
+generated_code = true
