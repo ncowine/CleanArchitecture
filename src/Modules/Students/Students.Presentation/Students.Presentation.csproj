@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Students.Application\Students.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks.Web\BuildingBlocks.Web.csproj" />
   </ItemGroup>
 
 </Project>

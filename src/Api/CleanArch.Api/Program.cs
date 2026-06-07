@@ -1,4 +1,5 @@
 using BuildingBlocks.Messaging;
+using BuildingBlocks.Web;
 using CleanArch.Api;
 using Library.Infrastructure;
 using Library.Presentation;
@@ -40,7 +41,9 @@ app.MapGet("/", () => "Hello World!")
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 
-app.MapStudentEndpoints();
-app.MapLibraryEndpoints();
+// Each feature owns its route in its own IEndpoint; discover and map them per module assembly.
+app.MapEndpoints(
+    typeof(StudentsPresentationAssemblyMarker).Assembly,
+    typeof(LibraryPresentationAssemblyMarker).Assembly);
 
 app.Run();
