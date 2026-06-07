@@ -1,0 +1,29 @@
+# Normalize all text files to LF in the repository; Git auto-detects text vs binary.
+* text=auto eol=lf
+
+# Source & config — explicit so the intent is clear
+*.cs        text eol=lf diff=csharp
+*.csproj    text eol=lf
+*.props     text eol=lf
+*.targets   text eol=lf
+*.slnx      text eol=lf
+*.json      text eol=lf
+*.config    text eol=lf
+*.md        text eol=lf
+*.editorconfig text eol=lf
+
+# Windows-only scripts must stay CRLF
+*.sln       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binary assets — never normalize or diff as text
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.dll       binary
+*.exe       binary
+*.db        binary
