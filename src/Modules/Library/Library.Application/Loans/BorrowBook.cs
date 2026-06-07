@@ -13,7 +13,8 @@ namespace Library.Application.Loans;
 /// </summary>
 public static class BorrowBook
 {
-    public sealed record Command(Guid StudentId, string BookTitle, DateOnly DueOn) : IRequest<Guid>, ILibraryCommand;
+    public sealed record Command(Guid StudentId, string BookTitle, DateOnly DueOn)
+        : IRequest<Guid>, ILibraryCommand, IAuditableRequest;
 
     public sealed class Validator : AbstractValidator<Command>
     {

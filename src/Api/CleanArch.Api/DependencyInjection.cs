@@ -1,3 +1,4 @@
+using BuildingBlocks.Auditing;
 using Microsoft.Extensions.Caching.Hybrid;
 
 namespace CleanArch.Api;
@@ -23,6 +24,11 @@ internal static class DependencyInjection
 
         services.AddProblemDetails();
         services.AddExceptionHandler<GlobalExceptionHandler>();
+
+        // Audit actor (stub until auth): reads the X-Actor header, defaults to "system". Registered
+        // after AddMediator's default SystemActor, so this wins.
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentActor, HttpContextActor>();
 
         // Caching. HybridCache is in-memory only today (no Redis dependency). It is the seam for going
         // distributed later: add Microsoft.Extensions.Caching.StackExchangeRedis +

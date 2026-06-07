@@ -1,4 +1,5 @@
 using System.Reflection;
+using BuildingBlocks.Auditing;
 using BuildingBlocks.Messaging.Behaviors;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -17,7 +18,14 @@ public static class DependencyInjection
     {
         services.TryAddScoped<ISender, Sender>();
 
+        // Audit: structured-logging sink + a default actor; the host overrides the actor (last wins).
+        services.TryAddScoped<IAuditSink, LoggingAuditSink>();
+        services.TryAddScoped<ICurrentActor, SystemActor>();
+
+        // Outermost to innermost. Audit sits outside validation so rejected commands are still audited;
+        // it only wraps IAuditableRequest, so reads pass straight through.
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(AuditBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
         return services;

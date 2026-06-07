@@ -13,7 +13,8 @@ namespace Library.Application.Loans;
 /// </summary>
 public static class AssessFine
 {
-    public sealed record Command(Guid LoanId, decimal Amount) : IRequest<Result>, ILibraryCommand;
+    public sealed record Command(Guid LoanId, decimal Amount)
+        : IRequest<Result>, ILibraryCommand, IAuditableRequest;
 
     public sealed record Result(decimal TotalFines, bool HoldRequested);
 

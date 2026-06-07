@@ -13,7 +13,7 @@ public static class CreateStudent
         string LastName,
         string Email,
         DateOnly DateOfBirth,
-        DateOnly EnrolledOn) : IRequest<Guid>, IStudentsCommand;
+        DateOnly EnrolledOn) : IRequest<Guid>, IStudentsCommand, IAuditableRequest;
 
     public sealed class Validator : AbstractValidator<Command>
     {

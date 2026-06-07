@@ -7,7 +7,7 @@ namespace Students.Application.Students;
 /// <summary>Withdraw a student. A withdrawn student causes later hold requests to be rejected (saga).</summary>
 public static class WithdrawStudent
 {
-    public sealed record Command(Guid StudentId) : IRequest<Guid>, IStudentsCommand;
+    public sealed record Command(Guid StudentId) : IRequest<Guid>, IStudentsCommand, IAuditableRequest;
 
     public sealed class Handler : IRequestHandler<Command, Guid>
     {
