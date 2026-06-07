@@ -79,6 +79,7 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
                 await dispatcher.DispatchAsync(message.Id, message.Type, message.Content, cancellationToken);
                 message.ProcessedOnUtc = DateTime.UtcNow;
                 message.Error = null;
+                OutboxDiagnostics.Delivered.Add(1, new KeyValuePair<string, object?>("db", context));
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -88,10 +89,12 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
                 {
                     message.DeadLetteredOnUtc = DateTime.UtcNow;
                     OutboxLog.DeadLettered(_logger, exception, message.Id, message.Type, context, message.Attempts);
+                    OutboxDiagnostics.DeadLettered.Add(1, new KeyValuePair<string, object?>("db", context));
                 }
                 else
                 {
                     OutboxLog.DeliveryFailed(_logger, exception, message.Id, message.Type, context, message.Attempts);
+                    OutboxDiagnostics.Failed.Add(1, new KeyValuePair<string, object?>("db", context));
                 }
             }
         }

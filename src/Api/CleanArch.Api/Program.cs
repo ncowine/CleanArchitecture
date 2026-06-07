@@ -2,6 +2,7 @@ using BuildingBlocks.Messaging;
 using CleanArch.Api;
 using Library.Infrastructure;
 using Library.Presentation;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Students.Infrastructure;
 using Students.Presentation;
 
@@ -18,6 +19,7 @@ var libraryConnectionString =
 builder.Services
     .AddApiServices()
     .AddApiAuthentication(builder.Configuration)
+    .AddObservability()
     .AddMediator()
     .AddStudentsModule(studentsConnectionString)
     .AddLibraryModule(libraryConnectionString);
@@ -33,6 +35,10 @@ await app.UseDevelopmentSetupAsync();
 app.MapGet("/", () => "Hello World!")
    .WithName("Root")
    .WithSummary("Sanity-check endpoint");
+
+// Readiness (both databases) and liveness (process up, no dependency checks).
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 
 app.MapStudentEndpoints();
 app.MapLibraryEndpoints();
