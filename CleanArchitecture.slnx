@@ -3,6 +3,7 @@
   <Folder Name="/src/BuildingBlocks/">
     <Project Path="src/BuildingBlocks/BuildingBlocks.csproj" />
     <Project Path="src/BuildingBlocks.Outbox/BuildingBlocks.Outbox.csproj" />
+    <Project Path="src/BuildingBlocks.Persistence/BuildingBlocks.Persistence.csproj" />
   </Folder>
   <Folder Name="/src/Api/">
     <Project Path="src/Api/CleanArch.Api/CleanArch.Api.csproj" />

@@ -5,6 +5,7 @@
     <ProjectReference Include="..\Students.Contracts\Students.Contracts.csproj" />
     <ProjectReference Include="..\..\Library\Library.Contracts\Library.Contracts.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks.Outbox\BuildingBlocks.Outbox.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks.Persistence\BuildingBlocks.Persistence.csproj" />
   </ItemGroup>
 
   <ItemGroup>
