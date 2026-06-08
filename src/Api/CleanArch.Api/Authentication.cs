@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using System.Text;
+using CleanArch.Api.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -9,9 +11,10 @@ namespace CleanArch.Api;
 internal static class AuthenticationExtensions
 {
     /// <summary>
-    /// JWT bearer authentication + authorization. Uses a symmetric signing key from configuration for
-    /// the POC; swap the validation parameters for a real identity provider (Authority/metadata) later
-    /// with no change to endpoints or the actor wiring.
+    /// Dual authentication — a bearer token (Okta in production; a symmetric dev token here) OR an API
+    /// key — selected per request by a policy scheme. After either authenticates, the principal is
+    /// enriched from Active Directory. The backing stores are fakes for the POC; swap them and point the
+    /// JWT at Okta in production with no change to endpoints or the actor/audit wiring.
     /// </summary>
     public static IServiceCollection AddApiAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
@@ -20,9 +23,29 @@ internal static class AuthenticationExtensions
             ?? throw new InvalidOperationException("Jwt:SigningKey is not configured.");
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
 
-        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        // FAKE backing stores — replace in production (hashed API-key store; real AD via LDAP or Graph).
+        services.AddSingleton<IApiKeyValidator, FakeApiKeyValidator>();
+        services.AddSingleton<IUserDirectory, FakeUserDirectory>();
+
+        // After either scheme authenticates, enrich the principal with Active Directory info (roles, etc.).
+        services.AddScoped<IClaimsTransformation, ActiveDirectoryClaimsTransformation>();
+
+        const string smartScheme = "Smart";
+        services.AddAuthentication(smartScheme)
+            // Per request: API key if the header is present, otherwise the bearer token.
+            .AddPolicyScheme(smartScheme, "Okta JWT or API key", options =>
+            {
+                options.ForwardDefaultSelector = context =>
+                    context.Request.Headers.ContainsKey(ApiKeyAuthenticationHandler.HeaderName)
+                        ? ApiKeyAuthenticationHandler.SchemeName
+                        : JwtBearerDefaults.AuthenticationScheme;
+            })
             .AddJwtBearer(options =>
             {
+                // POC: validate a symmetric dev token. In production point this at Okta instead:
+                //   options.Authority = configuration["Okta:Authority"];
+                //   options.Audience  = configuration["Okta:Audience"];
+                // Okta signs RS256 and the handler fetches its JWKS automatically — no symmetric key.
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
@@ -35,7 +58,9 @@ internal static class AuthenticationExtensions
                     NameClaimType = ClaimTypes.Name,
                     RoleClaimType = ClaimTypes.Role,
                 };
-            });
+            })
+            .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+                ApiKeyAuthenticationHandler.SchemeName, configureOptions: null);
 
         services.AddAuthorization();
         return services;
