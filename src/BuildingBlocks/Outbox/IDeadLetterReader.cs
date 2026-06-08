@@ -1,3 +1,5 @@
+using BuildingBlocks.Pagination;
+
 namespace BuildingBlocks.Outbox;
 
 /// <summary>
@@ -6,5 +8,5 @@ namespace BuildingBlocks.Outbox;
 /// </summary>
 public interface IDeadLetterReader
 {
-    Task<IReadOnlyList<DeadLetterEntry>> GetAsync(CancellationToken cancellationToken);
+    Task<PagedResult<DeadLetterEntry>> GetAsync(int page, int pageSize, CancellationToken cancellationToken);
 }

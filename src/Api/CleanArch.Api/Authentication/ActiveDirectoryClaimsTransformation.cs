@@ -5,7 +5,7 @@ namespace CleanArch.Api.Authentication;
 
 /// <summary>
 /// Enriches the authenticated principal with info resolved from Active Directory (display name + roles
-/// from group membership). Runs after authentication for BOTH schemes (Okta JWT and API key), so the
+/// from group membership). Runs after authentication for BOTH schemes (Basic/AD and API key), so the
 /// rest of the app sees one fully-populated principal regardless of how the caller authenticated.
 /// </summary>
 internal sealed class ActiveDirectoryClaimsTransformation : IClaimsTransformation

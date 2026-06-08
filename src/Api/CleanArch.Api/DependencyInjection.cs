@@ -1,5 +1,11 @@
+using System.IO.Compression;
+using System.Text.Json.Serialization;
+using Asp.Versioning;
 using BuildingBlocks.Auditing;
+using CleanArch.Api.Authentication;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.OpenApi;
 
 namespace CleanArch.Api;
 
@@ -25,10 +31,76 @@ internal static class DependencyInjection
             // Vertical-slice requests are nested (e.g. CreateStudent.Command, BorrowBook.Command), so the
             // default schema id (the short type name "Command") collides. Qualify with the declaring type.
             options.CustomSchemaIds(SchemaId);
+
+            // Two ways to authorize in Swagger UI. Each is a separate security requirement, so they are
+            // alternatives (Basic OR ApiKey), matching the runtime policy scheme.
+
+            // Human callers: AD username + password (HTTP Basic) — renders user/password fields.
+            options.AddSecurityDefinition(BasicAuthenticationHandler.SchemeName, new OpenApiSecurityScheme
+            {
+                Type = SecuritySchemeType.Http,
+                Scheme = "basic",
+                Description = "Active Directory username and password (HTTP Basic). Send over HTTPS only."
+            });
+
+            // Service callers: X-Api-Key header.
+            options.AddSecurityDefinition(ApiKeyAuthenticationHandler.SchemeName, new OpenApiSecurityScheme
+            {
+                Name = ApiKeyAuthenticationHandler.HeaderName,
+                Type = SecuritySchemeType.ApiKey,
+                In = ParameterLocation.Header,
+                Description = $"Service-to-service API key, sent in the '{ApiKeyAuthenticationHandler.HeaderName}' header."
+            });
+
+            options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference(BasicAuthenticationHandler.SchemeName, document, null)] = new List<string>()
+            });
+
+            options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference(ApiKeyAuthenticationHandler.SchemeName, document, null)] = new List<string>()
+            });
+        });
+
+        // API versioning. House preference is clean URLs, so the version travels in an 'api-version'
+        // HEADER (not the path or query). A default version is assumed when the header is absent, so
+        // existing callers — including the WPF client — keep working untouched. ReportApiVersions adds
+        // 'api-supported-versions'/'api-deprecated-versions' response headers so clients can discover what's
+        // available. The ApiExplorer group name ("v1") buckets operations into the matching SwaggerDoc.
+        services.AddApiVersioning(options =>
+        {
+            options.DefaultApiVersion = new ApiVersion(1, 0);
+            options.AssumeDefaultVersionWhenUnspecified = true;
+            options.ReportApiVersions = true;
+            options.ApiVersionReader = new HeaderApiVersionReader("api-version");
+        })
+        .AddApiExplorer(options =>
+        {
+            options.GroupNameFormat = "'v'VVV";
         });
 
         services.AddProblemDetails();
         services.AddExceptionHandler<GlobalExceptionHandler>();
+
+        // Trim the wire payload. Don't ship null-valued properties (e.g. ReturnedOn, Error) — they're
+        // dead weight on every row of a list response. Applies to all minimal-API JSON results.
+        services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        });
+
+        // Compress responses (Brotli preferred, Gzip fallback). JSON compresses ~80–90%, the single
+        // biggest win for large list payloads. Level = Fastest: near-optimal ratio for dynamic content
+        // without the CPU/latency cost of Optimal — the goal here is compact AND quick.
+        services.AddResponseCompression(options =>
+        {
+            options.EnableForHttps = true;
+            options.Providers.Add<BrotliCompressionProvider>();
+            options.Providers.Add<GzipCompressionProvider>();
+        });
+        services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+        services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
 
         // Audit actor: the authenticated user, else the dev X-Actor header, else "system". Registered
         // after AddMediator's default SystemActor, so this wins.

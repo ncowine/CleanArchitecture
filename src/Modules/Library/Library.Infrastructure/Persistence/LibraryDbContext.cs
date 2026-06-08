@@ -11,6 +11,9 @@ public sealed class LibraryDbContext : DbContext
     }
 
     public DbSet<Loan> Loans => Set<Loan>();
+    public DbSet<Book> Books => Set<Book>();
+    public DbSet<BookCopy> Copies => Set<BookCopy>();
+    public DbSet<Reservation> Reservations => Set<Reservation>();
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -42,6 +42,10 @@ public static class AssessFine
             loan.AssessFine(command.Amount);
             var newTotal = priorTotal + command.Amount;
 
+            // Mirror the fine onto the student's account as a charge (cross-module; the consumer is
+            // idempotent in this message's id).
+            _outbox.Enqueue(new LibraryFineAssessed(loan.StudentId, command.Amount));
+
             // "Only when required": enqueue once, on the transition from under the limit to over it.
             var holdRequested = priorTotal < HoldThreshold && newTotal >= HoldThreshold;
             if (holdRequested)

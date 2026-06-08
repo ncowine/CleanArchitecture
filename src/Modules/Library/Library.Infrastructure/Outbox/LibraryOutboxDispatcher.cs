@@ -13,10 +13,12 @@ namespace Library.Infrastructure.Outbox;
 internal sealed class LibraryOutboxDispatcher : IOutboxDispatcher<LibraryDbContext>
 {
     private readonly IStudentHoldService _holds;
+    private readonly IStudentBilling _billing;
 
-    public LibraryOutboxDispatcher(IStudentHoldService holds)
+    public LibraryOutboxDispatcher(IStudentHoldService holds, IStudentBilling billing)
     {
         _holds = holds;
+        _billing = billing;
     }
 
     public Task DispatchAsync(Guid messageId, string type, string content, CancellationToken cancellationToken)
@@ -24,11 +26,18 @@ internal sealed class LibraryOutboxDispatcher : IOutboxDispatcher<LibraryDbConte
         switch (type)
         {
             case nameof(StudentHoldRequested):
-                var @event = JsonSerializer.Deserialize<StudentHoldRequested>(content)
+                var hold = JsonSerializer.Deserialize<StudentHoldRequested>(content)
                     ?? throw new InvalidOperationException($"Outbox message {messageId} had empty content.");
 
                 // The message id is the idempotency key — placing the same hold twice is a no-op.
-                return _holds.PlaceHoldAsync(messageId, @event.StudentId, @event.Reason, cancellationToken);
+                return _holds.PlaceHoldAsync(messageId, hold.StudentId, hold.Reason, cancellationToken);
+
+            case nameof(LibraryFineAssessed):
+                var fine = JsonSerializer.Deserialize<LibraryFineAssessed>(content)
+                    ?? throw new InvalidOperationException($"Outbox message {messageId} had empty content.");
+
+                // The message id is the idempotency key — the same fine isn't charged twice.
+                return _billing.ChargeLibraryFineAsync(messageId, fine.StudentId, fine.Amount, cancellationToken);
 
             default:
                 throw new InvalidOperationException($"Unknown outbox message type '{type}'.");

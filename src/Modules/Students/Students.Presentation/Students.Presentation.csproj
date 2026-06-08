@@ -5,6 +5,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Asp.Versioning.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Students.Application\Students.Application.csproj" />
   </ItemGroup>
 

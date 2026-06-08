@@ -58,18 +58,96 @@ namespace Library.Infrastructure.Persistence.Migrations
                     b.ToTable("OutboxMessages", (string)null);
                 });
 
+            modelBuilder.Entity("Library.Domain.Book", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Author")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Isbn")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PublishedYear")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Isbn")
+                        .IsUnique();
+
+                    b.HasIndex("Title");
+
+                    b.ToTable("Books", (string)null);
+                });
+
+            modelBuilder.Entity("Library.Domain.BookCopy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("AcquiredOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Barcode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Condition")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Barcode")
+                        .IsUnique();
+
+                    b.HasIndex("BookId");
+
+                    b.ToTable("BookCopies", (string)null);
+                });
+
             modelBuilder.Entity("Library.Domain.Loan", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("BookTitle")
-                        .IsRequired()
-                        .HasMaxLength(300)
+                    b.Property<DateOnly>("BorrowedOn")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateOnly>("BorrowedOn")
+                    b.Property<Guid>("CopyId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateOnly>("DueOn")
@@ -79,6 +157,9 @@ namespace Library.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("RenewalCount")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateOnly?>("ReturnedOn")
                         .HasColumnType("TEXT");
 
@@ -87,9 +168,52 @@ namespace Library.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CopyId");
+
                     b.HasIndex("StudentId");
 
                     b.ToTable("Loans", (string)null);
+                });
+
+            modelBuilder.Entity("Library.Domain.Reservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("ExpiresOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("HeldCopyId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("QueuePosition")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly?>("ReadyOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("ReservedOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookId");
+
+                    b.HasIndex("StudentId");
+
+                    b.ToTable("Reservations", (string)null);
                 });
 #pragma warning restore 612, 618
         }

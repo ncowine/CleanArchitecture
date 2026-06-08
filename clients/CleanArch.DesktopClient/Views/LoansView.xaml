@@ -10,10 +10,8 @@
         </StackPanel>
         <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Book:" VerticalAlignment="Center" />
-                <TextBox Text="{Binding BookTitle, UpdateSourceTrigger=PropertyChanged}" Width="160" Margin="5,0" />
-                <TextBlock Text="Due (yyyy-MM-dd):" VerticalAlignment="Center" />
-                <TextBox Text="{Binding DueOnText, UpdateSourceTrigger=PropertyChanged}" Width="110" Margin="5,0" />
+                <TextBlock Text="Copy id:" VerticalAlignment="Center" />
+                <TextBox Text="{Binding CopyIdText, UpdateSourceTrigger=PropertyChanged}" Width="260" Margin="5,0" />
                 <Button Content="Borrow" Command="{Binding BorrowCommand}" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
@@ -30,6 +28,7 @@
                 <DataGridTextColumn Header="Borrowed" Binding="{Binding BorrowedOn}" Width="110" />
                 <DataGridTextColumn Header="Due" Binding="{Binding DueOn}" Width="110" />
                 <DataGridTextColumn Header="Fine" Binding="{Binding FineAmount}" Width="80" />
+                <DataGridTextColumn Header="Renewals" Binding="{Binding RenewalCount}" Width="80" />
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

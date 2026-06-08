@@ -7,6 +7,12 @@
 
   <ItemGroup Label="Api">
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
+    <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
+    <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Authentication">
+    <PackageVersion Include="System.DirectoryServices.AccountManagement" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup Label="Validation">

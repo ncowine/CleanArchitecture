@@ -11,8 +11,8 @@ public interface IStudentsApiClient
 
 public interface ILibraryApiClient
 {
-    Task<StudentLoans> GetLoansAsync(Guid studentId, CancellationToken ct = default);
-    Task BorrowAsync(Guid studentId, string bookTitle, DateOnly dueOn, CancellationToken ct = default);
+    Task<StudentLoans> GetLoansAsync(Guid studentId, int page = 1, int pageSize = 20, CancellationToken ct = default);
+    Task BorrowAsync(Guid studentId, Guid copyId, CancellationToken ct = default);
     Task<AssessFineResult> AssessFineAsync(Guid loanId, decimal amount, CancellationToken ct = default);
 }
 
@@ -44,12 +44,13 @@ internal sealed class LibraryApiClient : ILibraryApiClient
     private readonly HttpClient _http;
     public LibraryApiClient(HttpClient http) => _http = http;
 
-    public async Task<StudentLoans> GetLoansAsync(Guid studentId, CancellationToken ct = default) =>
-        (await _http.GetFromJsonAsync<StudentLoans>($"library/students/{studentId}/loans", ct))!;
+    public async Task<StudentLoans> GetLoansAsync(Guid studentId, int page = 1, int pageSize = 20, CancellationToken ct = default) =>
+        (await _http.GetFromJsonAsync<StudentLoans>(
+            $"library/students/{studentId}/loans?page={page}&pageSize={pageSize}", ct))!;
 
-    public async Task BorrowAsync(Guid studentId, string bookTitle, DateOnly dueOn, CancellationToken ct = default)
+    public async Task BorrowAsync(Guid studentId, Guid copyId, CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync("library/loans", new { studentId, bookTitle, dueOn }, ct);
+        var response = await _http.PostAsJsonAsync("library/loans", new { studentId, copyId }, ct);
         response.EnsureSuccessStatusCode();
     }
 

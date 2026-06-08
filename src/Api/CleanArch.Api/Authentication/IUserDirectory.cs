@@ -8,9 +8,10 @@ public interface IUserDirectory
 }
 
 /// <summary>
-/// FAKE Active Directory. In production, implement this against on-prem AD via LDAP
-/// (System.DirectoryServices) or Entra ID via Microsoft Graph — behind this same interface — and cache
-/// the results (a directory lookup per request is expensive; this is a textbook HybridCache candidate).
+/// FAKE Active Directory — the non-Windows fallback. The real implementation is
+/// <see cref="ActiveDirectoryUserDirectory"/> (LDAP via System.DirectoryServices), cached by
+/// <see cref="CachingUserDirectory"/>; this stub keeps the app bootable off-Windows. An Entra ID / Microsoft
+/// Graph implementation would slot in behind this same interface.
 /// </summary>
 internal sealed class FakeUserDirectory : IUserDirectory
 {
