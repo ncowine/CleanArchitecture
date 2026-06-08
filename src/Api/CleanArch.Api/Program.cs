@@ -18,7 +18,7 @@ var libraryConnectionString =
 
 builder.Services
     .AddApiServices()
-    .AddApiAuthentication(builder.Configuration)
+    .AddApiAuthentication()
     .AddObservability()
     .AddMediator()
     .AddStudentsModule(studentsConnectionString)
