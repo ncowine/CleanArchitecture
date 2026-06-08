@@ -8,6 +8,8 @@ application layer rather than with cross-database joins.
 > Status: POC. The architecture and patterns are production-shaped; some operational pieces are
 > deliberately stubbed (see [Production notes](#production-notes)).
 
+📚 **New here?** Start with **[docs/getting-started.md](docs/getting-started.md)** — install, run, and a plain-English glossary written for absolute beginners — then **[docs/clean-architecture-guide.md](docs/clean-architecture-guide.md)** for how the code is organized, how to add features, and a full **saga** tutorial.
+
 ## What it demonstrates
 
 | Concern | Approach |
@@ -20,7 +22,7 @@ application layer rather than with cross-database joins.
 | Caching | **HybridCache** (in-memory now, one-line switch to Redis L2), decorating the hottest read; invalidated on writes. |
 | Read models | Per-endpoint response DTOs + a read service; projections fetch exactly what each shape needs. List reads are `POST /…/search` with paging in the body. |
 | Correlation | A correlation id flows request → audit → outbox (stamped on messages) so a flow is traceable across the async hop. |
-| Auth | JWT bearer (symmetric key for the POC; swappable to a real IdP). Write endpoints require authorization; the audit actor comes from the token. |
+| Auth | Two schemes behind a policy selector: an `X-Api-Key` header (service callers) and **HTTP Basic validated against Active Directory** (interactive callers). Write endpoints require authorization; the audit actor comes from the principal. API versioning, rate limiting, CORS, and response compression are wired in the host. |
 | Observability | Health checks (`/health`, `/health/live`) + OpenTelemetry tracing/metrics (console exporter) incl. outbox metrics. |
 | Audit | Structured audit log via a mediator behavior — Kibana-ready (add an Elasticsearch sink, no code change). |
 
@@ -60,15 +62,10 @@ In Development the app applies EF migrations to both SQLite databases on startup
 
 ### Calling protected endpoints
 
-Write endpoints require a JWT. In Development, mint one:
+Write endpoints require either an `X-Api-Key` header (dev keys: `dev-api-key-reporting`, `dev-api-key-integration`) or HTTP Basic credentials validated against Active Directory. In Swagger, click **Authorize** and use the API key. From `curl`:
 
 ```bash
-# get a token
-curl -s -X POST http://localhost:5080/dev/token -H "Content-Type: application/json" \
-  -d '{"actor":"registrar@uni","roles":["registrar"]}'
-
-# use it
-curl -X POST http://localhost:5080/students -H "Authorization: Bearer <token>" \
+curl -X POST http://localhost:5235/students -H "X-Api-Key: dev-api-key-reporting" \
   -H "Content-Type: application/json" \
   -d '{"firstName":"Ada","lastName":"Lovelace","email":"ada@uni.edu","dateOfBirth":"1990-12-10","enrolledOn":"2024-09-01"}'
 ```
@@ -76,6 +73,8 @@ curl -X POST http://localhost:5080/students -H "Authorization: Bearer <token>" \
 Reads are open. Every response carries an `X-Correlation-ID` (supply your own to trace a flow).
 
 ### Endpoints (summary)
+
+A representative subset is below; the **live, complete list is in Swagger**, grouped by area. The domain has since grown well beyond this table — courses, sections, enrollment & waitlists, grading / transcripts / GPA, student billing, plus a full library catalog (books, copies, circulation, reservations).
 
 | Method | Route | Auth | Notes |
 |---|---|---|---|
@@ -91,7 +90,7 @@ Reads are open. Every response carries an `X-Correlation-ID` (supply your own to
 | GET | `/library/outbox/dead-letter` | — | inspect dead-lettered messages |
 | POST | `/library/outbox/dead-letter/{id}/replay` | ✅ | requeue a dead-lettered message |
 | GET | `/health`, `/health/live` | — | readiness / liveness |
-| POST | `/dev/token`, `/library/outbox/_dev/poison` | — | Development only |
+| POST | `/library/outbox/_dev/poison` | — | Development only (inject an unroutable message to exercise dead-letter/replay) |
 
 ## Tests
 
@@ -102,7 +101,7 @@ dotnet test
 ## Going distributed / production notes
 
 - **Redis cache**: add `Microsoft.Extensions.Caching.StackExchangeRedis` + `AddStackExchangeRedisCache(...)`; HybridCache uses it as L2 automatically — no code change.
-- **Auth**: replace the symmetric-key JWT setup with a real identity provider (Authority/metadata). The actor wiring is unchanged.
+- **Auth**: HTTP Basic already binds against real Active Directory; add an Okta/Entra **JWT bearer** scheme alongside the API key for token-based callers (the policy selector and actor wiring are unchanged). The API-key store is a fake — swap for a hashed key store.
 - **Telemetry to Kibana/Grafana**: swap the console exporter for OTLP; audit (structured logs) flows to Elasticsearch by adding a logging sink.
 - **Databases**: SQLite here for zero-setup; point each module's connection string at its real engine.
 
