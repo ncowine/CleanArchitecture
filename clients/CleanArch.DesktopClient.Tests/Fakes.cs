@@ -32,16 +32,18 @@ internal sealed class FakeStudentsApiClient : IStudentsApiClient
 
 internal sealed class FakeLibraryApiClient : ILibraryApiClient
 {
-    public StudentLoans Loans { get; set; } = new(Guid.Empty, string.Empty, string.Empty, new List<LoanSummary>());
-    public List<(Guid studentId, string bookTitle, DateOnly dueOn)> Borrows { get; } = new();
+    public StudentLoans Loans { get; set; } =
+        new(Guid.Empty, string.Empty, string.Empty, new PagedResult<LoanSummary>(new List<LoanSummary>(), 1, 20, 0, 0));
+    public List<(Guid studentId, Guid copyId)> Borrows { get; } = new();
     public List<(Guid loanId, decimal amount)> Fines { get; } = new();
     public AssessFineResult FineResult { get; set; } = new(0m, false);
 
-    public Task<StudentLoans> GetLoansAsync(Guid studentId, CancellationToken ct = default) => Task.FromResult(Loans);
+    public Task<StudentLoans> GetLoansAsync(Guid studentId, int page = 1, int pageSize = 20, CancellationToken ct = default) =>
+        Task.FromResult(Loans);
 
-    public Task BorrowAsync(Guid studentId, string bookTitle, DateOnly dueOn, CancellationToken ct = default)
+    public Task BorrowAsync(Guid studentId, Guid copyId, CancellationToken ct = default)
     {
-        Borrows.Add((studentId, bookTitle, dueOn));
+        Borrows.Add((studentId, copyId));
         return Task.CompletedTask;
     }
 

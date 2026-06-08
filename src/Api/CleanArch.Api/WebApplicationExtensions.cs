@@ -50,6 +50,7 @@ internal static class WebApplicationExtensions
             return Results.Ok(new { id });
         })
         .WithName("InjectPoisonOutboxMessage")
-        .WithSummary("DEV ONLY: enqueue an unroutable message to exercise the retry + dead-letter path.");
+        .WithSummary("DEV ONLY: enqueue an unroutable message to exercise the retry + dead-letter path.")
+        .WithTags("Library — Outbox");
     }
 }

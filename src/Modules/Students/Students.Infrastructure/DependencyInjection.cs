@@ -40,8 +40,27 @@ public static class DependencyInjection
         services.AddScoped<IStudentCacheInvalidator, StudentCacheInvalidator>();
         services.AddScoped<IStudentHoldService, StudentHoldService>();
 
+        // Published billing contract: the Library module calls this to post a fine as an account charge.
+        services.AddScoped<IStudentBilling, StudentBilling>();
+
         // Read side: purpose-built projections for this module's own endpoints (summary vs detail).
         services.AddScoped<IStudentReadService, StudentReadService>();
+
+        // Academic catalog: courses, prerequisites, instructors, and course sections (with the
+        // enrollment/waitlist roster). All within this module's DB — one transaction per command.
+        services.AddScoped<ICourseRepository, EfCourseRepository>();
+        services.AddScoped<IInstructorRepository, EfInstructorRepository>();
+        services.AddScoped<ICourseSectionRepository, EfCourseSectionRepository>();
+        services.AddScoped<ICourseReadService, CourseReadService>();
+        services.AddScoped<ISectionReadService, SectionReadService>();
+        services.AddScoped<ITranscriptReadService, TranscriptReadService>();
+
+        // Billing: the student account ledger (charges, payments, waivers).
+        services.AddScoped<IStudentAccountRepository, EfStudentAccountRepository>();
+        services.AddScoped<IAccountReadService, AccountReadService>();
+
+        // Module-specific outbox writer (the shared IOutbox is owned by the Library module).
+        services.AddScoped<IStudentOutbox, StudentOutbox>();
 
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
 

@@ -18,12 +18,15 @@ internal sealed class LoanConfiguration : IEntityTypeConfiguration<Loan>
         builder.Property(loan => loan.StudentId).IsRequired();
         builder.HasIndex(loan => loan.StudentId);
 
-        builder.Property(loan => loan.BookTitle)
-            .IsRequired()
-            .HasMaxLength(300);
+        // The copy borrowed — a BookCopy aggregate in this same DB, referenced by id (indexed for the
+        // "is this copy on loan?" lookup). Not a relational FK: aggregates are referenced by id only.
+        builder.Property(loan => loan.CopyId).IsRequired();
+        builder.HasIndex(loan => loan.CopyId);
 
         builder.Property(loan => loan.BorrowedOn).IsRequired();
         builder.Property(loan => loan.DueOn).IsRequired();
+        builder.Property(loan => loan.ReturnedOn);
+        builder.Property(loan => loan.RenewalCount).IsRequired();
 
         builder.Property(loan => loan.FineAmount)
             .IsRequired()

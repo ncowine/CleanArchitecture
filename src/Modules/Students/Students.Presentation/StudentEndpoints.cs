@@ -1,3 +1,5 @@
+using Asp.Versioning;
+using Asp.Versioning.Builder;
 using BuildingBlocks.Messaging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -8,9 +10,14 @@ namespace Students.Presentation;
 
 public static class StudentEndpoints
 {
-    public static IEndpointRouteBuilder MapStudentEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapStudentEndpoints(this IEndpointRouteBuilder app, ApiVersionSet versionSet)
     {
-        app.MapPost("/students", async (
+        var group = app.MapGroup("")
+            .WithTags("Students")
+            .WithApiVersionSet(versionSet)
+            .HasApiVersion(new ApiVersion(1, 0));
+
+        group.MapPost("/students", async (
             CreateStudent.Command command,
             ISender sender,
             CancellationToken cancellationToken) =>
@@ -22,7 +29,7 @@ public static class StudentEndpoints
         .WithSummary("Enroll a new student.")
         .RequireAuthorization();
 
-        app.MapGet("/students/{studentId:guid}", async (
+        group.MapGet("/students/{studentId:guid}", async (
             Guid studentId,
             ISender sender,
             CancellationToken cancellationToken) =>
@@ -33,7 +40,7 @@ public static class StudentEndpoints
         .WithName("GetStudent")
         .WithSummary("Student summary — light projection (few fields, no related data).");
 
-        app.MapGet("/students/{studentId:guid}/detail", async (
+        group.MapGet("/students/{studentId:guid}/detail", async (
             Guid studentId,
             ISender sender,
             CancellationToken cancellationToken) =>
@@ -44,7 +51,7 @@ public static class StudentEndpoints
         .WithName("GetStudentDetail")
         .WithSummary("Student detail — rich projection (address, contacts, enrollments + computed count).");
 
-        app.MapPost("/students/search", async (
+        group.MapPost("/students/search", async (
             SearchStudents.Query query,
             ISender sender,
             CancellationToken cancellationToken) =>
@@ -55,18 +62,21 @@ public static class StudentEndpoints
         .WithName("SearchStudents")
         .WithSummary("Paged student search — paging/filters in the body (POST), returns a PagedResult.");
 
-        app.MapGet("/students/{studentId:guid}/holds", async (
+        group.MapGet("/students/{studentId:guid}/holds", async (
             Guid studentId,
+            int? page,
+            int? pageSize,
             ISender sender,
             CancellationToken cancellationToken) =>
         {
-            var holds = await sender.Send(new GetStudentHolds.Query(studentId), cancellationToken);
+            var holds = await sender.Send(
+                new GetStudentHolds.Query(studentId, page ?? 1, pageSize ?? 20), cancellationToken);
             return Results.Ok(holds);
         })
         .WithName("GetStudentHolds")
-        .WithSummary("List holds on a student (where cross-module outbox writes-back land).");
+        .WithSummary("List holds on a student (where cross-module outbox writes-back land). Paged via ?page=&pageSize= (default 1/20, max 100).");
 
-        app.MapPost("/students/{studentId:guid}/withdraw", async (
+        group.MapPost("/students/{studentId:guid}/withdraw", async (
             Guid studentId,
             ISender sender,
             CancellationToken cancellationToken) =>

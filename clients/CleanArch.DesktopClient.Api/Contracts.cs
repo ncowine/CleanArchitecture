@@ -29,8 +29,9 @@ public sealed record LoanSummary(
     DateOnly BorrowedOn,
     DateOnly DueOn,
     DateOnly? ReturnedOn,
-    decimal FineAmount);
+    decimal FineAmount,
+    int RenewalCount);
 
-public sealed record StudentLoans(Guid StudentId, string StudentName, string Status, IReadOnlyList<LoanSummary> Loans);
+public sealed record StudentLoans(Guid StudentId, string StudentName, string Status, PagedResult<LoanSummary> Loans);
 
 public sealed record AssessFineResult(decimal TotalFines, bool HoldRequested);

@@ -12,7 +12,7 @@ public class AssessFineHandlerTests
 
     private static (AssessFine.Handler handler, FakeOutbox outbox, Loan loan) Build(decimal priorTotal)
     {
-        var loan = Loan.Borrow(Guid.NewGuid(), "Book", Today, Due);
+        var loan = Loan.Borrow(Guid.NewGuid(), Guid.NewGuid(), Today, Due);
         var loans = new FakeLoanRepository { FineTotal = priorTotal };
         loans.Seed(loan);
         var outbox = new FakeOutbox();
@@ -28,7 +28,8 @@ public class AssessFineHandlerTests
 
         Assert.False(result.HoldRequested);
         Assert.Equal(5m, result.TotalFines);
-        Assert.Empty(outbox.Events);
+        Assert.Empty(outbox.Events.OfType<StudentHoldRequested>()); // no hold below the limit
+        Assert.Single(outbox.Events.OfType<LibraryFineAssessed>());  // but the fine is charged to the account
     }
 
     [Fact]
@@ -39,9 +40,9 @@ public class AssessFineHandlerTests
         var result = await handler.Handle(new AssessFine.Command(loan.Id, 25m), default);
 
         Assert.True(result.HoldRequested);
-        var @event = Assert.Single(outbox.Events);
-        var hold = Assert.IsType<StudentHoldRequested>(@event);
+        var hold = Assert.Single(outbox.Events.OfType<StudentHoldRequested>());
         Assert.Equal(loan.StudentId, hold.StudentId);
+        Assert.Single(outbox.Events.OfType<LibraryFineAssessed>()); // the fine is also charged to the account
     }
 
     [Fact]
@@ -52,7 +53,8 @@ public class AssessFineHandlerTests
         var result = await handler.Handle(new AssessFine.Command(loan.Id, 10m), default);
 
         Assert.False(result.HoldRequested);
-        Assert.Empty(outbox.Events);
+        Assert.Empty(outbox.Events.OfType<StudentHoldRequested>()); // already over — no second hold
+        Assert.Single(outbox.Events.OfType<LibraryFineAssessed>());  // still charged
     }
 
     [Fact]

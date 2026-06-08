@@ -92,6 +92,83 @@ namespace Students.Infrastructure.Persistence.Migrations
                     b.ToTable("Programs", (string)null);
                 });
 
+            modelBuilder.Entity("Students.Domain.Course", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Credits")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DepartmentName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Courses", (string)null);
+                });
+
+            modelBuilder.Entity("Students.Domain.CourseSection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("CourseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("InstructorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SectionCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Term")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CourseId");
+
+                    b.HasIndex("InstructorId");
+
+                    b.HasIndex("Term");
+
+                    b.ToTable("CourseSections", (string)null);
+                });
+
             modelBuilder.Entity("Students.Domain.Enrollment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -128,6 +205,45 @@ namespace Students.Infrastructure.Persistence.Migrations
                     b.HasIndex("StudentId");
 
                     b.ToTable("Enrollments", (string)null);
+                });
+
+            modelBuilder.Entity("Students.Domain.Instructor", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DepartmentName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Rank")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("Instructors", (string)null);
                 });
 
             modelBuilder.Entity("Students.Domain.Student", b =>
@@ -170,6 +286,27 @@ namespace Students.Infrastructure.Persistence.Migrations
                     b.ToTable("Students", (string)null);
                 });
 
+            modelBuilder.Entity("Students.Domain.StudentAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Balance")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StudentId")
+                        .IsUnique();
+
+                    b.ToTable("StudentAccounts", (string)null);
+                });
+
             modelBuilder.Entity("Students.Domain.StudentHold", b =>
                 {
                     b.Property<Guid>("Id")
@@ -192,6 +329,137 @@ namespace Students.Infrastructure.Persistence.Migrations
                     b.HasIndex("StudentId");
 
                     b.ToTable("StudentHolds", (string)null);
+                });
+
+            modelBuilder.Entity("Students.Domain.Course", b =>
+                {
+                    b.OwnsMany("Students.Domain.CoursePrerequisite", "Prerequisites", b1 =>
+                        {
+                            b1.Property<Guid>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("TEXT");
+
+                            b1.Property<Guid>("CourseId")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<Guid>("PrerequisiteCourseId")
+                                .HasColumnType("TEXT");
+
+                            b1.HasKey("Id");
+
+                            b1.HasIndex("CourseId");
+
+                            b1.HasIndex("PrerequisiteCourseId");
+
+                            b1.ToTable("CoursePrerequisites", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("CourseId");
+                        });
+
+                    b.Navigation("Prerequisites");
+                });
+
+            modelBuilder.Entity("Students.Domain.CourseSection", b =>
+                {
+                    b.OwnsOne("Students.Domain.ClassSchedule", "Schedule", b1 =>
+                        {
+                            b1.Property<Guid>("CourseSectionId")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<string>("Days")
+                                .IsRequired()
+                                .HasMaxLength(100)
+                                .HasColumnType("TEXT")
+                                .HasColumnName("ScheduleDays");
+
+                            b1.Property<TimeOnly>("EndTime")
+                                .HasColumnType("TEXT")
+                                .HasColumnName("ScheduleEndTime");
+
+                            b1.Property<string>("Room")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("TEXT")
+                                .HasColumnName("ScheduleRoom");
+
+                            b1.Property<TimeOnly>("StartTime")
+                                .HasColumnType("TEXT")
+                                .HasColumnName("ScheduleStartTime");
+
+                            b1.HasKey("CourseSectionId");
+
+                            b1.ToTable("CourseSections");
+
+                            b1.WithOwner()
+                                .HasForeignKey("CourseSectionId");
+                        });
+
+                    b.OwnsMany("Students.Domain.SectionEnrollment", "Roster", b1 =>
+                        {
+                            b1.Property<Guid>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("TEXT");
+
+                            b1.Property<DateOnly>("EnrolledOn")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<Guid>("SectionId")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<string>("Status")
+                                .IsRequired()
+                                .HasMaxLength(20)
+                                .HasColumnType("TEXT");
+
+                            b1.Property<Guid>("StudentId")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<int?>("WaitlistPosition")
+                                .HasColumnType("INTEGER");
+
+                            b1.HasKey("Id");
+
+                            b1.HasIndex("SectionId");
+
+                            b1.HasIndex("StudentId");
+
+                            b1.ToTable("SectionEnrollments", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("SectionId");
+
+                            b1.OwnsOne("Students.Domain.Grade", "Grade", b2 =>
+                                {
+                                    b2.Property<Guid>("SectionEnrollmentId")
+                                        .HasColumnType("TEXT");
+
+                                    b2.Property<string>("Letter")
+                                        .IsRequired()
+                                        .HasMaxLength(2)
+                                        .HasColumnType("TEXT")
+                                        .HasColumnName("GradeLetter");
+
+                                    b2.Property<decimal>("Points")
+                                        .HasPrecision(3, 2)
+                                        .HasColumnType("TEXT")
+                                        .HasColumnName("GradePoints");
+
+                                    b2.HasKey("SectionEnrollmentId");
+
+                                    b2.ToTable("SectionEnrollments");
+
+                                    b2.WithOwner()
+                                        .HasForeignKey("SectionEnrollmentId");
+                                });
+
+                            b1.Navigation("Grade");
+                        });
+
+                    b.Navigation("Roster");
+
+                    b.Navigation("Schedule")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Students.Domain.Enrollment", b =>
@@ -289,6 +557,56 @@ namespace Students.Infrastructure.Persistence.Migrations
                     b.Navigation("Address");
 
                     b.Navigation("EmergencyContacts");
+                });
+
+            modelBuilder.Entity("Students.Domain.StudentAccount", b =>
+                {
+                    b.OwnsMany("Students.Domain.AccountEntry", "Entries", b1 =>
+                        {
+                            b1.Property<Guid>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("TEXT");
+
+                            b1.Property<Guid>("AccountId")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("TEXT");
+
+                            b1.Property<string>("Category")
+                                .HasMaxLength(20)
+                                .HasColumnType("TEXT");
+
+                            b1.Property<string>("Description")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("TEXT");
+
+                            b1.Property<string>("Kind")
+                                .IsRequired()
+                                .HasMaxLength(20)
+                                .HasColumnType("TEXT");
+
+                            b1.Property<DateOnly>("OccurredOn")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<Guid?>("SourceReference")
+                                .HasColumnType("TEXT");
+
+                            b1.HasKey("Id");
+
+                            b1.HasIndex("AccountId");
+
+                            b1.HasIndex("SourceReference");
+
+                            b1.ToTable("AccountEntries", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("AccountId");
+                        });
+
+                    b.Navigation("Entries");
                 });
 
             modelBuilder.Entity("Students.Domain.Student", b =>

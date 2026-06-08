@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using CleanArch.DesktopClient.Api;
 using CleanArch.DesktopClient.Navigation;
 using Prism.Commands;
@@ -17,8 +16,8 @@ public sealed class LoansViewModel : ViewModelBase, INavigationAware
         _library = library;
         _navigation = navigation;
 
-        BorrowCommand = new DelegateCommand(async () => await BorrowAsync(), () => !string.IsNullOrWhiteSpace(BookTitle))
-            .ObservesProperty(() => BookTitle);
+        BorrowCommand = new DelegateCommand(async () => await BorrowAsync(), () => Guid.TryParse(CopyIdText, out _))
+            .ObservesProperty(() => CopyIdText);
         AssessFineCommand = new DelegateCommand(async () => await AssessFineAsync(), () => SelectedLoan is not null && FineAmount > 0)
             .ObservesProperty(() => SelectedLoan).ObservesProperty(() => FineAmount);
         BackCommand = new DelegateCommand(() => _navigation.NavigateTo(ViewNames.Students));
@@ -32,11 +31,8 @@ public sealed class LoansViewModel : ViewModelBase, INavigationAware
     private string? _studentName;
     public string? StudentName { get => _studentName; private set => SetProperty(ref _studentName, value); }
 
-    private string _bookTitle = string.Empty;
-    public string BookTitle { get => _bookTitle; set => SetProperty(ref _bookTitle, value); }
-
-    private string _dueOnText = DateOnly.FromDateTime(DateTime.Today.AddMonths(1)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-    public string DueOnText { get => _dueOnText; set => SetProperty(ref _dueOnText, value); }
+    private string _copyIdText = string.Empty;
+    public string CopyIdText { get => _copyIdText; set => SetProperty(ref _copyIdText, value); }
 
     private decimal _fineAmount;
     public decimal FineAmount { get => _fineAmount; set => SetProperty(ref _fineAmount, value); }
@@ -59,13 +55,13 @@ public sealed class LoansViewModel : ViewModelBase, INavigationAware
 
     public Task BorrowAsync() => RunAsync(async () =>
     {
-        if (!DateOnly.TryParse(DueOnText, CultureInfo.InvariantCulture, out var dueOn))
+        if (!Guid.TryParse(CopyIdText, out var copyId))
         {
-            throw new FormatException($"'{DueOnText}' is not a valid date (use yyyy-MM-dd).");
+            throw new FormatException($"'{CopyIdText}' is not a valid copy id.");
         }
 
-        await _library.BorrowAsync(StudentId, BookTitle, dueOn);
-        BookTitle = string.Empty;
+        await _library.BorrowAsync(StudentId, copyId);
+        CopyIdText = string.Empty;
         await LoadLoansCoreAsync();
     });
 
@@ -87,7 +83,7 @@ public sealed class LoansViewModel : ViewModelBase, INavigationAware
         StudentName = result.StudentName;
 
         Loans.Clear();
-        foreach (var loan in result.Loans)
+        foreach (var loan in result.Loans.Items)
         {
             Loans.Add(loan);
         }
