@@ -3,6 +3,7 @@ using Microsoft.Extensions.Caching.Hybrid;
 
 namespace CleanArch.Api;
 
+
 internal static class DependencyInjection
 {
     /// <summary>
@@ -20,6 +21,10 @@ internal static class DependencyInjection
                 Version = "v1",
                 Description = "College API — database-per-domain modular monolith (Students + Library)."
             });
+
+            // Vertical-slice requests are nested (e.g. CreateStudent.Command, BorrowBook.Command), so the
+            // default schema id (the short type name "Command") collides. Qualify with the declaring type.
+            options.CustomSchemaIds(SchemaId);
         });
 
         services.AddProblemDetails();
@@ -46,5 +51,22 @@ internal static class DependencyInjection
         });
 
         return services;
+    }
+
+    // Unique, readable OpenAPI schema id: prefix nested types with their declaring type
+    // (CreateStudent.Command -> "CreateStudentCommand") and expand generics
+    // (PagedResult<GetStudent.Response> -> "PagedResultOfGetStudentResponse").
+    private static string SchemaId(Type type)
+    {
+        var prefix = type.DeclaringType is null ? string.Empty : SchemaId(type.DeclaringType);
+
+        if (!type.IsGenericType)
+        {
+            return prefix + type.Name;
+        }
+
+        var name = type.Name[..type.Name.IndexOf('`')];
+        var arguments = string.Concat(type.GetGenericArguments().Select(SchemaId));
+        return $"{prefix}{name}Of{arguments}";
     }
 }
