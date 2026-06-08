@@ -17,7 +17,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\BuildingBlocks\BuildingBlocks.csproj" />
-    <ProjectReference Include="..\..\BuildingBlocks.Web\BuildingBlocks.Web.csproj" />
     <ProjectReference Include="..\..\Modules\Students\Students.Infrastructure\Students.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Students\Students.Presentation\Students.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Library\Library.Infrastructure\Library.Infrastructure.csproj" />
