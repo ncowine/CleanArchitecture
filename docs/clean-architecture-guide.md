@@ -2,6 +2,8 @@
 
 This is a hands-on, step-by-step guide to how this repository is structured and how to add a feature to it. Every concept points to a **real file in this project** so you can read working code alongside the explanation.
 
+> **Never built or run a .NET project before?** Start with **[Getting Started — from zero](./getting-started.md)** first: it installs the tools, gets this project running, explains the everyday vocabulary, and shows how to scaffold *your own* application. Then come back here for how the code is organized.
+
 If you're new to clean architecture, read it top to bottom once. If you just want to add a feature, jump to [Part 3: Add a feature, step by step](#part-3-add-a-feature-step-by-step) and use the [checklist](#the-checklist).
 
 ---
