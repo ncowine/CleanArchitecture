@@ -2,6 +2,7 @@ using Asp.Versioning;
 using Asp.Versioning.Builder;
 using BuildingBlocks.Messaging;
 using CleanArch.Api;
+using CleanArch.Api.Authentication;
 using Library.Infrastructure;
 using Library.Presentation;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;

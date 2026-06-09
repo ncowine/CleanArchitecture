@@ -4,7 +4,6 @@
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="Asp.Versioning.Http" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
-    <PackageReference Include="System.DirectoryServices.AccountManagement" />
     <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
@@ -18,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\CleanArch.Api.Authentication\CleanArch.Api.Authentication.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks\BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\Modules\Students\Students.Infrastructure\Students.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Students\Students.Presentation\Students.Presentation.csproj" />

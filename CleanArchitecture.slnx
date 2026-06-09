@@ -7,6 +7,7 @@
   </Folder>
   <Folder Name="/src/Api/">
     <Project Path="src/Api/CleanArch.Api/CleanArch.Api.csproj" />
+    <Project Path="src/Api/CleanArch.Api.Authentication/CleanArch.Api.Authentication.csproj" />
   </Folder>
   <Folder Name="/src/Modules/" />
   <Folder Name="/src/Modules/Students/">

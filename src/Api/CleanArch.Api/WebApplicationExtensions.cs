@@ -1,4 +1,5 @@
 using BuildingBlocks.Outbox;
+using CleanArch.Api.Authentication;
 using Library.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Students.Infrastructure.Persistence;
@@ -24,6 +25,10 @@ internal static class WebApplicationExtensions
         // Each database is migrated independently — they share nothing, not even a transaction.
         await scope.ServiceProvider.GetRequiredService<StudentsDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<LibraryDbContext>().Database.MigrateAsync();
+
+        // The API-key store shares students.db but migrates on its own history table. The auth project
+        // owns its migrate+seed, so the host needn't touch the internal context/seeder.
+        await ApiKeyDevelopmentSetup.MigrateAndSeedAsync(scope.ServiceProvider);
 
         app.UseSwagger();
         app.UseSwaggerUI(options =>

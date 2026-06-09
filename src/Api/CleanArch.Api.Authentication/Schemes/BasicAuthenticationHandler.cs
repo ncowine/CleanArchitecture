@@ -15,7 +15,7 @@ namespace CleanArch.Api.Authentication;
 /// </summary>
 internal sealed class BasicAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    public const string SchemeName = "Basic";
+    public const string SchemeName = AuthenticationSchemes.Basic;
 
     private readonly ICredentialValidator _validator;
 

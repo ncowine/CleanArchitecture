@@ -8,8 +8,8 @@ namespace CleanArch.Api.Authentication;
 /// <summary>Authenticates a request by an <c>X-Api-Key</c> header (for service-to-service callers).</summary>
 internal sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    public const string SchemeName = "ApiKey";
-    public const string HeaderName = "X-Api-Key";
+    public const string SchemeName = AuthenticationSchemes.ApiKey;
+    public const string HeaderName = AuthenticationSchemes.ApiKeyHeaderName;
 
     private readonly IApiKeyValidator _validator;
 
@@ -23,20 +23,27 @@ internal sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authen
         _validator = validator;
     }
 
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.TryGetValue(HeaderName, out var values) || string.IsNullOrWhiteSpace(values))
         {
-            return Task.FromResult(AuthenticateResult.NoResult());
+            return AuthenticateResult.NoResult();
         }
 
-        var identity = _validator.Validate(values.ToString());
-        if (identity is null)
+        var result = await _validator.ValidateAsync(values.ToString(), Context.RequestAborted);
+        if (result is null)
         {
-            return Task.FromResult(AuthenticateResult.Fail("Invalid API key."));
+            return AuthenticateResult.Fail("Invalid API key.");
+        }
+
+        var identity = new ClaimsIdentity(SchemeName);
+        identity.AddClaim(new Claim(ClaimTypes.Name, result.Subject));
+        foreach (var role in result.Roles)
+        {
+            identity.AddClaim(new Claim(ClaimTypes.Role, role));
         }
 
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name);
-        return Task.FromResult(AuthenticateResult.Success(ticket));
+        return AuthenticateResult.Success(ticket);
     }
 }
