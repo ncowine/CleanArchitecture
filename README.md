@@ -22,7 +22,7 @@ application layer rather than with cross-database joins.
 | Caching | **HybridCache** (in-memory now, one-line switch to Redis L2), decorating the hottest read; invalidated on writes. |
 | Read models | Per-endpoint response DTOs + a read service; projections fetch exactly what each shape needs. List reads are `POST /…/search` with paging in the body. |
 | Correlation | A correlation id flows request → audit → outbox (stamped on messages) so a flow is traceable across the async hop. |
-| Auth | Two schemes behind a policy selector: an `X-Api-Key` header (service callers) and **HTTP Basic validated against Active Directory** (interactive callers). Write endpoints require authorization; the audit actor comes from the principal. API versioning, rate limiting, CORS, and response compression are wired in the host. |
+| Auth | Three schemes behind a policy selector, chosen per request: an `X-Api-Key` header (service callers), **HTTP Basic validated against Active Directory** (interactive callers), and an **Okta JWT bearer** token (token callers; enabled by setting `Okta:Authority`/`Okta:Audience`). Write endpoints require authorization; the audit actor comes from the principal. API versioning, rate limiting, CORS, and response compression are wired in the host. |
 | Observability | Health checks (`/health`, `/health/live`) + OpenTelemetry tracing/metrics (console exporter) incl. outbox metrics. |
 | Audit | Structured audit log via a mediator behavior — Kibana-ready (add an Elasticsearch sink, no code change). |
 
@@ -62,7 +62,7 @@ In Development the app applies EF migrations to both SQLite databases on startup
 
 ### Calling protected endpoints
 
-Write endpoints require either an `X-Api-Key` header (dev keys: `dev-api-key-reporting`, `dev-api-key-integration`) or HTTP Basic credentials validated against Active Directory. In Swagger, click **Authorize** and use the API key. From `curl`:
+Write endpoints require either an `X-Api-Key` header (dev keys: `dev-api-key-reporting`, `dev-api-key-integration`) or HTTP Basic credentials validated against Active Directory. The dev keys are **seeded into the database on first run** (see below) — they are real rows, not hardcoded. In Swagger, click **Authorize** and use the API key. From `curl`:
 
 ```bash
 curl -X POST http://localhost:5235/students -H "X-Api-Key: dev-api-key-reporting" \
@@ -101,7 +101,7 @@ dotnet test
 ## Going distributed / production notes
 
 - **Redis cache**: add `Microsoft.Extensions.Caching.StackExchangeRedis` + `AddStackExchangeRedisCache(...)`; HybridCache uses it as L2 automatically — no code change.
-- **Auth**: HTTP Basic already binds against real Active Directory; add an Okta/Entra **JWT bearer** scheme alongside the API key for token-based callers (the policy selector and actor wiring are unchanged). The API-key store is a fake — swap for a hashed key store.
+- **Auth**: API key + Basic/AD + **Okta JWT bearer** are all wired. The JWT scheme is config-gated — set `Okta:Authority` (your Okta issuer, e.g. `https://<domain>/oauth2/default`) and `Okta:Audience` (e.g. `api://default`) to enable token validation; it's off by default for the POC. **API keys are validated against the database** — stored as SHA-256 hashes (never plaintext) in `students.db` behind a dedicated `ApiKeyDbContext` (its own `__AuthMigrationsHistory`, isolated from the Students domain), with expiry/revocation columns and a short-TTL validation cache. The two `dev-api-key-*` keys are seeded for local use. For service-to-service auth in a system that already has Okta, prefer the **OAuth2 client-credentials** grant (machines become JWT callers) over long-lived keys.
 - **Telemetry to Kibana/Grafana**: swap the console exporter for OTLP; audit (structured logs) flows to Elasticsearch by adding a logging sink.
 - **Databases**: SQLite here for zero-setup; point each module's connection string at its real engine.
 

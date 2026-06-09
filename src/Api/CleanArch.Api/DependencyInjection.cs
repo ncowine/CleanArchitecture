@@ -32,34 +32,48 @@ internal static class DependencyInjection
             // default schema id (the short type name "Command") collides. Qualify with the declaring type.
             options.CustomSchemaIds(SchemaId);
 
-            // Two ways to authorize in Swagger UI. Each is a separate security requirement, so they are
-            // alternatives (Basic OR ApiKey), matching the runtime policy scheme.
+            // Three ways to authorize in Swagger UI. Each is a separate security requirement, so they are
+            // alternatives (Basic OR ApiKey OR Bearer), matching the runtime policy scheme.
 
             // Human callers: AD username + password (HTTP Basic) — renders user/password fields.
-            options.AddSecurityDefinition(BasicAuthenticationHandler.SchemeName, new OpenApiSecurityScheme
+            options.AddSecurityDefinition(AuthenticationSchemes.Basic, new OpenApiSecurityScheme
             {
                 Type = SecuritySchemeType.Http,
                 Scheme = "basic",
                 Description = "Active Directory username and password (HTTP Basic). Send over HTTPS only."
             });
 
-            // Service callers: X-Api-Key header.
-            options.AddSecurityDefinition(ApiKeyAuthenticationHandler.SchemeName, new OpenApiSecurityScheme
+            // Token callers: an Okta access token (JWT). Active only when Okta is configured.
+            options.AddSecurityDefinition(AuthenticationSchemes.Bearer, new OpenApiSecurityScheme
             {
-                Name = ApiKeyAuthenticationHandler.HeaderName,
+                Type = SecuritySchemeType.Http,
+                Scheme = "bearer",
+                BearerFormat = "JWT",
+                Description = "Okta access token (JWT). Paste the raw token — Swagger adds the 'Bearer ' prefix."
+            });
+
+            // Service callers: X-Api-Key header.
+            options.AddSecurityDefinition(AuthenticationSchemes.ApiKey, new OpenApiSecurityScheme
+            {
+                Name = AuthenticationSchemes.ApiKeyHeaderName,
                 Type = SecuritySchemeType.ApiKey,
                 In = ParameterLocation.Header,
-                Description = $"Service-to-service API key, sent in the '{ApiKeyAuthenticationHandler.HeaderName}' header."
+                Description = $"Service-to-service API key, sent in the '{AuthenticationSchemes.ApiKeyHeaderName}' header."
             });
 
             options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
             {
-                [new OpenApiSecuritySchemeReference(BasicAuthenticationHandler.SchemeName, document, null)] = new List<string>()
+                [new OpenApiSecuritySchemeReference(AuthenticationSchemes.Basic, document, null)] = new List<string>()
             });
 
             options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
             {
-                [new OpenApiSecuritySchemeReference(ApiKeyAuthenticationHandler.SchemeName, document, null)] = new List<string>()
+                [new OpenApiSecuritySchemeReference(AuthenticationSchemes.ApiKey, document, null)] = new List<string>()
+            });
+
+            options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference(AuthenticationSchemes.Bearer, document, null)] = new List<string>()
             });
         });
 
