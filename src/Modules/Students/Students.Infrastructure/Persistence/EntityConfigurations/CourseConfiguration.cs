@@ -27,6 +27,10 @@ internal sealed class CourseConfiguration : IEntityTypeConfiguration<Course>
             prerequisite.ToTable("CoursePrerequisites");
             prerequisite.WithOwner().HasForeignKey("CourseId");
             prerequisite.HasKey(p => p.Id);
+
+            // Domain-assigned Id (not store-generated) — otherwise adding a prerequisite to an existing course
+            // UPDATEs a nonexistent row → concurrency exception. See StudentAccountConfiguration.
+            prerequisite.Property(p => p.Id).ValueGeneratedNever();
             prerequisite.Property(p => p.PrerequisiteCourseId).IsRequired();
             prerequisite.HasIndex(p => p.PrerequisiteCourseId);
         });

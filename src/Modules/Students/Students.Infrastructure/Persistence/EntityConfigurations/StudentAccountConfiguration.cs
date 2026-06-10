@@ -25,6 +25,12 @@ internal sealed class StudentAccountConfiguration : IEntityTypeConfiguration<Stu
             entry.WithOwner().HasForeignKey("AccountId");
             entry.HasKey(e => e.Id);
 
+            // The Id is assigned by the domain (Guid.NewGuid() in the constructor), NOT store-generated.
+            // Without this, EF's Guid-key convention (ValueGeneratedOnAdd) treats a new entry added to an
+            // already-loaded account as an existing row → UPDATE (0 rows) → DbUpdateConcurrencyException,
+            // instead of an INSERT. The first entry only works because the whole account graph is new.
+            entry.Property(e => e.Id).ValueGeneratedNever();
+
             entry.Property(e => e.Kind)
                 .IsRequired()
                 .HasConversion<string>()
