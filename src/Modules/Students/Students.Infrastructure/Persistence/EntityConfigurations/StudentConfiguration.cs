@@ -53,6 +53,10 @@ internal sealed class StudentConfiguration : IEntityTypeConfiguration<Student>
             contact.ToTable("EmergencyContacts");
             contact.WithOwner().HasForeignKey("StudentId");
             contact.HasKey(c => c.Id);
+
+            // Domain-assigned Id (not store-generated) — otherwise adding a contact to an existing student
+            // UPDATEs a nonexistent row → concurrency exception. See StudentAccountConfiguration.
+            contact.Property(c => c.Id).ValueGeneratedNever();
             contact.Property(c => c.Name).IsRequired().HasMaxLength(200);
             contact.Property(c => c.Relationship).IsRequired().HasMaxLength(50);
             contact.Property(c => c.PhoneNumber).IsRequired().HasMaxLength(30);

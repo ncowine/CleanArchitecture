@@ -53,6 +53,11 @@ internal sealed class CourseSectionConfiguration : IEntityTypeConfiguration<Cour
             enrollment.ToTable("SectionEnrollments");
             enrollment.WithOwner().HasForeignKey("SectionId");
             enrollment.HasKey(e => e.Id);
+
+            // Domain-assigned Id (not store-generated). Without this, EF's Guid-key convention treats a new
+            // roster entry added to an already-loaded section as an existing row → UPDATE (0 rows) → concurrency
+            // exception; e.g. the second enrolment into a section would fail. See StudentAccountConfiguration.
+            enrollment.Property(e => e.Id).ValueGeneratedNever();
             enrollment.Property(e => e.StudentId).IsRequired();
             enrollment.HasIndex(e => e.StudentId);
             enrollment.Property(e => e.EnrolledOn).IsRequired();

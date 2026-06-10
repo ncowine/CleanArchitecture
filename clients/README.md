@@ -19,15 +19,19 @@ MIT-licensed Prism) using MVVM, with unit-tested ViewModels. It has its own solu
   with no UI thread. A `ViewModelBase` provides shared `IsBusy`/`Error` and a guarded async runner.
 - **Navigation**: a thin `INavigationService` over Prism's region manager keeps ViewModels off the large
   `IRegionManager` surface (and trivially fakeable in tests). Views auto-register via `RegisterForNavigation`.
-- **Auth**: `DevTokenStore` calls the API's `/dev/token` to get a JWT; `AuthHeaderHandler` attaches it (and a
-  correlation id) to every request. Swap `DevTokenStore` for an OIDC flow (e.g. IdentityModel.OidcClient,
-  Authorization Code + PKCE) for production — nothing else changes.
+- **Auth**: the API authorizes this client by a service API key. `ApiKeyAuthHandler` attaches the configured
+  `X-Api-Key` (the seeded dev key, set in `App.ApiKey`), the signed-in operator as `X-Actor` (for audit), and a
+  correlation id to every request. "Signing in" (`ApiKeyAuthSession`) just records the operator — there's no
+  token fetch. Swap `ApiKeyAuthSession`/`ApiKeyAuthHandler` for an OIDC flow (e.g. IdentityModel.OidcClient,
+  Authorization Code + PKCE) for real per-user identity — nothing else changes.
 - **HTTP**: a single long-lived authenticated `HttpClient` (constructed in `ApiClientFactory`). Desktop apps
   don't need `IHttpClientFactory` pooling the way servers do, and Prism's container isn't `IServiceCollection`.
 
 ## Screens
 
-Login (dev token) → Students (paged search, withdraw, navigate) → Student detail / Loans (borrow, assess fine).
+Login (records the operator) → Students (paged search, withdraw, navigate) → Student detail (with holds) /
+Loans (borrow, return, renew, reserve) / Account (charge, payment, waiver) / Transcript / Sections (enroll,
+drop, grade, cancel; browse Courses).
 
 ## Running
 

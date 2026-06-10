@@ -1,86 +1,103 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-
 namespace CleanArch.DesktopClient.Api;
 
-public interface ITokenStore
+public interface IAuthSession
 {
     bool IsSignedIn { get; }
     string? Actor { get; }
-    string? AccessToken { get; }
     Task SignInAsync(string actor, IReadOnlyList<string> roles, CancellationToken ct = default);
     void SignOut();
 }
 
 /// <summary>
-/// POC token store: obtains a JWT from the API's dev token endpoint. Swap for an OIDC flow
-/// (e.g. IdentityModel.OidcClient with Authorization Code + PKCE) for production.
+/// POC sign-in. The API authorizes this client by a service API key (the <c>X-Api-Key</c> scheme),
+/// so "signing in" doesn't fetch a token — it just records who the operator is, which travels as the
+/// <c>X-Actor</c> header for audit. Swap for an interactive OIDC flow (e.g. IdentityModel.OidcClient,
+/// Authorization Code + PKCE) when the client needs real per-user identity.
 /// </summary>
-public sealed class DevTokenStore : ITokenStore
+public sealed class ApiKeyAuthSession : IAuthSession
 {
-    private readonly HttpClient _http;
-    public DevTokenStore(HttpClient http) => _http = http;
-
-    public bool IsSignedIn => AccessToken is not null;
+    public bool IsSignedIn { get; private set; }
     public string? Actor { get; private set; }
-    public string? AccessToken { get; private set; }
 
-    public async Task SignInAsync(string actor, IReadOnlyList<string> roles, CancellationToken ct = default)
+    public Task SignInAsync(string actor, IReadOnlyList<string> roles, CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync("dev/token", new { actor, roles }, ct);
-        response.EnsureSuccessStatusCode();
-        var payload = await response.Content.ReadFromJsonAsync<TokenResponse>(ct);
-        AccessToken = payload?.Token ?? throw new InvalidOperationException("Token endpoint returned no token.");
         Actor = actor;
+        IsSignedIn = true;
+        return Task.CompletedTask;
     }
 
     public void SignOut()
     {
-        AccessToken = null;
+        IsSignedIn = false;
         Actor = null;
     }
-
-    private sealed record TokenResponse(string Token);
 }
 
-/// <summary>Attaches the bearer token (and a correlation id) to every outgoing API request.</summary>
-internal sealed class AuthHeaderHandler : DelegatingHandler
+/// <summary>Attaches the service API key, the operator (for audit), and a correlation id to every request.</summary>
+internal sealed class ApiKeyAuthHandler : DelegatingHandler
 {
-    private readonly ITokenStore _tokens;
-    public AuthHeaderHandler(ITokenStore tokens) => _tokens = tokens;
+    private const string ApiKeyHeader = "X-Api-Key";
+    private const string ActorHeader = "X-Actor";
+    private const string CorrelationHeader = "X-Correlation-ID";
+
+    private readonly IAuthSession _session;
+    private readonly string _apiKey;
+
+    public ApiKeyAuthHandler(IAuthSession session, string apiKey)
+    {
+        _session = session;
+        _apiKey = apiKey;
+    }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        if (_tokens.AccessToken is { } token)
+        if (!request.Headers.Contains(ApiKeyHeader))
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.TryAddWithoutValidation(ApiKeyHeader, _apiKey);
         }
 
-        if (!request.Headers.Contains("X-Correlation-ID"))
+        if (_session.Actor is { } actor && !request.Headers.Contains(ActorHeader))
         {
-            request.Headers.TryAddWithoutValidation("X-Correlation-ID", Guid.NewGuid().ToString());
+            request.Headers.TryAddWithoutValidation(ActorHeader, actor);
+        }
+
+        if (!request.Headers.Contains(CorrelationHeader))
+        {
+            request.Headers.TryAddWithoutValidation(CorrelationHeader, Guid.NewGuid().ToString());
         }
 
         return await base.SendAsync(request, cancellationToken);
     }
 }
 
-/// <summary>Builds the configured API clients (single long-lived HttpClient with the auth handler).</summary>
+/// <summary>Builds the configured API clients (single long-lived HttpClient with the API-key handler).</summary>
 public static class ApiClientFactory
 {
-    public static (ITokenStore tokens, IStudentsApiClient students, ILibraryApiClient library) Create(string baseUrl)
+    // Cap each call so an unreachable host fails in seconds (with a friendly timeout message) rather
+    // than hanging on the default 100s HttpClient timeout.
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
+
+    public static (
+        IAuthSession session,
+        IStudentsApiClient students,
+        ILibraryApiClient library,
+        IBillingApiClient billing,
+        IAcademicsApiClient academics) Create(string baseUrl, string apiKey)
     {
         var baseUri = new Uri(baseUrl);
+        var session = new ApiKeyAuthSession();
 
-        // Plain client for the (open) token endpoint.
-        var tokens = new DevTokenStore(new HttpClient { BaseAddress = baseUri });
-
-        // Authenticated client for the API; the handler reads the token from the store on each call.
-        var authed = new HttpClient(new AuthHeaderHandler(tokens) { InnerHandler = new HttpClientHandler() })
+        var authed = new HttpClient(new ApiKeyAuthHandler(session, apiKey) { InnerHandler = new HttpClientHandler() })
         {
             BaseAddress = baseUri,
+            Timeout = RequestTimeout,
         };
 
-        return (tokens, new StudentsApiClient(authed), new LibraryApiClient(authed));
+        return (
+            session,
+            new StudentsApiClient(authed),
+            new LibraryApiClient(authed),
+            new BillingApiClient(authed),
+            new AcademicsApiClient(authed));
     }
 }

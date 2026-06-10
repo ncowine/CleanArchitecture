@@ -27,6 +27,12 @@ public sealed class StudentsViewModel : ViewModelBase, INavigationAware
             .ObservesProperty(() => SelectedStudent);
         ViewLoansCommand = new DelegateCommand(() => NavigateForSelected(ViewNames.Loans), () => SelectedStudent is not null)
             .ObservesProperty(() => SelectedStudent);
+        ViewAccountCommand = new DelegateCommand(() => NavigateForSelected(ViewNames.Billing), () => SelectedStudent is not null)
+            .ObservesProperty(() => SelectedStudent);
+        ViewTranscriptCommand = new DelegateCommand(() => NavigateForSelected(ViewNames.Transcript), () => SelectedStudent is not null)
+            .ObservesProperty(() => SelectedStudent);
+        ViewSectionsCommand = new DelegateCommand(() => NavigateForSelected(ViewNames.Sections), () => SelectedStudent is not null)
+            .ObservesProperty(() => SelectedStudent);
     }
 
     public ObservableCollection<StudentSummary> Students { get; } = new();
@@ -55,6 +61,9 @@ public sealed class StudentsViewModel : ViewModelBase, INavigationAware
     public DelegateCommand WithdrawCommand { get; }
     public DelegateCommand ViewDetailCommand { get; }
     public DelegateCommand ViewLoansCommand { get; }
+    public DelegateCommand ViewAccountCommand { get; }
+    public DelegateCommand ViewTranscriptCommand { get; }
+    public DelegateCommand ViewSectionsCommand { get; }
 
     public Task SearchAsync() => RunAsync(LoadStudentsCoreAsync);
 

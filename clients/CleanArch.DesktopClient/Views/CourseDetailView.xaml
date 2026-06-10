@@ -1,0 +1,28 @@
+<UserControl x:Class="CleanArch.DesktopClient.Views.CourseDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             prism:ViewModelLocator.AutoWireViewModel="True">
+    <DockPanel Margin="10">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Content="Back" Command="{Binding BackCommand}" />
+            <TextBlock FontSize="16" Margin="10,0" VerticalAlignment="Center">
+                <Run Text="{Binding Course.Code}" /><Run Text=" — " /><Run Text="{Binding Course.Title}" />
+            </TextBlock>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBlock><Run Text="Department: " FontWeight="Bold" /><Run Text="{Binding Course.DepartmentName}" /><Run Text="    Credits: " FontWeight="Bold" /><Run Text="{Binding Course.Credits}" /></TextBlock>
+            <TextBlock Text="{Binding Course.Description}" TextWrapping="Wrap" Margin="0,5,0,0" />
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Error}" Foreground="Red" Margin="0,5,0,0" />
+        <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="Prerequisites" FontWeight="Bold" Margin="0,0,0,5" />
+            <DataGrid ItemsSource="{Binding Course.Prerequisites}" AutoGenerateColumns="False" IsReadOnly="True">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Code" Binding="{Binding Code}" Width="120" />
+                    <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </DockPanel>
+    </DockPanel>
+</UserControl>

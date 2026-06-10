@@ -46,18 +46,20 @@ internal sealed class TranscriptReadService : ITranscriptReadService
 
     private async Task<List<CompletedRow>> FetchCompletedAsync(Guid studentId, CancellationToken cancellationToken)
     {
-        // Completed enrollments for the student, with the section's course id and term + the grade.
+        // The student's completed roster entries. A nested filtered subquery that ALSO projects the parent
+        // section (course id/term) forces SQL APPLY, which SQLite rejects — so flatten the owned roster to a
+        // plain JOIN, projecting only child columns plus the owning section's id (its shadow FK), then resolve
+        // the section and course details with follow-up queries and join in memory.
         var enrollments = await _db.CourseSections
             .AsNoTracking()
-            .SelectMany(s => s.Roster
-                .Where(e => e.StudentId == studentId && e.Status == SectionEnrollmentStatus.Completed)
-                .Select(e => new
-                {
-                    s.CourseId,
-                    s.Term,
-                    Letter = e.Grade!.Letter,
-                    Points = e.Grade!.Points,
-                }))
+            .SelectMany(s => s.Roster)
+            .Where(e => e.StudentId == studentId && e.Status == SectionEnrollmentStatus.Completed)
+            .Select(e => new
+            {
+                SectionId = EF.Property<Guid>(e, "SectionId"),
+                Letter = e.Grade!.Letter,
+                Points = e.Grade!.Points,
+            })
             .ToListAsync(cancellationToken);
 
         if (enrollments.Count == 0)
@@ -65,8 +67,16 @@ internal sealed class TranscriptReadService : ITranscriptReadService
             return [];
         }
 
-        // Resolve the courses (code/title/credits) in one follow-up query, then join in memory.
-        var courseIds = enrollments.Select(e => e.CourseId).Distinct().ToList();
+        // Resolve the owning sections (course id + term), then the courses (code/title/credits).
+        var sectionIds = enrollments.Select(e => e.SectionId).Distinct().ToList();
+        var sections = await _db.CourseSections
+            .AsNoTracking()
+            .Where(s => sectionIds.Contains(s.Id))
+            .Select(s => new { s.Id, s.CourseId, s.Term })
+            .ToListAsync(cancellationToken);
+        var sectionById = sections.ToDictionary(s => s.Id);
+
+        var courseIds = sections.Select(s => s.CourseId).Distinct().ToList();
         var courses = await _db.Courses
             .AsNoTracking()
             .Where(c => courseIds.Contains(c.Id))
@@ -77,9 +87,10 @@ internal sealed class TranscriptReadService : ITranscriptReadService
         return enrollments
             .Select(e =>
             {
-                courseById.TryGetValue(e.CourseId, out var course);
+                var section = sectionById[e.SectionId];
+                courseById.TryGetValue(section.CourseId, out var course);
                 return new CompletedRow(
-                    e.Term,
+                    section.Term,
                     course?.Code ?? string.Empty,
                     course?.Title ?? string.Empty,
                     course?.Credits ?? 0,

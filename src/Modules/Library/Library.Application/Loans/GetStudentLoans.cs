@@ -25,6 +25,7 @@ public static class GetStudentLoans
 
     public sealed record LoanSummary(
         Guid Id,
+        Guid CopyId,
         string BookTitle,
         DateOnly BorrowedOn,
         DateOnly DueOn,
@@ -70,6 +71,7 @@ public static class GetStudentLoans
             var summaries = loans.Items
                 .Select(loan => new LoanSummary(
                     loan.Id,
+                    loan.CopyId,
                     titles.TryGetValue(loan.CopyId, out var title) ? title : "(unknown)",
                     loan.BorrowedOn,
                     loan.DueOn,

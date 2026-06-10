@@ -29,6 +29,17 @@ public static class ViewNames
     public const string Students = "StudentsView";
     public const string StudentDetail = "StudentDetailView";
     public const string Loans = "LoansView";
+    public const string Books = "BooksView";
+    public const string BookCopies = "BookCopiesView";
+    public const string Billing = "BillingView";
+    public const string Transcript = "TranscriptView";
+    public const string Sections = "SectionsView";
+    public const string SectionDetail = "SectionDetailView";
+    public const string Courses = "CoursesView";
+    public const string CourseDetail = "CourseDetailView";
 
     public const string StudentIdParameter = "studentId";
+    public const string BookIdParameter = "bookId";
+    public const string SectionIdParameter = "sectionId";
+    public const string CourseIdParameter = "courseId";
 }
