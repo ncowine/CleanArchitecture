@@ -9,14 +9,14 @@ public class LoginViewModelTests
     [Fact]
     public async Task SignIn_signs_in_then_navigates_to_students()
     {
-        var tokens = new FakeTokenStore();
+        var session = new FakeAuthSession();
         var navigation = new FakeNavigationService();
-        var vm = new LoginViewModel(tokens, navigation) { Actor = "registrar@uni" };
+        var vm = new LoginViewModel(session, navigation) { Actor = "registrar@uni" };
 
         await vm.SignInAsync();
 
-        Assert.True(tokens.IsSignedIn);
-        Assert.Contains("registrar@uni", tokens.SignIns);
+        Assert.True(session.IsSignedIn);
+        Assert.Contains("registrar@uni", session.SignIns);
         Assert.Contains(navigation.Navigations, n => n.View == ViewNames.Students);
         Assert.Null(vm.Error);
     }

@@ -7,6 +7,7 @@
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
             <Button Content="Back" Command="{Binding BackCommand}" />
             <TextBlock Text="{Binding StudentName}" FontSize="16" Margin="10,0" VerticalAlignment="Center" />
+            <Button Content="Browse catalog…" Command="{Binding BrowseCatalogCommand}" Margin="10,0,0,0" />
         </StackPanel>
         <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
             <StackPanel Orientation="Horizontal">
@@ -19,17 +20,48 @@
                 <TextBox Text="{Binding FineAmount, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="5,0" />
                 <Button Content="Assess fine on selected loan" Command="{Binding AssessFineCommand}" />
             </StackPanel>
+            <TextBlock Text="{Binding Notice}" Foreground="DarkGreen" Margin="0,5,0,0" />
             <TextBlock Text="{Binding Error}" Foreground="Red" Margin="0,5,0,0" />
         </StackPanel>
-        <DataGrid ItemsSource="{Binding Loans}" SelectedItem="{Binding SelectedLoan}"
-                  AutoGenerateColumns="False" IsReadOnly="True">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Book" Binding="{Binding BookTitle}" Width="*" />
-                <DataGridTextColumn Header="Borrowed" Binding="{Binding BorrowedOn}" Width="110" />
-                <DataGridTextColumn Header="Due" Binding="{Binding DueOn}" Width="110" />
-                <DataGridTextColumn Header="Fine" Binding="{Binding FineAmount}" Width="80" />
-                <DataGridTextColumn Header="Renewals" Binding="{Binding RenewalCount}" Width="80" />
-            </DataGrid.Columns>
-        </DataGrid>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="160" />
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,5">
+                    <TextBlock Text="Loans" FontWeight="Bold" VerticalAlignment="Center" />
+                    <Button Content="Return selected" Command="{Binding ReturnCommand}" Margin="10,0,0,0" />
+                    <Button Content="Renew selected" Command="{Binding RenewCommand}" Margin="5,0,0,0" />
+                </StackPanel>
+                <DataGrid ItemsSource="{Binding Loans}" SelectedItem="{Binding SelectedLoan}"
+                          AutoGenerateColumns="False" IsReadOnly="True">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Book" Binding="{Binding BookTitle}" Width="*" />
+                        <DataGridTextColumn Header="Borrowed" Binding="{Binding BorrowedOn}" Width="100" />
+                        <DataGridTextColumn Header="Due" Binding="{Binding DueOn}" Width="100" />
+                        <DataGridTextColumn Header="Returned" Binding="{Binding ReturnedOn}" Width="100" />
+                        <DataGridTextColumn Header="Fine" Binding="{Binding FineAmount}" Width="70" />
+                        <DataGridTextColumn Header="Renewals" Binding="{Binding RenewalCount}" Width="70" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,5">
+                <TextBlock Text="Reservations" FontWeight="Bold" VerticalAlignment="Center" />
+                <Button Content="Cancel selected" Command="{Binding CancelReservationCommand}" Margin="10,0,0,0" />
+            </StackPanel>
+            <DataGrid Grid.Row="2" ItemsSource="{Binding Reservations}" SelectedItem="{Binding SelectedReservation}"
+                      AutoGenerateColumns="False" IsReadOnly="True">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Book" Binding="{Binding BookTitle}" Width="*" />
+                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" />
+                    <DataGridTextColumn Header="Queue #" Binding="{Binding QueuePosition}" Width="80" />
+                    <DataGridTextColumn Header="Expires" Binding="{Binding ExpiresOn}" Width="100" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
     </DockPanel>
 </UserControl>

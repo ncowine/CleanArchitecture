@@ -6,12 +6,12 @@ namespace CleanArch.DesktopClient.ViewModels;
 
 public sealed class LoginViewModel : ViewModelBase
 {
-    private readonly ITokenStore _tokens;
+    private readonly IAuthSession _session;
     private readonly INavigationService _navigation;
 
-    public LoginViewModel(ITokenStore tokens, INavigationService navigation)
+    public LoginViewModel(IAuthSession session, INavigationService navigation)
     {
-        _tokens = tokens;
+        _session = session;
         _navigation = navigation;
         SignInCommand = new DelegateCommand(async () => await SignInAsync(), () => !string.IsNullOrWhiteSpace(Actor))
             .ObservesProperty(() => Actor);
@@ -28,7 +28,7 @@ public sealed class LoginViewModel : ViewModelBase
 
     public Task SignInAsync() => RunAsync(async () =>
     {
-        await _tokens.SignInAsync(Actor, Array.Empty<string>());
+        await _session.SignInAsync(Actor, Array.Empty<string>());
         _navigation.NavigateTo(ViewNames.Students);
     });
 }

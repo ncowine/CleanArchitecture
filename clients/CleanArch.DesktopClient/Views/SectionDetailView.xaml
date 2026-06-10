@@ -1,0 +1,41 @@
+<UserControl x:Class="CleanArch.DesktopClient.Views.SectionDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             prism:ViewModelLocator.AutoWireViewModel="True">
+    <DockPanel Margin="10">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Content="Back" Command="{Binding BackCommand}" />
+            <TextBlock FontSize="16" Margin="10,0" VerticalAlignment="Center">
+                <Run Text="{Binding Section.CourseCode}" /><Run Text=" " /><Run Text="{Binding Section.CourseTitle}" />
+                <Run Text=" — " /><Run Text="{Binding Section.Term}" /><Run Text=" " /><Run Text="{Binding Section.SectionCode}" />
+            </TextBlock>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+            <TextBlock><Run Text="Instructor: " FontWeight="Bold" /><Run Text="{Binding Section.InstructorName}" /></TextBlock>
+            <TextBlock Margin="20,0,0,0"><Run Text="Status: " FontWeight="Bold" /><Run Text="{Binding Section.Status}" /></TextBlock>
+            <TextBlock Margin="20,0,0,0"><Run Text="Enrolled: " FontWeight="Bold" /><Run Text="{Binding Section.EnrolledCount}" /><Run Text=" / " /><Run Text="{Binding Section.Capacity}" /></TextBlock>
+            <TextBlock Margin="20,0,0,0"><Run Text="Waitlist: " FontWeight="Bold" /><Run Text="{Binding Section.WaitlistCount}" /></TextBlock>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Enroll this student" Command="{Binding EnrollCommand}" />
+                <Button Content="Drop this student" Command="{Binding DropCommand}" Margin="5,0,0,0" />
+                <TextBlock Text="Grade:" VerticalAlignment="Center" Margin="15,0,5,0" />
+                <TextBox Text="{Binding Grade, UpdateSourceTrigger=PropertyChanged}" Width="50" />
+                <Button Content="Record grade" Command="{Binding RecordGradeCommand}" Margin="5,0,0,0" />
+                <Button Content="Cancel section" Command="{Binding CancelSectionCommand}" Margin="15,0,0,0" />
+            </StackPanel>
+            <TextBlock Text="{Binding Notice}" Foreground="DarkGreen" Margin="0,5,0,0" />
+            <TextBlock Text="{Binding Error}" Foreground="Red" Margin="0,5,0,0" />
+        </StackPanel>
+        <DataGrid ItemsSource="{Binding Roster}" AutoGenerateColumns="False" IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Student" Binding="{Binding StudentName}" Width="*" />
+                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" />
+                <DataGridTextColumn Header="Waitlist #" Binding="{Binding WaitlistPosition}" Width="90" />
+                <DataGridTextColumn Header="Enrolled" Binding="{Binding EnrolledOn}" Width="110" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>
