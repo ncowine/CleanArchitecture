@@ -93,6 +93,10 @@ public static class AuthenticationServiceCollectionExtensions
                 options.Authority = oktaAuthority;
                 options.Audience = oktaAudience;
 
+                // KEEP the validated token on the request so the On-Behalf-Of flow can lift it back off
+                // (HttpContext.GetTokenAsync("access_token")) and exchange it for a downstream-scoped token.
+                options.SaveToken = true;
+
                 // RESOLVE who the token represents. Okta access tokens carry the user in 'sub' and have no
                 // 'name' claim, so without this the principal's Name would be null and neither the audit actor
                 // nor the AD role-enrichment could identify the caller. Keep the raw JWT claim names and treat

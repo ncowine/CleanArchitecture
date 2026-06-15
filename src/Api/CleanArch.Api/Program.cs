@@ -22,12 +22,20 @@ var libraryConnectionString =
 builder.Services
     .AddApiServices()
     .AddApiAuthentication(builder.Configuration)
+    .AddOnBehalfOf(builder.Configuration)
     .AddApiRateLimiting(builder.Configuration)
     .AddApiCors(builder.Configuration)
     .AddObservability()
     .AddMediator()
     .AddStudentsModule(studentsConnectionString)
     .AddLibraryModule(libraryConnectionString);
+
+// Example: a downstream API client that calls AS the authenticated user (OAuth2 On-Behalf-Of). The
+// OnBehalfOfHandler exchanges the caller's OIDC token for a downstream-scoped token and attaches it.
+// Point the base address at the real downstream API and inject this client where you call out.
+//   builder.Services.AddHttpClient("Downstream", client =>
+//           client.BaseAddress = new Uri(builder.Configuration["DownstreamApi:BaseUrl"]!))
+//       .AddHttpMessageHandler<OnBehalfOfHandler>();
 
 var app = builder.Build();
 
