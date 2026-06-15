@@ -26,5 +26,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CleanArch.UnitTests/CleanArch.UnitTests.csproj" />
+    <Project Path="tests/CleanArch.Api.IntegrationTests/CleanArch.Api.IntegrationTests.csproj" />
   </Folder>
 </Solution>
