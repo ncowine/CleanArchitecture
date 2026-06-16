@@ -92,6 +92,78 @@ A representative subset is below; the **live, complete list is in Swagger**, gro
 | GET | `/health`, `/health/live` | — | readiness / liveness |
 | POST | `/library/outbox/_dev/poison` | — | Development only (inject an unroutable message to exercise dead-letter/replay) |
 
+## Databases & migrations
+
+### Where connection strings come from
+
+The connection string is **never hardcoded for runtime** and the design-time factories don't bake one in
+either. Configuration is layered (highest priority wins), so each environment overrides without code or
+committed-secret changes:
+
+| Environment | Source of the connection string | Secret committed? |
+|---|---|---|
+| Local dev (runtime) | `appsettings.json` / `appsettings.Development.json` — SQLite file paths, no secret | No |
+| Local dev (real password) | `dotnet user-secrets set "ConnectionStrings:Students" "…"` | No (per-dev, off-repo) |
+| Production (IIS) | Env var `ConnectionStrings__Students` on the app pool (or `web.config` `<environmentVariables>`) | No (lives on the server) |
+
+The runtime reads these via `Configuration.GetConnectionString("Students" | "Library")` in `Program.cs`.
+Key names map by replacing `:` with `__` in env vars (`ConnectionStrings__Students`).
+
+### Design-time factories (for `dotnet ef`)
+
+Each module has an `IDesignTimeDbContextFactory` (`StudentsDbContextFactory`, `LibraryDbContextFactory`,
+`ApiKeyDbContextFactory`). EF's CLI uses these to build the context for migration commands **without
+booting the API host or reading any secret**. They read the connection string from an environment
+variable when present, falling back to a throwaway local SQLite file so a fresh clone can scaffold
+migrations with zero setup:
+
+| Factory | Env var override | Local fallback |
+|---|---|---|
+| Students | `ConnectionStrings__Students` | `students-design.db` |
+| Library | `ConnectionStrings__Library` | `library-design.db` |
+| ApiKey | `ConnectionStrings__Students` (API-key tables live in students.db) | `apikeys-design.db` |
+
+> The fallback is a local file path, not a secret, and never runs in production — it only gives
+> `dotnet ef` something to connect to on a dev machine. Set the env var to scaffold against another engine.
+
+### Adding a migration
+
+Contexts live in the module projects; the API is the startup project. `--context` disambiguates because
+the host references both modules:
+
+```powershell
+dotnet ef migrations add <Name> `
+  --project src/Modules/Students/Students.Infrastructure `
+  --startup-project src/Api/CleanArch.Api `
+  --context StudentsDbContext
+# Library: --project src/Modules/Library/Library.Infrastructure --context LibraryDbContext
+```
+
+Remove a migration created but **not yet applied**: `dotnet ef migrations remove --context StudentsDbContext`.
+
+### Applying migrations to production — all supported options
+
+EF fully supports prod migrations. Every option below **supplies the connection string at run time**, so
+nothing prod-specific is ever hardcoded. Pick per how you deploy:
+
+| Option | How | Best for |
+|---|---|---|
+| **Direct update** | `dotnet ef database update --context StudentsDbContext --connection "<prod>"` (plus `--project`/`--startup-project`) | Manual/one-off updates; needs SDK + EF tools + DB access on the runner |
+| **Migration bundle** ⭐ | `dotnet ef migrations bundle --context StudentsDbContext …` → ship `efbundle.exe`, run `./efbundle.exe --connection "<prod>"` | CI/CD deploys to IIS — self-contained, no SDK/tools needed on the server |
+| **Startup migrate** | `db.Database.Migrate()` at boot (uses the app's runtime connection string) | Small single-instance apps; risky with multiple workers + needs schema rights |
+| **Idempotent SQL script** | `dotnet ef migrations script --idempotent --context StudentsDbContext --output migrate.sql` | When a DBA must review/run the SQL; generates offline (no DB connection at all) |
+
+**Transactions & safety:** EF wraps **each migration** in its own transaction (SQLite and SQL Server both
+have transactional DDL), so a migration that *errors* rolls back. But it's one transaction *per* migration,
+not across a batch — apply 1→2→3 and if #2 fails you're left at #1. Transactions don't undo a migration
+that *succeeds but is logically wrong* (e.g. drops a needed column). The real safety net for prod is:
+**back up first**, prefer the idempotent-script or bundle path so you can review/wrap the whole batch in one
+transaction, and treat `Down()` (`dotnet ef database update <PreviousMigration>`) as a dev convenience, not
+prod recovery — restore from backup instead.
+
+> In Development the app auto-applies migrations on startup against the local SQLite files. Do **not** rely
+> on startup migration for prod — use the bundle or script path above so changes are reviewed and reversible.
+
 ## Tests
 
 ```bash
