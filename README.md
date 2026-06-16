@@ -8,7 +8,7 @@ application layer rather than with cross-database joins.
 > Status: POC. The architecture and patterns are production-shaped; some operational pieces are
 > deliberately stubbed (see [Production notes](#production-notes)).
 
-📚 **New here?** Start with **[docs/getting-started.md](docs/getting-started.md)** — install, run, and a plain-English glossary written for absolute beginners — then **[docs/clean-architecture-guide.md](docs/clean-architecture-guide.md)** for how the code is organized, how to add features, and a full **saga** tutorial.
+📚 **New here?** Start with **[docs/getting-started.md](docs/getting-started.md)** — install, run, and a plain-English glossary written for absolute beginners — then **[docs/clean-architecture-guide.md](docs/clean-architecture-guide.md)** for how the code is organized, how to add features, and a full **saga** tutorial. For the build/version plumbing, see **[docs/build-and-packages.md](docs/build-and-packages.md)** — the `Directory.*.props` files, Central Package Management, and the "multiple NuGet sources" (NU1507) fix.
 
 ## What it demonstrates
 
