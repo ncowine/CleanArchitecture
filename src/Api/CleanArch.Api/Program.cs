@@ -11,13 +11,15 @@ using Students.Presentation;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var studentsConnectionString =
-    builder.Configuration.GetConnectionString("Students")
-    ?? throw new InvalidOperationException("ConnectionStrings:Students is not configured.");
+var studentsConnectionString = RequireConnectionString("Students");
+var libraryConnectionString = RequireConnectionString("Library");
 
-var libraryConnectionString =
-    builder.Configuration.GetConnectionString("Library")
-    ?? throw new InvalidOperationException("ConnectionStrings:Library is not configured.");
+string RequireConnectionString(string name) =>
+    builder.Configuration.GetConnectionString(name) is { } value && !string.IsNullOrWhiteSpace(value)
+        ? value
+        : throw new InvalidOperationException(
+            $"ConnectionStrings:{name} is not configured. Set it via ConnectionStrings__{name} " +
+            "(env var / IIS app pool), user-secrets, or appsettings.");
 
 builder.Services
     .AddApiServices()
