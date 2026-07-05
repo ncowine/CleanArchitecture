@@ -3,6 +3,9 @@ using CleanArch.Api.Authentication;
 using Library.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Students.Infrastructure.Persistence;
+using TestPlans.Infrastructure.Persistence;
+using TestPlans.Infrastructure.Seed;
+using TesterGuide.Infrastructure.Persistence;
 
 namespace CleanArch.Api;
 
@@ -25,6 +28,11 @@ internal static class WebApplicationExtensions
         // Each database is migrated independently — they share nothing, not even a transaction.
         await scope.ServiceProvider.GetRequiredService<StudentsDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<LibraryDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<TestPlansDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<TesterGuideDbContext>().Database.MigrateAsync();
+
+        // Seed a small Test Plans content tree so the stand-in system of record has something to reference.
+        await TestPlansSeeder.SeedAsync(scope.ServiceProvider);
 
         // The API-key store shares students.db but migrates on its own history table. The auth project
         // owns its migrate+seed, so the host needn't touch the internal context/seeder.
