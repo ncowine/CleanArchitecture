@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\TesterGuide.Application\TesterGuide.Application.csproj" />
+    <ProjectReference Include="..\TesterGuide.Contracts\TesterGuide.Contracts.csproj" />
+    <ProjectReference Include="..\..\TestPlans\TestPlans.Contracts\TestPlans.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks.Outbox\BuildingBlocks.Outbox.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks.Persistence\BuildingBlocks.Persistence.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

@@ -19,10 +19,15 @@
   <ItemGroup>
     <ProjectReference Include="..\CleanArch.Api.Authentication\CleanArch.Api.Authentication.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks\BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\BuildingBlocks.RealTime\BuildingBlocks.RealTime.csproj" />
     <ProjectReference Include="..\..\Modules\Students\Students.Infrastructure\Students.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Students\Students.Presentation\Students.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Library\Library.Infrastructure\Library.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Library\Library.Presentation\Library.Presentation.csproj" />
+    <ProjectReference Include="..\..\Modules\TestPlans\TestPlans.Infrastructure\TestPlans.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\TestPlans\TestPlans.Presentation\TestPlans.Presentation.csproj" />
+    <ProjectReference Include="..\..\Modules\TesterGuide\TesterGuide.Infrastructure\TesterGuide.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\TesterGuide\TesterGuide.Presentation\TesterGuide.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

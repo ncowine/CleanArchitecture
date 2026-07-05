@@ -19,4 +19,15 @@
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
+  <ItemGroup Label="SecurityAudit">
+    <!-- NuGet audit stays ON and is elevated to an error (TreatWarningsAsErrors) for every advisory EXCEPT
+         this one. GHSA-2m69-gcr7-jv3q flags the native SQLite bundled by SQLitePCLRaw.lib.e_sqlite3, pulled
+         transitively by Microsoft.EntityFrameworkCore.Sqlite 10.0.8 — which itself still pins 2.1.11. The
+         advisory has NO patched version (firstPatched: none); the only later release, 3.50.3, is an
+         unrelated major renumber that EF Core does not yet consume. Nothing in this repo can remediate it
+         until EF Core ships an updated pin, so we suppress this single advisory (with rationale) rather than
+         disable auditing wholesale. Re-check when the EF Core SQLite provider is upgraded. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-2m69-gcr7-jv3q" />
+  </ItemGroup>
+
 </Project>

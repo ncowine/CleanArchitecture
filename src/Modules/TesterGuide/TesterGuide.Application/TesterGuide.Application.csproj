@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks.RealTime\BuildingBlocks.RealTime.csproj" />
+    <ProjectReference Include="..\TesterGuide.Domain\TesterGuide.Domain.csproj" />
+    <ProjectReference Include="..\..\TestPlans\TestPlans.Contracts\TestPlans.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

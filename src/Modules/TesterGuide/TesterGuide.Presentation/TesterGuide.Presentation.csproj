@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Asp.Versioning.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TesterGuide.Application\TesterGuide.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks.RealTime\BuildingBlocks.RealTime.csproj" />
+  </ItemGroup>
+
+</Project>

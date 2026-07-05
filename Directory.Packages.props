@@ -9,6 +9,9 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
     <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.0" />
+    <!-- Transitively pinned (via Swashbuckle) above the patched floor of GHSA-v5pm-xwqc-g5wc: 2.4.1 is
+         vulnerable (<= 2.7.4); 2.7.5 is the first patched. Stays in the 2.x line for Swashbuckle 10.1.7. -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.9.0" />
   </ItemGroup>
 
   <ItemGroup Label="Authentication">

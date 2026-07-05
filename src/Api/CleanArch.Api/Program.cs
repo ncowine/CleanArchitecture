@@ -1,18 +1,26 @@
 using Asp.Versioning;
 using Asp.Versioning.Builder;
 using BuildingBlocks.Messaging;
+using BuildingBlocks.RealTime;
 using CleanArch.Api;
 using CleanArch.Api.Authentication;
+using CleanArch.Api.Realtime;
 using Library.Infrastructure;
 using Library.Presentation;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Students.Infrastructure;
 using Students.Presentation;
+using TestPlans.Infrastructure;
+using TestPlans.Presentation;
+using TesterGuide.Infrastructure;
+using TesterGuide.Presentation;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var studentsConnectionString = RequireConnectionString("Students");
 var libraryConnectionString = RequireConnectionString("Library");
+var testPlansConnectionString = RequireConnectionString("TestPlans");
+var testerGuideConnectionString = RequireConnectionString("TesterGuide");
 
 string RequireConnectionString(string name) =>
     builder.Configuration.GetConnectionString(name) is { } value && !string.IsNullOrWhiteSpace(value)
@@ -29,8 +37,17 @@ builder.Services
     .AddApiCors(builder.Configuration)
     .AddObservability()
     .AddMediator()
+    // Registered after the mediator and before the modules, so the post-commit realtime dispatch behavior
+    // sits outside each module's transaction behavior (its flush runs after the commit).
+    .AddRealtimeDispatch()
     .AddStudentsModule(studentsConnectionString)
-    .AddLibraryModule(libraryConnectionString);
+    .AddLibraryModule(libraryConnectionString)
+    .AddTestPlansModule(testPlansConnectionString)
+    .AddTesterGuideModule(testerGuideConnectionString);
+
+// Real-time transport (SignalR) — overrides the kit's no-op notifier and hosts the presence hub.
+builder.Services.AddSignalR();
+builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 
 // Example: a downstream API client that calls AS the authenticated user (OAuth2 On-Behalf-Of). The
 // OnBehalfOfHandler exchanges the caller's OIDC token for a downstream-scoped token and attaches it.
@@ -70,5 +87,11 @@ app.MapStudentEndpoints(versionSet);
 app.MapAcademicEndpoints(versionSet);
 app.MapBillingEndpoints(versionSet);
 app.MapLibraryEndpoints(versionSet);
+app.MapTestPlanEndpoints(versionSet);
+app.MapTesterGuideEndpoints(versionSet);
+
+// Real-time presence + notifications hub (live view + "someone actioned this"). Exempt from the rate
+// limiter — connections are long-lived and share a source.
+app.MapHub<PresenceHub>("/hubs/presence").DisableRateLimiting();
 
 app.Run();
