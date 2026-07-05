@@ -4,6 +4,7 @@
     <Project Path="src/BuildingBlocks/BuildingBlocks.csproj" />
     <Project Path="src/BuildingBlocks.Outbox/BuildingBlocks.Outbox.csproj" />
     <Project Path="src/BuildingBlocks.Persistence/BuildingBlocks.Persistence.csproj" />
+    <Project Path="src/BuildingBlocks.RealTime/BuildingBlocks.RealTime.csproj" />
   </Folder>
   <Folder Name="/src/Api/">
     <Project Path="src/Api/CleanArch.Api/CleanArch.Api.csproj" />
@@ -23,6 +24,20 @@
     <Project Path="src/Modules/Library/Library.Domain/Library.Domain.csproj" />
     <Project Path="src/Modules/Library/Library.Infrastructure/Library.Infrastructure.csproj" />
     <Project Path="src/Modules/Library/Library.Presentation/Library.Presentation.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/TestPlans/">
+    <Project Path="src/Modules/TestPlans/TestPlans.Application/TestPlans.Application.csproj" />
+    <Project Path="src/Modules/TestPlans/TestPlans.Contracts/TestPlans.Contracts.csproj" />
+    <Project Path="src/Modules/TestPlans/TestPlans.Domain/TestPlans.Domain.csproj" />
+    <Project Path="src/Modules/TestPlans/TestPlans.Infrastructure/TestPlans.Infrastructure.csproj" />
+    <Project Path="src/Modules/TestPlans/TestPlans.Presentation/TestPlans.Presentation.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/TesterGuide/">
+    <Project Path="src/Modules/TesterGuide/TesterGuide.Application/TesterGuide.Application.csproj" />
+    <Project Path="src/Modules/TesterGuide/TesterGuide.Contracts/TesterGuide.Contracts.csproj" />
+    <Project Path="src/Modules/TesterGuide/TesterGuide.Domain/TesterGuide.Domain.csproj" />
+    <Project Path="src/Modules/TesterGuide/TesterGuide.Infrastructure/TesterGuide.Infrastructure.csproj" />
+    <Project Path="src/Modules/TesterGuide/TesterGuide.Presentation/TesterGuide.Presentation.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CleanArch.UnitTests/CleanArch.UnitTests.csproj" />
