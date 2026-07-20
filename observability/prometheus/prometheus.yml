@@ -1,0 +1,27 @@
+# Prometheus config for the local CleanArch observability stack.
+# Drop prometheus.exe next to this file, then launch (see ../start-all.ps1):
+#   .\prometheus.exe --config.file=prometheus.yml --storage.tsdb.path=data --web.enable-lifecycle
+# Reload after edits (thanks to --web.enable-lifecycle):
+#   curl -X POST http://localhost:9090/-/reload
+# Check scrape health at http://localhost:9090/targets
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  # Prometheus 3.x defaults to UTF-8, which makes the OTel exporter emit the original dotted
+  # names (http.server.request.duration). Requesting 'underscores' negotiates the classic
+  # underscore names (http_server_request_duration_seconds) that standard dashboards expect.
+  metric_name_escaping_scheme: underscores
+
+scrape_configs:
+  # Prometheus scraping itself — handy sanity target.
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # The API's OpenTelemetry /metrics page (pull model). Underscore names come from the
+  # global metric_name_escaping_scheme above.
+  - job_name: cleanarch-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['localhost:5235']

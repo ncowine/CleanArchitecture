@@ -1,0 +1,13 @@
+# Downloaded binaries and runtime data — not source. Configs, scripts, and Grafana
+# JSON stay tracked; everyone re-downloads the binaries per docs/observability.md.
+*.exe
+tempo/tempo-data/
+loki/loki-data/
+prometheus/data/
+
+# Tarball-bundled docs (not ours)
+tempo/CHANGELOG.md
+tempo/LICENSE
+tempo/README.md
+prometheus/LICENSE
+prometheus/NOTICE

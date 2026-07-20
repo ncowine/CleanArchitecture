@@ -1,0 +1,40 @@
+# Loki — the logs store. Single-binary local dev config.
+# Launch:  loki-windows-amd64.exe -config.file=loki-config.yaml
+#
+# The app PUSHES logs here over OTLP/HTTP to  http://localhost:3100/otlp/v1/logs.
+# Grafana READS them via the same :3100 HTTP API. Logs are written to ./loki-data.
+
+auth_enabled: false               # no multi-tenancy in dev
+
+server:
+  http_listen_port: 3100          # Grafana's Loki data source + the OTLP ingest door
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: ./loki-data
+  storage:
+    filesystem:
+      chunks_directory: ./loki-data/chunks
+      rules_directory: ./loki-data/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory             # keep the cluster "ring" in memory — single node
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  allow_structured_metadata: true # required for OTLP log attributes
+  volume_enabled: true
+
+analytics:
+  reporting_enabled: false        # don't phone home

@@ -1,0 +1,28 @@
+# Tempo — the traces store. Single-binary local dev config.
+# Launch:  tempo.exe -config.file=tempo.yaml   (run from the observability/ folder)
+#
+# The app PUSHES traces here over OTLP/gRPC on :4317. Grafana READS them via the
+# query API on :3200. Traces are written to ./tempo-data as local files — no external DB.
+
+server:
+  http_listen_port: 3200          # Grafana's Tempo data source points here
+
+distributor:
+  receivers:                      # the "front door" — what protocols Tempo accepts
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"   # the API sends traces here
+        http:
+          endpoint: "0.0.0.0:4318"   # (alt HTTP door, unused by us but harmless)
+
+storage:
+  trace:
+    backend: local                # store on the local filesystem (no S3/GCS in dev)
+    local:
+      path: ./tempo-data/blocks
+    wal:
+      path: ./tempo-data/wal      # write-ahead log
+
+usage_report:
+  reporting_enabled: false        # don't phone home
