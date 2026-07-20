@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CleanArch.Api.Authentication\CleanArch.Api.Authentication.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks\BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\BuildingBlocks.Auditing.Elasticsearch\BuildingBlocks.Auditing.Elasticsearch.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks.RealTime\BuildingBlocks.RealTime.csproj" />
     <ProjectReference Include="..\..\Modules\Students\Students.Infrastructure\Students.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Students\Students.Presentation\Students.Presentation.csproj" />

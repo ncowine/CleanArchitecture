@@ -1,5 +1,6 @@
 using Asp.Versioning;
 using Asp.Versioning.Builder;
+using BuildingBlocks.Auditing.Elasticsearch;
 using BuildingBlocks.Messaging;
 using BuildingBlocks.RealTime;
 using CleanArch.Api;
@@ -36,6 +37,9 @@ builder.Services
     .AddApiRateLimiting(builder.Configuration)
     .AddApiCors(builder.Configuration)
     .AddObservability(builder.Configuration)
+    // Ship audit records to Elasticsearch (viewed in Kibana). No-op if Audit:Elasticsearch:Uri is unset,
+    // in which case auditing stays on the logging sink.
+    .AddElasticsearchAudit(builder.Configuration)
     .AddMediator()
     // Registered after the mediator and before the modules, so the post-commit realtime dispatch behavior
     // sits outside each module's transaction behavior (its flush runs after the commit).

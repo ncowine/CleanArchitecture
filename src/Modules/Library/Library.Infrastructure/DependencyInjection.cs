@@ -1,5 +1,6 @@
 using BuildingBlocks.Messaging;
 using BuildingBlocks.Outbox;
+using BuildingBlocks.Persistence;
 using Library.Application;
 using Library.Application.Abstractions;
 using Library.Contracts;
@@ -22,8 +23,10 @@ public static class DependencyInjection
     {
         services.AddLibraryApplication();
 
-        services.AddDbContext<LibraryDbContext>(options =>
-            options.UseSqlite(connectionString));
+        // Audit change-tracking: capture before/after values of every write for the audit trail.
+        services.AddAuditChangeTracking();
+        services.AddDbContext<LibraryDbContext>((sp, options) =>
+            options.UseSqlite(connectionString).UseAuditChangeTracking(sp));
 
         services.AddScoped<ILoanRepository, EfLoanRepository>();
 
