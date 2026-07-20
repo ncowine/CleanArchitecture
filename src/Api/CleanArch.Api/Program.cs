@@ -35,7 +35,7 @@ builder.Services
     .AddOnBehalfOf(builder.Configuration)
     .AddApiRateLimiting(builder.Configuration)
     .AddApiCors(builder.Configuration)
-    .AddObservability()
+    .AddObservability(builder.Configuration)
     .AddMediator()
     // Registered after the mediator and before the modules, so the post-commit realtime dispatch behavior
     // sits outside each module's transaction behavior (its flush runs after the commit).
@@ -76,6 +76,10 @@ app.MapGet("/", () => "Hello World!")
 // limiter so orchestrator probes are never throttled (they share one source IP).
 app.MapHealthChecks("/health").DisableRateLimiting();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).DisableRateLimiting();
+
+// Prometheus PULLS metrics from here every few seconds. Anonymous and exempt from the rate limiter —
+// the scraper hits it repeatedly from a single source.
+app.MapPrometheusScrapingEndpoint().DisableRateLimiting();
 
 // One version set (v1) shared by both modules. Each module attaches it to its endpoint groups.
 ApiVersionSet versionSet = app.NewApiVersionSet()
