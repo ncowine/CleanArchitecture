@@ -2,6 +2,7 @@
   <Folder Name="/src/" />
   <Folder Name="/src/BuildingBlocks/">
     <Project Path="src/BuildingBlocks/BuildingBlocks.csproj" />
+    <Project Path="src/BuildingBlocks.Auditing.Elasticsearch/BuildingBlocks.Auditing.Elasticsearch.csproj" />
     <Project Path="src/BuildingBlocks.Outbox/BuildingBlocks.Outbox.csproj" />
     <Project Path="src/BuildingBlocks.Persistence/BuildingBlocks.Persistence.csproj" />
     <Project Path="src/BuildingBlocks.RealTime/BuildingBlocks.RealTime.csproj" />

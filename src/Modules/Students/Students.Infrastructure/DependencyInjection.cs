@@ -1,5 +1,6 @@
 using BuildingBlocks.Messaging;
 using BuildingBlocks.Outbox;
+using BuildingBlocks.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,8 +25,10 @@ public static class DependencyInjection
     {
         services.AddStudentsApplication();
 
-        services.AddDbContext<StudentsDbContext>(options =>
-            options.UseSqlite(connectionString));
+        // Audit change-tracking: capture before/after values of every write for the audit trail.
+        services.AddAuditChangeTracking();
+        services.AddDbContext<StudentsDbContext>((sp, options) =>
+            options.UseSqlite(connectionString).UseAuditChangeTracking(sp));
 
         services.AddScoped<IStudentRepository, EfStudentRepository>();
 

@@ -23,9 +23,11 @@ public static class DependencyInjection
         // outbox message. Shared by audit and the outbox writer.
         services.TryAddScoped<ICorrelationContext, CorrelationContext>();
 
-        // Audit: structured-logging sink + a default actor; the host overrides the actor (last wins).
+        // Audit: structured-logging sink + a default actor; the host overrides both (last wins) — e.g.
+        // an Elasticsearch sink for Kibana. The audit scope collects per-command entity changes.
         services.TryAddScoped<IAuditSink, LoggingAuditSink>();
         services.TryAddScoped<ICurrentActor, SystemActor>();
+        services.TryAddScoped<IAuditScope, AuditScope>();
 
         // Outermost to innermost. Audit sits outside validation so rejected commands are still audited;
         // it only wraps IAuditableRequest, so reads pass straight through.

@@ -1,5 +1,6 @@
 using BuildingBlocks.Messaging;
 using BuildingBlocks.Outbox;
+using BuildingBlocks.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using TestPlans.Application;
@@ -22,8 +23,10 @@ public static class DependencyInjection
     {
         services.AddTestPlansApplication();
 
-        services.AddDbContext<TestPlansDbContext>(options =>
-            options.UseSqlite(connectionString));
+        // Audit change-tracking: capture before/after values of every write for the audit trail.
+        services.AddAuditChangeTracking();
+        services.AddDbContext<TestPlansDbContext>((sp, options) =>
+            options.UseSqlite(connectionString).UseAuditChangeTracking(sp));
 
         // Authoring repositories + the shared result/action-log write path.
         services.AddScoped<ITestPlanRepository, EfTestPlanRepository>();

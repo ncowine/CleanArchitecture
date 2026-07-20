@@ -11,4 +11,5 @@ public sealed record AuditEntry(
     DateTime OccurredOnUtc,
     bool Succeeded,
     long ElapsedMs,
-    string? Error);
+    string? Error,
+    IReadOnlyList<EntityChange> Changes);
