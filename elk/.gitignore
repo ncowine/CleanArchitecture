@@ -1,0 +1,10 @@
+# The pasted Elasticsearch/Kibana distributions and their data are large binaries — not source.
+# Everyone downloads their own per README.md. Keep only our scaffolding (README, start script,
+# and the folder placeholders).
+elasticsearch/**
+kibana/**
+
+!elasticsearch/
+!elasticsearch/PASTE-HERE.md
+!kibana/
+!kibana/PASTE-HERE.md
