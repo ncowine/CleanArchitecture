@@ -5,9 +5,9 @@ The API's audit sink ships every audited command to **Elasticsearch** (index `cl
 "each stack its own folder" layout as `observability/`.
 
 > **On Linux/Ubuntu / prefer Docker?** These native binaries aren't needed there — the containerized
-> deployment ships Elasticsearch + Kibana as an opt-in add-on. See
-> [`../observability/docker/README.md`](../observability/docker/README.md) §12 (run it with
-> `-f docker-compose.yml -f docker-compose.elk.yml`).
+> deployment ships Elasticsearch + Kibana as an opt-in add-on. Dedicated setup guide:
+> [`../observability/docker/README-elk.md`](../observability/docker/README-elk.md)
+> (run it with `-f docker-compose.yml -f docker-compose.elk.yml`).
 
 ```
 elk/
