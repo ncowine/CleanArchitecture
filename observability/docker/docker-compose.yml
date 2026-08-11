@@ -1,30 +1,28 @@
-# Grafana LGTM stack for CleanArch.Api — Docker/Linux deployment.
-#
-# Replaces the native Windows binaries + start-all.ps1 + native Grafana service with one command:
+# Full stack for CleanArch.Api — Docker/Linux deployment. Runs EVERYTHING (the app + all four
+# observability stores: Tempo, Loki, Prometheus, Grafana) with one command:
 #   docker compose up -d
 #
-# All four stores run as containers on a shared network and reach each other by service name
-# (grafana -> http://tempo:3200, etc). Data survives restarts in named volumes.
+# All containers share a private network and reach each other by service name (the app pushes to
+# http://tempo:4317, Grafana reads http://prometheus:9090, etc). Data survives restarts in volumes.
 #
-# This compose file runs EVERYTHING — the four observability stores AND the CleanArch.Api app —
-# so a single `docker compose up -d` gives you the whole thing on Ubuntu. The app is built from
-# the repo's Dockerfile (see the `api` service) and talks to the stores by service name.
+# NO SOURCE CODE NEEDED on this machine: the `api` service PULLS a prebuilt image from GHCR
+# (published by .github/workflows/publish-api-image.yml). You only need this folder's config files.
+# Full beginner walkthrough — including how to get these files onto the box — is in README.md.
 #
-# Prefer to run the API on your host instead (e.g. `dotnet run` while you develop)? See README.md
-# "Alternative: run the API on the host" — you disable the `api` service and flip one line in
-# prometheus.yml. The stack works both ways.
+# Two other layouts, both documented in README.md:
+#   • Build the app from source instead of pulling:
+#       docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#   • Run only the stores here and the app on your host (dotnet run): flip one line in prometheus.yml.
 
 name: cleanarch-observability
 
 services:
   # ── The application ────────────────────────────────────────────────────────
   api:
-    build:
-      # Build context is the repo root (two levels up) because the API references many sibling
-      # projects. The Dockerfile lives there too.
-      context: ../..
-      dockerfile: Dockerfile
-    image: cleanarch-api:local
+    # Prebuilt image pulled from GitHub Container Registry — no repo/source needed here. The tag
+    # must match what the CI workflow pushes (owner is lowercase). Pin :latest to a version tag
+    # (e.g. :v1.2.0) for reproducible deploys once you cut releases.
+    image: ghcr.io/ncowine/cleanarch-api:latest
     environment:
       # Development mode is intentional: it auto-applies EF Core migrations (creates the SQLite
       # databases on first run), seeds sample data, and serves Swagger UI at /swagger.
