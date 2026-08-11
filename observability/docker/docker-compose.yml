@@ -1,90 +1,150 @@
-# Full stack for CleanArch.Api — Docker/Linux deployment. Runs EVERYTHING (the app + all four
-# observability stores: Tempo, Loki, Prometheus, Grafana) with one command:
-#   docker compose up -d
+# =============================================================================
+#  CleanArch.Api — full stack for Docker/Linux (Ubuntu)
+# =============================================================================
+# Runs EVERYTHING with one command:  docker compose up -d
+#   • the app (CleanArch.Api)
+#   • the four observability stores: Tempo (traces), Loki (logs), Prometheus
+#     (metrics), Grafana (the dashboard UI that reads the other three).
 #
-# All containers share a private network and reach each other by service name (the app pushes to
-# http://tempo:4317, Grafana reads http://prometheus:9090, etc). Data survives restarts in volumes.
+# HOW CONTAINERS TALK TO EACH OTHER
+# Docker Compose puts every service below on one private network and gives each
+# a hostname equal to its service name. So the app reaches Tempo at
+# "http://tempo:4317" — the word "tempo" is this file's service name, not a real
+# DNS domain. That's why the config uses service names, never "localhost".
 #
-# NO SOURCE CODE NEEDED on this machine: the `api` service PULLS a prebuilt image from GHCR
-# (published by .github/workflows/publish-api-image.yml). You only need this folder's config files.
-# Full beginner walkthrough — including how to get these files onto the box — is in README.md.
+# NO SOURCE CODE NEEDED HERE: the `api` service PULLS a prebuilt image from GHCR
+# (built by .github/workflows/publish-api-image.yml). You only need this folder.
+# Full beginner walkthrough (getting these files onto the box, first run, etc.)
+# lives in README.md.
 #
-# Other layouts / add-ons, all documented in README.md:
-#   • Audit trail in Kibana (adds Elasticsearch + Kibana; off by default — ES is heavy):
+# OTHER LAYOUTS / ADD-ONS (all in README.md):
+#   • Audit trail in Kibana (adds Elasticsearch + Kibana; off by default, heavy):
 #       docker compose -f docker-compose.yml -f docker-compose.elk.yml up -d
-#   • Build the app from source instead of pulling:
+#   • Build the app from source instead of pulling the image:
 #       docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
-#   • Run only the stores here and the app on your host (dotnet run): flip one line in prometheus.yml.
+#   • Run only the stores here, app on your host (dotnet run): flip one line in prometheus.yml.
+#
+# QUICK VOCABULARY (used throughout below)
+#   image:        the prebuilt template Docker downloads and runs.
+#   environment:  settings handed to the program as environment variables.
+#   ports:        "HOST:CONTAINER" — left = port on YOUR machine, right = inside
+#                 the container. "3000:3000" means open http://localhost:3000.
+#   volumes:      storage. Two shapes appear here:
+#                   ./file:/path/in/container:ro   → share a file FROM this folder
+#                                                     into the container (:ro = read-only)
+#                   somename:/path/in/container     → a Docker-managed "named volume"
+#                                                     that persists across restarts.
+#   depends_on:   start ordering (optionally "wait until healthy").
+#   healthcheck:  a command Docker runs on a loop to mark the container healthy/unhealthy.
+#   restart:      what Docker does if the program exits (unless-stopped = bring it back).
+# =============================================================================
 
+# Project name — prefixes the containers/volumes/network Docker creates for this stack.
 name: cleanarch-observability
 
+# Each entry under services: becomes ONE container.
 services:
-  # ── The application ────────────────────────────────────────────────────────
+
+  # ── The application ─────────────────────────────────────────────────────────
   api:
-    # Prebuilt image pulled from GitHub Container Registry — no repo/source needed here. The tag
-    # must match what the CI workflow pushes (owner is lowercase). Pin :latest to a version tag
-    # (e.g. :v1.2.0) for reproducible deploys once you cut releases.
+    # Prebuilt image pulled from GitHub Container Registry — no repo/source needed
+    # on this machine. The name/tag must match what the CI workflow pushes (the
+    # owner "ncowine" must be lowercase for GHCR). Once you tag releases, pin
+    # :latest to a fixed version like :v1.2.0 so redeploys are reproducible.
     image: ghcr.io/ncowine/cleanarch-api:latest
+
+    # How the app is configured. Each line becomes an environment variable the app
+    # reads at startup — no files inside the image are edited. In .NET, a double
+    # underscore "__" means a nested setting, so "Observability__Tempo__OtlpEndpoint"
+    # is the same as the JSON path Observability:Tempo:OtlpEndpoint in appsettings.json.
     environment:
-      # Development mode is intentional: it auto-applies EF Core migrations (creates the SQLite
-      # databases on first run), seeds sample data, and serves Swagger UI at /swagger.
+      # Development mode is intentional here: it makes the app auto-create the SQLite
+      # databases (apply EF Core migrations), seed sample data, and serve Swagger UI.
+      # A real production deployment would use "Production" and migrate separately.
       ASPNETCORE_ENVIRONMENT: "Development"
+      # Which address/port the app listens on INSIDE the container. "+" means all
+      # network interfaces. Paired with the ports: mapping further down.
       ASPNETCORE_URLS: "http://+:5235"
-      # SQLite files live on the api-data volume so they survive restarts (see volumes: below).
+      # The four databases are SQLite files. Point them at /app/data, which is a
+      # persistent named volume (see api-data under volumes: at the bottom) so the
+      # data survives `docker compose down` and image updates.
       ConnectionStrings__Students: "Data Source=/app/data/students.db"
       ConnectionStrings__Library: "Data Source=/app/data/library.db"
       ConnectionStrings__TestPlans: "Data Source=/app/data/testplans.db"
       ConnectionStrings__TesterGuide: "Data Source=/app/data/testerguide.db"
-      # Push telemetry to the stores by their service names on this Docker network.
+      # Where the app PUSHES telemetry — addressed by the stores' service names on
+      # this network. Traces go to Tempo over OTLP/gRPC; logs go to Loki over OTLP/HTTP.
+      # (Metrics are different: Prometheus PULLS them from the app — see prometheus.yml.)
       Observability__Tempo__OtlpEndpoint: "http://tempo:4317"
       Observability__Loki__OtlpEndpoint: "http://loki:3100/otlp/v1/logs"
-      # The ELK stack isn't part of this compose, so switch off Elasticsearch audit shipping.
-      # An empty Uri keeps auditing on the plain logging sink — which still flows to Loki as logs.
+      # Elasticsearch (the Kibana audit store) is NOT part of this base file, so leave
+      # its Uri empty. That keeps audit records flowing to the normal logs (which reach
+      # Loki), and nothing errors. The docker-compose.elk.yml add-on overrides this.
       Audit__Elasticsearch__Uri: ""
+
+    # Persistent storage for the SQLite databases. "api-data" is a named volume
+    # (declared at the bottom); Docker keeps it outside the container so the data
+    # is not lost when the container is recreated.
     volumes:
       - api-data:/app/data
+
+    # Publish the app's port to your machine. Left = your machine, right = container.
     ports:
-      - "5235:5235"   # Swagger + API on http://localhost:5235, /metrics scraped by Prometheus
+      - "5235:5235"   # → http://localhost:5235 (Swagger UI, and the /metrics page Prometheus scrapes)
+
+    # Start ordering: don't start the app until the trace/log stores report healthy,
+    # so its first pushes have somewhere to land. (Their healthchecks are defined below.)
     depends_on:
-      # Wait until traces/logs stores are accepting data before the app starts pushing.
       tempo:
         condition: service_healthy
       loki:
         condition: service_healthy
+
+    # How Docker decides the app is "healthy". It runs `test` on a loop; the app is
+    # healthy once /health/live returns success. curl is baked into the image for this.
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:5235/health/live || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 40s   # first boot compiles nothing but runs migrations + seeding
-    restart: unless-stopped
+      interval: 10s        # run the check every 10s
+      timeout: 5s          # each check must answer within 5s
+      retries: 12          # this many failures in a row → "unhealthy"
+      start_period: 40s    # grace window at boot (running migrations + seeding) before failures count
+    restart: unless-stopped   # auto-restart if it crashes; stays down only if you stop it yourself
 
-  # ── Observability stores ───────────────────────────────────────────────────
+  # ── Observability stores ────────────────────────────────────────────────────
+  # These four are OFFICIAL public images — Docker downloads them automatically;
+  # nothing of ours is built. Each store mounts its config file from this folder
+  # (read-only) and keeps its data in a named volume.
+
+  # TRACES store. The app pushes spans here; Grafana reads them back.
   tempo:
     image: grafana/tempo:2.7.1
+    # `command` overrides the image's default startup args — here, point Tempo at
+    # the config file we mount just below.
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
-      - ./tempo.yaml:/etc/tempo.yaml:ro
-      - tempo-data:/var/tempo
+      - ./tempo.yaml:/etc/tempo.yaml:ro    # share our config file INTO the container, read-only
+      - tempo-data:/var/tempo               # persistent storage for stored traces
     ports:
-      - "3200:3200"   # query API (Grafana reads here)
-      - "4317:4317"   # OTLP/gRPC ingest (the app pushes traces here)
-      - "4318:4318"   # OTLP/HTTP ingest (alt door)
+      - "3200:3200"   # query API — Grafana's Tempo data source reads here
+      - "4317:4317"   # OTLP/gRPC ingest — the app pushes traces here
+      - "4318:4318"   # OTLP/HTTP ingest — alternate door, unused by us but harmless
     healthcheck:
+      # wget is present in this image; /ready returns "ready" once Tempo is up.
       test: ["CMD-SHELL", "wget -qO- http://localhost:3200/ready | grep -q ready || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
     restart: unless-stopped
 
+  # LOGS store. The app pushes log records here; Grafana reads them back.
   loki:
     image: grafana/loki:3.4.2
     command: ["-config.file=/etc/loki/loki-config.yaml"]
     volumes:
       - ./loki-config.yaml:/etc/loki/loki-config.yaml:ro
-      - loki-data:/loki
+      - loki-data:/loki                     # persistent storage for stored logs
     ports:
-      - "3100:3100"   # HTTP: Grafana reads + the app pushes logs to /otlp/v1/logs
+      - "3100:3100"   # one HTTP port does double duty: Grafana reads here AND the app posts logs to /otlp/v1/logs
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
       interval: 10s
@@ -92,19 +152,22 @@ services:
       retries: 12
     restart: unless-stopped
 
+  # METRICS store. Unlike the others, Prometheus PULLS: it scrapes the app's
+  # /metrics page on a timer (targets are set in prometheus.yml).
   prometheus:
     image: prom/prometheus:v3.1.0
     command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
+      - "--config.file=/etc/prometheus/prometheus.yml"   # our scrape config
+      - "--storage.tsdb.path=/prometheus"                 # where to store metrics (the named volume)
+      - "--web.enable-lifecycle"                          # allows `POST /-/reload` after editing the config
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
+      - prometheus-data:/prometheus         # persistent storage for stored metrics
     ports:
-      - "9090:9090"
-    # Lets Prometheus (in the container) scrape an API running on the host at host.docker.internal.
-    # On Docker Desktop this is automatic; the mapping below makes it work on native Linux/Ubuntu too.
+      - "9090:9090"   # → http://localhost:9090 (Prometheus UI, /targets shows scrape health)
+    # Adds a hostname so Prometheus can reach an API running on the HOST (not in Docker)
+    # at host.docker.internal. Only needed for the "app on your host" layout; harmless
+    # otherwise. host-gateway makes the name resolve on native Linux (auto on Docker Desktop).
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -114,27 +177,35 @@ services:
       retries: 12
     restart: unless-stopped
 
+  # DASHBOARD UI. Grafana stores nothing itself — it queries the three stores above.
   grafana:
     image: grafana/grafana:11.5.1
     environment:
-      # Dev-friendly: no login wall. Lock these down for anything shared.
+      # Dev-friendly: open Grafana with no login, as an admin. Fine for local use;
+      # REMOVE these to require a login before exposing Grafana to anyone else.
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
       GF_SECURITY_ALLOW_EMBEDDING: "true"
     volumes:
+      # Provisioning = "set Grafana up automatically at startup". These files add the
+      # three data sources and auto-import the dashboard, so there's nothing to click.
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      # Reuse the existing tracked dashboard JSON — no duplication.
+      # Mount the existing tracked dashboard JSON into the folder the provisioner scans
+      # (reused, not duplicated).
       - ../grafana/dashboard-cleanarch-api.json:/var/lib/grafana/dashboards/cleanarch-api.json:ro
-      - grafana-data:/var/lib/grafana
+      - grafana-data:/var/lib/grafana        # Grafana's own state (users, prefs, etc.)
     ports:
-      - "3000:3000"
-    depends_on:
+      - "3000:3000"   # → http://localhost:3000
+    depends_on:       # plain list form: just start after these (no health wait needed — Grafana retries)
       - prometheus
       - tempo
       - loki
     restart: unless-stopped
 
+# Declares the named volumes used above. Empty value = "Docker, manage this for me."
+# They persist until you explicitly delete them (`docker compose down -v`), so your
+# databases, traces, logs, metrics, and Grafana state survive normal restarts.
 volumes:
   api-data:
   tempo-data:
