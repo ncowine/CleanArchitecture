@@ -1,0 +1,73 @@
+# Elasticsearch + Kibana ADD-ON for docker-compose.yml (the audit-trail viewer).
+#
+# OFF by default because Elasticsearch is heavy (1 GB+ RAM). Turn it on by layering this file on top
+# of the base compose:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.elk.yml up -d
+#
+# What it does:
+#   • adds `elasticsearch` (stores audit records) and `kibana` (searches them),
+#   • overrides the `api` service so audit records ship to Elasticsearch instead of falling back to
+#     logs (Loki). With the base file alone, audit still works — it just goes to Loki as log lines.
+#
+# Versions match the app's Elastic client (9.x) and the distribution in ../../elk/.
+#
+# ⚠️  UBUNTU HOST SETTING REQUIRED: Elasticsearch won't start until the host kernel allows enough
+#     memory maps. Run this once on the box (see README §"Enable the ELK add-on"):
+#         sudo sysctl -w vm.max_map_count=262144
+#     Make it permanent:  echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-es.conf
+
+services:
+  # Override the app (defined in the base file) to ship audit records to Elasticsearch.
+  api:
+    environment:
+      Audit__Elasticsearch__Uri: "http://elasticsearch:9200"
+    depends_on:
+      # Merged with the base file's tempo/loki deps. Wait for ES to be healthy before shipping.
+      elasticsearch:
+        condition: service_healthy
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.4
+    environment:
+      # DEV ONLY — single node, security off (so the app connects over plain http, no credentials),
+      # heap capped at 512 MB to stay light. Mirrors ../../elk/start-elk.ps1. Do NOT run like this
+      # in production (see ../../elk/README.md "Going to production").
+      discovery.type: "single-node"
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s   # ES is slow to boot
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.4.4
+    environment:
+      ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5601/api/status || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s   # Kibana takes ~1 min the first time
+    restart: unless-stopped
+
+volumes:
+  es-data:

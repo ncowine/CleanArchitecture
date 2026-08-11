@@ -4,6 +4,11 @@ The API's audit sink ships every audited command to **Elasticsearch** (index `cl
 **Kibana** is the UI you search it in. This folder holds those two services, one per subfolder — same
 "each stack its own folder" layout as `observability/`.
 
+> **On Linux/Ubuntu / prefer Docker?** These native binaries aren't needed there — the containerized
+> deployment ships Elasticsearch + Kibana as an opt-in add-on. See
+> [`../observability/docker/README.md`](../observability/docker/README.md) §12 (run it with
+> `-f docker-compose.yml -f docker-compose.elk.yml`).
+
 ```
 elk/
   start-elk.ps1              launches Elasticsearch, waits for it, then Kibana
