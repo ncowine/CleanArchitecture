@@ -254,62 +254,16 @@ The override file adds a `build:` step that compiles the image locally from the 
 ## 12. Optional add-on: audit trail in Kibana (Elasticsearch)
 
 The app writes an **audit record** for every audited command (who did what, and the before/after of
-each changed field). By default those records go to the log pipeline — so on the base stack you can
-already read them in **Grafana → Explore → Loki**. If you'd rather search them in **Kibana** (the
-purpose-built audit UI), turn on this add-on.
-
-It's **off by default on purpose**: Elasticsearch is heavy (budget ~1 GB+ RAM). When it's off, nothing
-breaks — the app just keeps sending audit records to the logs.
-
-### One-time Ubuntu host setting (required)
-
-Elasticsearch refuses to start until the Linux kernel allows enough memory-map areas. Run once on the
-box:
-
-```bash
-sudo sysctl -w vm.max_map_count=262144                       # applies now
-echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-es.conf   # survives reboot
-```
-
-(Skip this and the `elasticsearch` container will crash-loop with a `max virtual memory areas
-vm.max_map_count [65530] is too low` error.)
-
-### Turn it on
-
-Layer the ELK override file on top of the base compose — the `-f` flags combine both:
+each changed field). By default those records go to the logs — so on the base stack you can already
+read them in **Grafana → Explore → Loki**. If you'd rather search them in **Kibana**, there's an
+optional Elasticsearch + Kibana add-on (off by default — Elasticsearch is heavy). Enable it with:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.elk.yml up -d
 ```
 
-That adds two containers (`elasticsearch`, `kibana`) **and** re-points the app's audit target at
-Elasticsearch. Give Elasticsearch/Kibana a minute to boot (`docker compose ps` shows health).
-
-> **Tip:** typing both `-f` flags every time is tedious. Set them once per shell:
-> `export COMPOSE_FILE=docker-compose.yml:docker-compose.elk.yml` — then plain `docker compose up -d`
-> / `logs` / `down` all include the add-on. (`down` needs the same files to remove ES + Kibana.)
-
-### See your audit records in Kibana
-
-1. Generate one: call an audited endpoint in Swagger (http://localhost:5235/swagger) — e.g. create a
-   student or instructor.
-2. Open **Kibana** → http://localhost:5601 (first load takes ~1 min).
-3. **Stack Management → Data Views → Create data view**: name `cleanarch-audit-*`, index pattern
-   `cleanarch-audit-*`, time field `occurredOnUtc`.
-4. Open **Discover** and search by `actor`, `action`, `succeeded`, and drill into `changes` (per-field
-   before/after values). Fields are camelCase.
-
-### Turn it off
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.elk.yml down     # stop ES + Kibana (keeps data)
-```
-
-Then start the base stack normally (`docker compose up -d`) — audit records flow back to Loki. To also
-delete the stored audit index, add `-v` (wipes the `es-data` volume).
-
-> This add-on runs Elasticsearch with **security disabled** for easy dev (single node, no TLS/auth),
-> exactly like `../../elk/`. Don't expose it — see that folder's README for the production hardening.
+📖 **Full setup guide (host setting, Kibana data view, turn on/off, troubleshooting):**
+**[`README-elk.md`](README-elk.md)** — a self-contained walkthrough for ELK on Docker.
 
 ---
 
@@ -372,6 +326,7 @@ observability/docker/
   docker-compose.yml          defines all five containers (api pulls from GHCR)
   docker-compose.build.yml    OPTIONAL override to build the app from source instead of pulling
   docker-compose.elk.yml      OPTIONAL add-on: Elasticsearch + Kibana for the audit trail (§12)
+  README-elk.md               dedicated setup guide for the ELK add-on
   tempo.yaml                  Tempo config (storage under /var/tempo in the container)
   loki-config.yaml            Loki config (storage under /loki)
   prometheus.yml              Prometheus config (scrapes api:5235)
