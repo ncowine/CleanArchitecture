@@ -3,6 +3,10 @@
 Local Grafana LGTM stack for CleanArch.Api. One folder per stack — each holds its binary,
 config, and data together. Full mental model + verification steps: [`../docs/observability.md`](../docs/observability.md).
 
+> **On Linux/Ubuntu?** Skip the native binaries below — [`docker/`](docker/README.md) runs the whole
+> thing (CleanArch.Api **plus** Tempo + Loki + Prometheus + Grafana) as one `docker compose up`.
+> That guide is written for Docker beginners.
+
 ```
 observability/
   start-all.ps1        launches Tempo + Loki + Prometheus, each in its own window

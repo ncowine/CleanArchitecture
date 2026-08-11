@@ -1,0 +1,143 @@
+# Grafana LGTM stack for CleanArch.Api — Docker/Linux deployment.
+#
+# Replaces the native Windows binaries + start-all.ps1 + native Grafana service with one command:
+#   docker compose up -d
+#
+# All four stores run as containers on a shared network and reach each other by service name
+# (grafana -> http://tempo:3200, etc). Data survives restarts in named volumes.
+#
+# This compose file runs EVERYTHING — the four observability stores AND the CleanArch.Api app —
+# so a single `docker compose up -d` gives you the whole thing on Ubuntu. The app is built from
+# the repo's Dockerfile (see the `api` service) and talks to the stores by service name.
+#
+# Prefer to run the API on your host instead (e.g. `dotnet run` while you develop)? See README.md
+# "Alternative: run the API on the host" — you disable the `api` service and flip one line in
+# prometheus.yml. The stack works both ways.
+
+name: cleanarch-observability
+
+services:
+  # ── The application ────────────────────────────────────────────────────────
+  api:
+    build:
+      # Build context is the repo root (two levels up) because the API references many sibling
+      # projects. The Dockerfile lives there too.
+      context: ../..
+      dockerfile: Dockerfile
+    image: cleanarch-api:local
+    environment:
+      # Development mode is intentional: it auto-applies EF Core migrations (creates the SQLite
+      # databases on first run), seeds sample data, and serves Swagger UI at /swagger.
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:5235"
+      # SQLite files live on the api-data volume so they survive restarts (see volumes: below).
+      ConnectionStrings__Students: "Data Source=/app/data/students.db"
+      ConnectionStrings__Library: "Data Source=/app/data/library.db"
+      ConnectionStrings__TestPlans: "Data Source=/app/data/testplans.db"
+      ConnectionStrings__TesterGuide: "Data Source=/app/data/testerguide.db"
+      # Push telemetry to the stores by their service names on this Docker network.
+      Observability__Tempo__OtlpEndpoint: "http://tempo:4317"
+      Observability__Loki__OtlpEndpoint: "http://loki:3100/otlp/v1/logs"
+      # The ELK stack isn't part of this compose, so switch off Elasticsearch audit shipping.
+      # An empty Uri keeps auditing on the plain logging sink — which still flows to Loki as logs.
+      Audit__Elasticsearch__Uri: ""
+    volumes:
+      - api-data:/app/data
+    ports:
+      - "5235:5235"   # Swagger + API on http://localhost:5235, /metrics scraped by Prometheus
+    depends_on:
+      # Wait until traces/logs stores are accepting data before the app starts pushing.
+      tempo:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5235/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s   # first boot compiles nothing but runs migrations + seeding
+    restart: unless-stopped
+
+  # ── Observability stores ───────────────────────────────────────────────────
+  tempo:
+    image: grafana/tempo:2.7.1
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"   # query API (Grafana reads here)
+      - "4317:4317"   # OTLP/gRPC ingest (the app pushes traces here)
+      - "4318:4318"   # OTLP/HTTP ingest (alt door)
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3200/ready | grep -q ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.4.2
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"   # HTTP: Grafana reads + the app pushes logs to /otlp/v1/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    # Lets Prometheus (in the container) scrape an API running on the host at host.docker.internal.
+    # On Docker Desktop this is automatic; the mapping below makes it work on native Linux/Ubuntu too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready | grep -q Ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    environment:
+      # Dev-friendly: no login wall. Lock these down for anything shared.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      # Reuse the existing tracked dashboard JSON — no duplication.
+      - ../grafana/dashboard-cleanarch-api.json:/var/lib/grafana/dashboards/cleanarch-api.json:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+    restart: unless-stopped
+
+volumes:
+  api-data:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  grafana-data:
