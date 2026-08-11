@@ -1,26 +1,38 @@
-# Tempo — traces store. Docker variant of ../tempo/tempo.yaml.
-# Only difference from the Windows config: storage paths point at the container volume (/var/tempo),
-# not ./tempo-data. Grafana reads on :3200; the app pushes OTLP on :4317 (gRPC) / :4318 (HTTP).
+# =============================================================================
+#  Tempo — the TRACES store (Docker variant of ../tempo/tempo.yaml)
+# =============================================================================
+# A "trace" is the timeline of one request as it moves through the app. The app
+# PUSHES traces here; Grafana READS them to draw the waterfall view.
+#
+# Only difference from the native-Windows config: the storage paths point at the
+# container's volume (/var/tempo) instead of ./tempo-data. Everything else is the
+# same single-binary local-dev setup (no external database).
+#
+# This file is mounted into the container by docker-compose.yml and passed to
+# Tempo via `-config.file=/etc/tempo.yaml`.
 
 server:
+  # The HTTP port Tempo serves its query API on. Grafana's Tempo data source
+  # (grafana/provisioning/datasources/datasources.yaml) points at http://tempo:3200.
   http_listen_port: 3200
 
 distributor:
+  # "receivers" = the front door: which protocols Tempo accepts incoming traces on.
   receivers:
-    otlp:
+    otlp:                                 # OTLP = OpenTelemetry Protocol, what the app speaks
       protocols:
         grpc:
-          endpoint: "0.0.0.0:4317"
+          endpoint: "0.0.0.0:4317"        # the app pushes traces here (OTLP/gRPC). 0.0.0.0 = listen on all interfaces
         http:
-          endpoint: "0.0.0.0:4318"
+          endpoint: "0.0.0.0:4318"        # alternate HTTP door — we don't use it, but it's harmless
 
 storage:
   trace:
-    backend: local
+    backend: local                        # store traces as plain files on disk (no S3/GCS needed in dev)
     local:
-      path: /var/tempo/blocks
+      path: /var/tempo/blocks             # finished trace blocks — lives on the tempo-data volume
     wal:
-      path: /var/tempo/wal
+      path: /var/tempo/wal                # write-ahead log (crash safety before blocks are flushed)
 
 usage_report:
-  reporting_enabled: false
+  reporting_enabled: false                # don't phone home with anonymous usage stats
