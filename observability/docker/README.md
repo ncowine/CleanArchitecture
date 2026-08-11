@@ -1,20 +1,22 @@
-# Run the whole thing on Docker (Ubuntu) — a beginner's guide
+# Deploy CleanArch.Api + observability on Docker (Ubuntu) — a beginner's guide
 
-This folder lets you start **the CleanArch.Api app *and* its full observability stack** — Tempo,
-Loki, Prometheus, and Grafana — with **one command**. It's the Linux/Ubuntu equivalent of the
-native-Windows setup one folder up (`../start-all.ps1` + a hand-installed Grafana). Nothing here
-touches that Windows workflow; the `.exe`s still work as before.
+This folder runs **the CleanArch.Api app *and* its full observability stack** — Tempo, Loki,
+Prometheus, and Grafana — with **one command**, on a plain Ubuntu machine.
 
-If you've never used Docker: that's fine. This guide assumes zero prior knowledge.
+**You do NOT need the project's source code on that machine.** The app ships as a prebuilt image on
+GitHub Container Registry (GHCR); your Ubuntu box just *pulls* it. All you copy over is the handful of
+small config files in this folder. This guide assumes zero prior Docker knowledge.
+
+> This is the Linux/Ubuntu path. The native-Windows dev setup (downloaded `.exe`s) lives one folder up
+> and is unaffected.
 
 ---
 
-## 1. What is actually happening (the 2-minute mental model)
+## 1. What's happening (the 2-minute mental model)
 
-**Docker** runs each program in its own isolated box called a **container**, built from a downloadable
-**image** (a prebuilt template). **Docker Compose** is a tool that starts *several* containers together
-from one file, `docker-compose.yml`, and puts them on a shared private network so they can talk to
-each other by name.
+**Docker** runs each program in its own isolated box (a **container**) built from a downloadable
+template (an **image**). **Docker Compose** starts several containers together from one file
+(`docker-compose.yml`) and puts them on a shared private network so they talk to each other by name.
 
 We run **five** containers:
 
@@ -29,63 +31,103 @@ We run **five** containers:
         └──────▲──────┘       └───────▲──────┘       └───────▲──────┘
    scrapes /metrics│          pushes traces│         pushes logs│
         ┌──────────┴──────────────────┴────────────────────────┴───────┐
-        │                    CleanArch.Api  (:5235)                     │
-        │           built from the repo's Dockerfile, runs here         │
+        │           CleanArch.Api  (:5235)  — pulled from GHCR          │
         └───────────────────────────────────────────────────────────────┘
 ```
 
-- **The app produces three kinds of telemetry.** *Metrics* = numbers over time (request counts,
-  latency). *Traces* = the timeline of one request as it moves through the code. *Logs* = text events.
-- **Each kind goes to a store built for it**: Prometheus (metrics), Tempo (traces), Loki (logs).
-- **Grafana** is just the dashboard/UI — it stores nothing, it only *reads* from those three.
-- Inside the Docker network, containers reach each other by **service name**, e.g. the app pushes
-  traces to `http://tempo:4317`. That's why the config files here say `tempo`/`loki`/`prometheus`
-  instead of `localhost`.
+- **Metrics** = numbers over time (request counts, latency) → Prometheus.
+- **Traces** = the timeline of one request through the code → Tempo.
+- **Logs** = text events → Loki.
+- **Grafana** is just the UI — it stores nothing, it only reads from those three.
+- Inside the Docker network containers use **service names** (`tempo`, `loki`, `prometheus`), which is
+  why the config files here say those instead of `localhost`.
+
+The four stores (Tempo/Loki/Prometheus/Grafana) are **official public images** — Docker downloads them
+automatically. Only the **app** image is yours, published from this repo to GHCR (see
+[§7 How the app image gets published](#7-how-the-app-image-gets-published-one-time-setup)).
 
 ---
 
-## 2. Install Docker on Ubuntu (one time)
+## 2. On your Ubuntu box: install Docker (one time)
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y docker.io docker-compose-v2
-sudo usermod -aG docker "$USER"     # lets you run docker without sudo...
-newgrp docker                        # ...applies the group change to your current shell
+sudo usermod -aG docker "$USER"     # run docker without sudo...
+newgrp docker                        # ...apply that to the current shell
 docker run hello-world               # sanity check — should print a welcome message
 ```
 
-If `docker run hello-world` works, you're ready. (If it says "permission denied", log out and back
-in so the group change takes effect.)
+If `hello-world` works, you're ready. (If it says "permission denied", log out and back in.)
 
 ---
 
-## 3. Start everything
+## 3. Get the deploy files onto the box (no full source needed)
+
+The stack needs the small config files in this folder plus one dashboard JSON — about a dozen tiny
+text files, **no application source**. Two ways to get them:
+
+**Option A — sparse checkout (recommended): grab only the `observability/` folder.**
 
 ```bash
+git clone --no-checkout --depth 1 https://github.com/ncowine/CleanArchitecture.git
+cd CleanArchitecture
+git sparse-checkout init --cone
+git sparse-checkout set observability
+git checkout
 cd observability/docker
-docker compose up -d --build
 ```
 
-What those words mean:
-- `up` = create and start the containers.
-- `-d` = "detached" — run in the background and give you your terminal back.
-- `--build` = build the app image from the `Dockerfile` first. Needed the **first** time and after
-  any code change. (Leave it off to start faster when nothing changed.)
+This downloads *only* the `observability/` directory (config files + the dashboard), not the app
+source. That's the folder the deployment reads.
 
-The **first** build takes a few minutes (it downloads the .NET SDK image and compiles the app).
-Later starts are seconds.
+**Option B — copy the folder yourself.** From any machine that already has the repo, copy the whole
+`observability/` directory to the box (e.g. `scp -r observability user@box:~/`). Keep its structure:
+`docker-compose.yml` references `../grafana/dashboard-cleanarch-api.json`, so the sibling `grafana/`
+folder must come along too.
 
-Check they're all healthy:
-
-```bash
-docker compose ps
-```
-
-You want to see `running`/`healthy` next to each service.
+Either way you end up in `observability/docker/` with these files present.
 
 ---
 
-## 4. Open it
+## 4. Let the box pull the private app image
+
+The app image on GHCR is **private by default**, so the box needs permission to pull it. Pick one:
+
+**Option A — make the image public (simplest for a reference project).**
+On GitHub → your profile → **Packages** → `cleanarch-api` → **Package settings** → **Change
+visibility** → **Public**. Now anyone (including your box) can pull it with no login. Done.
+
+**Option B — log in on the box (keep it private).**
+Create a GitHub **Personal Access Token** with the `read:packages` scope
+(GitHub → Settings → Developer settings → Personal access tokens), then:
+
+```bash
+echo "YOUR_TOKEN" | docker login ghcr.io -u ncowine --password-stdin
+```
+
+> If the image doesn't exist in GHCR yet, do [§7](#7-how-the-app-image-gets-published-one-time-setup)
+> first — it has to be published once before anything can pull it.
+
+---
+
+## 5. Start everything
+
+```bash
+# still in observability/docker/
+docker compose pull        # download the app image (+ any store images) ahead of time
+docker compose up -d       # create & start all five containers in the background
+docker compose ps          # check they're 'running' / 'healthy'
+```
+
+- `pull` fetches images from registries. (Skip it and `up` will pull what's missing anyway.)
+- `up -d` starts everything detached (in the background).
+
+First start pulls a few hundred MB of images; later starts are seconds.
+
+---
+
+## 6. Open it
 
 | What | URL | Notes |
 |------|-----|-------|
@@ -94,25 +136,55 @@ You want to see `running`/`healthy` next to each service.
 | **Swagger** (try the API) | http://localhost:5235/swagger | Fire a few requests here to generate telemetry. |
 | Prometheus targets | http://localhost:9090/targets | `cleanarch-api` should say **UP**. |
 
-**Generate some data:** open Swagger and call a few endpoints (e.g. create a student, list books).
-Metrics and traces only appear once the app has actually served traffic — an idle app shows empty
-panels. Rate/latency panels need a little *sustained* traffic before they fill in.
+> Browsing from your laptop to a *remote* Ubuntu server? Replace `localhost` with the server's IP/host
+> (and make sure ports 3000/5235 are reachable), or use an SSH tunnel:
+> `ssh -L 3000:localhost:3000 -L 5235:localhost:5235 user@your-server`.
 
-Then in Grafana:
-- **Traces**: Explore (compass icon) → pick **Tempo** → Search → your recent requests appear. Click
-  one to see its timeline, then "Logs for this trace" to jump to its log lines.
-- **Logs**: Explore → **Loki** → query `{service_name="CleanArch.Api"}`.
-- **Metrics**: the dashboard panels, or Explore → **Prometheus**.
+**Generate data:** open Swagger and call a few endpoints (create a student, list books). Panels stay
+empty until the app has served some traffic; rate/latency panels need a little *sustained* traffic.
+
+Then in Grafana → **Explore** (compass icon):
+- **Tempo** → Search → recent requests; click one for its timeline, then "Logs for this trace".
+- **Loki** → query `{service_name="CleanArch.Api"}` for logs.
+- **Prometheus** → the dashboard panels, or ad-hoc metric queries.
 
 ---
 
-## 5. Everyday commands
+## 7. How the app image gets published (one-time setup)
+
+The image the box pulls is built and pushed automatically by GitHub Actions —
+[`.github/workflows/publish-api-image.yml`](../../.github/workflows/publish-api-image.yml). You never
+run Docker by hand for this.
+
+- **It runs** on every push to `main`, on any `v*` git tag, and on a manual click (Actions tab →
+  *Publish API image* → **Run workflow**).
+- **It pushes** `ghcr.io/ncowine/cleanarch-api:latest` (plus a `sha-…` tag, and a version tag if you
+  tagged a release). No secrets to configure — it uses the built-in `GITHUB_TOKEN`.
+
+So the end-to-end flow for a reference deploy is:
+
+```
+push repo to GitHub  →  Actions builds & publishes the image to GHCR  →  Ubuntu box pulls & runs it
+```
+
+**Cut a versioned image** (recommended for a stable reference deploy) by tagging a release:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Then pin the box to it by editing `docker-compose.yml`:
+`image: ghcr.io/ncowine/cleanarch-api:v1.0.0` (instead of `:latest`).
+
+---
+
+## 8. Everyday commands
 
 ```bash
 docker compose ps                 # what's running + health
 docker compose logs -f api        # follow the app's logs live (Ctrl-C to stop watching)
 docker compose logs -f            # follow ALL services' logs
-docker compose up -d --build      # rebuild + restart after a code change
+docker compose pull && docker compose up -d   # get the newest published image and restart
 docker compose restart api        # restart just the app
 docker compose down               # stop & remove containers (KEEPS your data volumes)
 docker compose down -v            # stop & ALSO wipe data (fresh databases + dashboards next time)
@@ -120,10 +192,9 @@ docker compose down -v            # stop & ALSO wipe data (fresh databases + das
 
 ---
 
-## 6. Where your data lives
+## 9. Where your data lives
 
-Containers are disposable, so anything worth keeping is stored in Docker **named volumes** that
-outlive them:
+Containers are disposable; anything worth keeping is in Docker **named volumes** that outlive them:
 
 | Volume | Holds |
 |--------|-------|
@@ -133,53 +204,54 @@ outlive them:
 | `prometheus-data` | stored metrics |
 | `grafana-data` | Grafana's own state |
 
-`docker compose down` keeps them; `docker compose down -v` deletes them (use it when you want a clean
-slate). List them anytime with `docker volume ls`.
+`docker compose down` keeps them; `docker compose down -v` deletes them (clean slate). List them with
+`docker volume ls`.
 
 ---
 
-## 7. How the app is wired (what each setting does)
+## 10. How the app is configured (what each setting does)
 
-The app image is built from [`../../Dockerfile`](../../Dockerfile) and configured entirely by
-environment variables in [`docker-compose.yml`](docker-compose.yml). The important ones:
+The app is configured entirely by environment variables in
+[`docker-compose.yml`](docker-compose.yml) — no files to edit inside the image:
 
 | Setting | Why it's there |
 |---------|----------------|
-| `ASPNETCORE_ENVIRONMENT=Development` | Turns on the dev conveniences: auto-creates the SQLite databases (applies EF Core migrations), seeds sample data, and serves Swagger. Without this the app expects the databases to already exist. |
-| `ASPNETCORE_URLS=http://+:5235` | The app listens on port 5235 inside the container; `ports: "5235:5235"` publishes it to your machine. |
+| `ASPNETCORE_ENVIRONMENT=Development` | Turns on the dev conveniences: auto-creates the SQLite databases (applies EF Core migrations), seeds sample data, and serves Swagger. Without it, the app expects the databases to already exist. |
+| `ASPNETCORE_URLS=http://+:5235` | The app listens on 5235 inside the container; `ports: "5235:5235"` publishes it to the host. |
 | `ConnectionStrings__*=/app/data/…` | Points the four databases at the `api-data` volume so they persist. |
 | `Observability__Tempo__OtlpEndpoint=http://tempo:4317` | Where the app pushes **traces** (by service name). |
 | `Observability__Loki__OtlpEndpoint=http://loki:3100/otlp/v1/logs` | Where the app pushes **logs**. |
-| `Audit__Elasticsearch__Uri=""` (empty) | The separate ELK/Kibana stack isn't part of this compose, so audit-to-Elasticsearch is switched off; audit records still come out as normal logs (visible in Loki). |
+| `Audit__Elasticsearch__Uri=""` (empty) | The separate ELK/Kibana stack isn't part of this compose, so audit-to-Elasticsearch is off; audit records still appear as normal logs in Loki. |
 
 > **Double-underscore = nested config.** .NET reads `Observability__Tempo__OtlpEndpoint` as the JSON
-> path `Observability:Tempo:OtlpEndpoint` in `appsettings.json`. That's how the env vars here override
-> the app's defaults without editing any file.
+> path `Observability:Tempo:OtlpEndpoint`. That's how these env vars override the app's built-in
+> defaults without touching any file.
 
 ---
 
-## 8. Alternative: run the API on the host, stores in Docker
+## 11. Other layouts
 
-Maybe you're actively editing the app with `dotnet run` and only want the *stores* in Docker. That
-works too:
+**Build the app from source instead of pulling** (only if you *do* have the full repo checked out):
 
-1. Don't start the app container: `docker compose up -d tempo loki prometheus grafana`
-2. In [`prometheus.yml`](prometheus.yml), swap the scrape target from `api:5235` to
-   `host.docker.internal:5235` (there's a commented line ready), then
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+The override file adds a `build:` step that compiles the image locally from the repo's `Dockerfile`.
+
+**Run only the stores here, the app on your host** (e.g. while developing with `dotnet run`):
+
+1. Start just the stores: `docker compose up -d tempo loki prometheus grafana`
+2. In [`prometheus.yml`](prometheus.yml) swap the scrape target from `api:5235` to
+   `host.docker.internal:5235` (a commented line is ready), then
    `curl -X POST http://localhost:9090/-/reload`.
 3. Run the app on the host — its defaults already point at `localhost:4317` / `localhost:3100`, which
-   the compose stack publishes, so **no app config change is needed**:
-   ```bash
-   dotnet run --project src/Api/CleanArch.Api
-   ```
-
-`host.docker.internal` is how a container reaches a program running on your host machine; the
-`extra_hosts` line on the Prometheus service makes that name resolve on native Linux (it's automatic
-on Docker Desktop).
+   this stack publishes, so no app config change is needed:
+   `dotnet run --project src/Api/CleanArch.Api`.
 
 ---
 
-## 9. Ports & health checks
+## 12. Ports & health checks
 
 | Service | Port(s) | Ready check |
 |---------|---------|-------------|
@@ -191,48 +263,51 @@ on Docker Desktop).
 
 ---
 
-## 10. Troubleshooting
+## 13. Troubleshooting
 
-- **`docker compose ps` shows `api` restarting / unhealthy.** Read its logs: `docker compose logs api`.
-  First boot needs ~30–40s to run migrations and seeding before `/health` passes — give it a moment.
-- **`cleanarch-api` is DOWN in Prometheus `/targets`.** The app isn't reachable at the scrape target.
-  If the app runs in compose, the target must be `api:5235` (the default here); if on the host, it must
-  be `host.docker.internal:5235`. Then reload Prometheus (step 8).
-- **Grafana panels are empty.** The app hasn't served enough traffic yet. Hit some Swagger endpoints
-  and wait ~30s; rate/latency panels need a couple of scrapes of *sustained* traffic.
-- **"port is already allocated".** Something else on your machine already uses that port (often 3000 or
-  5235). Stop the other program, or change the left-hand number in the relevant `ports:` mapping (e.g.
-  `"3001:3000"`) and use that new port in your browser.
-- **Rebuild from scratch.** `docker compose down -v && docker compose up -d --build`.
+- **`docker compose pull` says "denied" / "manifest unknown" for the api image.** Either the image
+  hasn't been published yet (do [§7](#7-how-the-app-image-gets-published-one-time-setup)) or the box
+  can't access a private package (do [§4](#4-let-the-box-pull-the-private-app-image)).
+- **`api` keeps restarting / unhealthy.** Read `docker compose logs api`. First boot needs ~30–40s to
+  run migrations + seeding before `/health` passes — give it a moment.
+- **`cleanarch-api` is DOWN in Prometheus `/targets`.** With the app in compose the scrape target must
+  be `api:5235` (the default here); if you moved the app to the host it must be
+  `host.docker.internal:5235`. Then reload Prometheus (§11).
+- **Grafana panels are empty.** The app hasn't served enough traffic. Hit some Swagger endpoints and
+  wait ~30s; rate/latency panels need a couple of scrapes of *sustained* traffic.
+- **"port is already allocated".** Something else uses that port (often 3000 or 5235). Change the
+  left-hand number in the relevant `ports:` mapping (e.g. `"3001:3000"`) and use the new port.
+- **Rebuild from scratch.** `docker compose down -v && docker compose pull && docker compose up -d`.
 
 ---
 
-## 11. A note on security (before you show anyone)
+## 14. A note on security (before you expose it)
 
-This setup is tuned for easy local dev, **not** for exposing on a network:
-- **Grafana** has anonymous admin access (no login). Remove the `GF_AUTH_ANONYMOUS_*` /
+This setup is tuned for easy local/reference use, **not** for a public network:
+- **Grafana** has anonymous admin access. Remove the `GF_AUTH_ANONYMOUS_*` /
   `GF_AUTH_DISABLE_LOGIN_FORM` env vars to require a login.
-- **The app** runs in `Development` mode (verbose errors, Swagger, auto-migrate). A real deployment
-  would run `Production` and apply migrations as a separate step.
+- **The app** runs in `Development` mode (verbose errors, Swagger, auto-migrate). A real production
+  deploy would run `Production` and apply migrations as a separate step.
 
-Keep it bound to `localhost` (as it is) until you've hardened those.
+Keep it bound to `localhost` (or behind a firewall / SSH tunnel) until you've hardened those.
 
 ---
 
-## 12. File map
+## 15. File map
 
 ```
 observability/docker/
-  docker-compose.yml      the one file that defines all five containers
-  tempo.yaml              Tempo config (storage under /var/tempo in the container)
-  loki-config.yaml        Loki config (storage under /loki)
-  prometheus.yml          Prometheus config (scrapes api:5235)
+  docker-compose.yml          defines all five containers (api pulls from GHCR)
+  docker-compose.build.yml    OPTIONAL override to build the app from source instead of pulling
+  tempo.yaml                  Tempo config (storage under /var/tempo in the container)
+  loki-config.yaml            Loki config (storage under /loki)
+  prometheus.yml              Prometheus config (scrapes api:5235)
   grafana/provisioning/
     datasources/datasources.yaml   auto-adds the 3 data sources (by service name)
     dashboards/dashboards.yaml      auto-imports the dashboard JSON below
-  README.md               this file
+  README.md                   this file
 
-../grafana/dashboard-cleanarch-api.json   the dashboard (reused, mounted into Grafana)
-../../Dockerfile                          builds the CleanArch.Api image
-../../.dockerignore                       keeps the build context small
+../grafana/dashboard-cleanarch-api.json     the dashboard (mounted into Grafana)
+../../Dockerfile                            builds the app image (used by CI and the build override)
+../../.github/workflows/publish-api-image.yml   publishes the image to GHCR
 ```
