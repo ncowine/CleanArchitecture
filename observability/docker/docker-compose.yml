@@ -9,7 +9,9 @@
 # (published by .github/workflows/publish-api-image.yml). You only need this folder's config files.
 # Full beginner walkthrough — including how to get these files onto the box — is in README.md.
 #
-# Two other layouts, both documented in README.md:
+# Other layouts / add-ons, all documented in README.md:
+#   • Audit trail in Kibana (adds Elasticsearch + Kibana; off by default — ES is heavy):
+#       docker compose -f docker-compose.yml -f docker-compose.elk.yml up -d
 #   • Build the app from source instead of pulling:
 #       docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 #   • Run only the stores here and the app on your host (dotnet run): flip one line in prometheus.yml.

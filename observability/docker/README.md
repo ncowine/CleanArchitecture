@@ -251,7 +251,69 @@ The override file adds a `build:` step that compiles the image locally from the 
 
 ---
 
-## 12. Ports & health checks
+## 12. Optional add-on: audit trail in Kibana (Elasticsearch)
+
+The app writes an **audit record** for every audited command (who did what, and the before/after of
+each changed field). By default those records go to the log pipeline — so on the base stack you can
+already read them in **Grafana → Explore → Loki**. If you'd rather search them in **Kibana** (the
+purpose-built audit UI), turn on this add-on.
+
+It's **off by default on purpose**: Elasticsearch is heavy (budget ~1 GB+ RAM). When it's off, nothing
+breaks — the app just keeps sending audit records to the logs.
+
+### One-time Ubuntu host setting (required)
+
+Elasticsearch refuses to start until the Linux kernel allows enough memory-map areas. Run once on the
+box:
+
+```bash
+sudo sysctl -w vm.max_map_count=262144                       # applies now
+echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-es.conf   # survives reboot
+```
+
+(Skip this and the `elasticsearch` container will crash-loop with a `max virtual memory areas
+vm.max_map_count [65530] is too low` error.)
+
+### Turn it on
+
+Layer the ELK override file on top of the base compose — the `-f` flags combine both:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.elk.yml up -d
+```
+
+That adds two containers (`elasticsearch`, `kibana`) **and** re-points the app's audit target at
+Elasticsearch. Give Elasticsearch/Kibana a minute to boot (`docker compose ps` shows health).
+
+> **Tip:** typing both `-f` flags every time is tedious. Set them once per shell:
+> `export COMPOSE_FILE=docker-compose.yml:docker-compose.elk.yml` — then plain `docker compose up -d`
+> / `logs` / `down` all include the add-on. (`down` needs the same files to remove ES + Kibana.)
+
+### See your audit records in Kibana
+
+1. Generate one: call an audited endpoint in Swagger (http://localhost:5235/swagger) — e.g. create a
+   student or instructor.
+2. Open **Kibana** → http://localhost:5601 (first load takes ~1 min).
+3. **Stack Management → Data Views → Create data view**: name `cleanarch-audit-*`, index pattern
+   `cleanarch-audit-*`, time field `occurredOnUtc`.
+4. Open **Discover** and search by `actor`, `action`, `succeeded`, and drill into `changes` (per-field
+   before/after values). Fields are camelCase.
+
+### Turn it off
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.elk.yml down     # stop ES + Kibana (keeps data)
+```
+
+Then start the base stack normally (`docker compose up -d`) — audit records flow back to Loki. To also
+delete the stored audit index, add `-v` (wipes the `es-data` volume).
+
+> This add-on runs Elasticsearch with **security disabled** for easy dev (single node, no TLS/auth),
+> exactly like `../../elk/`. Don't expose it — see that folder's README for the production hardening.
+
+---
+
+## 13. Ports & health checks
 
 | Service | Port(s) | Ready check |
 |---------|---------|-------------|
@@ -260,10 +322,12 @@ The override file adds a `build:` step that compiles the image locally from the 
 | Tempo | 3200 (query), 4317 (OTLP/gRPC), 4318 (OTLP/HTTP) | http://localhost:3200/ready |
 | Loki | 3100 | http://localhost:3100/ready |
 | Prometheus | 9090 | http://localhost:9090/-/ready |
+| Elasticsearch *(ELK add-on)* | 9200 | http://localhost:9200/_cluster/health |
+| Kibana *(ELK add-on)* | 5601 | http://localhost:5601/api/status |
 
 ---
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 - **`docker compose pull` says "denied" / "manifest unknown" for the api image.** Either the image
   hasn't been published yet (do [§7](#7-how-the-app-image-gets-published-one-time-setup)) or the box
@@ -277,11 +341,18 @@ The override file adds a `build:` step that compiles the image locally from the 
   wait ~30s; rate/latency panels need a couple of scrapes of *sustained* traffic.
 - **"port is already allocated".** Something else uses that port (often 3000 or 5235). Change the
   left-hand number in the relevant `ports:` mapping (e.g. `"3001:3000"`) and use the new port.
+- **`elasticsearch` (ELK add-on) crash-loops with `vm.max_map_count [65530] is too low`.** Run the
+  one-time host setting in [§12](#12-optional-add-on-audit-trail-in-kibana-elasticsearch), then
+  `docker compose -f docker-compose.yml -f docker-compose.elk.yml up -d` again.
+- **Audit records aren't in Kibana.** Confirm you started with the `-f docker-compose.elk.yml` override
+  (otherwise records go to Loki, not Elasticsearch), that you created the `cleanarch-audit-*` data
+  view, and that you actually called an audited endpoint. Cross-check with
+  `curl "http://localhost:9200/cleanarch-audit-*/_search?pretty"`.
 - **Rebuild from scratch.** `docker compose down -v && docker compose pull && docker compose up -d`.
 
 ---
 
-## 14. A note on security (before you expose it)
+## 15. A note on security (before you expose it)
 
 This setup is tuned for easy local/reference use, **not** for a public network:
 - **Grafana** has anonymous admin access. Remove the `GF_AUTH_ANONYMOUS_*` /
@@ -289,16 +360,18 @@ This setup is tuned for easy local/reference use, **not** for a public network:
 - **The app** runs in `Development` mode (verbose errors, Swagger, auto-migrate). A real production
   deploy would run `Production` and apply migrations as a separate step.
 
-Keep it bound to `localhost` (or behind a firewall / SSH tunnel) until you've hardened those.
+Keep it bound to `localhost` (or behind a firewall / SSH tunnel) until you've hardened those. The ELK
+add-on also runs with security disabled — same caveat.
 
 ---
 
-## 15. File map
+## 16. File map
 
 ```
 observability/docker/
   docker-compose.yml          defines all five containers (api pulls from GHCR)
   docker-compose.build.yml    OPTIONAL override to build the app from source instead of pulling
+  docker-compose.elk.yml      OPTIONAL add-on: Elasticsearch + Kibana for the audit trail (§12)
   tempo.yaml                  Tempo config (storage under /var/tempo in the container)
   loki-config.yaml            Loki config (storage under /loki)
   prometheus.yml              Prometheus config (scrapes api:5235)
