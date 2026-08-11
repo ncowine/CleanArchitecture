@@ -1,0 +1,26 @@
+# Tempo — traces store. Docker variant of ../tempo/tempo.yaml.
+# Only difference from the Windows config: storage paths point at the container volume (/var/tempo),
+# not ./tempo-data. Grafana reads on :3200; the app pushes OTLP on :4317 (gRPC) / :4318 (HTTP).
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+
+usage_report:
+  reporting_enabled: false

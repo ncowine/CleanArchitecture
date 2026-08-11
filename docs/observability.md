@@ -1,4 +1,11 @@
-# Observability (Grafana + LGTM, local Windows dev)
+# Observability (Grafana + LGTM)
+
+> **Deploying on Linux/Ubuntu?** Everything below describes the native-Windows dev setup. For a fully
+> containerized stack — the **CleanArch.Api app plus** Tempo + Loki + Prometheus + Grafana, all from one
+> `docker compose up` — see [`../observability/docker/README.md`](../observability/docker/README.md)
+> (written for Docker beginners). Same signals, dashboard, and trace↔log wiring, just packaged for Docker.
+
+## Native Windows dev
 
 The API is instrumented with **OpenTelemetry** and emits three signals, each to its own store,
 all read by Grafana. Grafana stores nothing itself — it only queries.

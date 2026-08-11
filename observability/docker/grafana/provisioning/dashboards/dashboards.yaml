@@ -1,0 +1,17 @@
+# Dashboard provider — auto-imports every dashboard JSON under /var/lib/grafana/dashboards on
+# start. docker-compose.yml mounts the tracked ../grafana/dashboard-cleanarch-api.json into that
+# folder, so the CleanArch.Api dashboard appears with no manual import.
+
+apiVersion: 1
+
+providers:
+  - name: CleanArch
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
