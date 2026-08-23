@@ -135,9 +135,15 @@ docker compose -f docker-compose.yml -f docker-compose.elk.yml down -v
 
 This add-on runs Elasticsearch with **security disabled** for easy local dev — single node, no TLS,
 no authentication — exactly like the native [`../../elk/`](../../elk/README.md) setup. **Don't expose
-it on a network.** To harden for production (turn security back on, add credentials/TLS, set a
-retention policy), see the "Going to production" section of [`../../elk/README.md`](../../elk/README.md);
-the app code doesn't change, only the `Audit:Elasticsearch:*` settings.
+it on a network.**
+
+That means anyone who can reach port 9200 can read every audit record, forge new ones, or delete the
+index. An audit log an attacker can edit is worse than no audit log, because it is trusted.
+
+For production, don't harden this file — use [`docker-compose.prod.elk.yml`](docker-compose.prod.elk.yml),
+which turns security on, gives the app a least-privilege API key that can append records but not
+overwrite or delete them, puts Kibana on its own service account, and adds a retention policy.
+[README-production.md](README-production.md) walks through it.
 
 ---
 
@@ -149,6 +155,9 @@ observability/docker/
   docker-compose.elk.yml      THIS add-on: adds Elasticsearch + Kibana, re-points audit → ES
   README.md                   the base-stack beginner guide
   README-elk.md               this file
+
+docker-compose.prod.elk.yml   the SECURED production version of this add-on
+  README-production.md          production guide for the whole stack
 
 ../../elk/README.md           the native (non-Docker) ELK setup + production hardening notes
 ```

@@ -78,3 +78,9 @@ Readiness checks: Elasticsearch <http://localhost:9200> (returns JSON), Kibana <
 Turn Elasticsearch security back **on** (TLS + auth), then give the app credentials instead of anonymous
 access — set `Audit:Elasticsearch:ApiKey` (preferred) or `Username`/`Password`, from env/Key Vault, never
 in source. Add an ILM policy on `cleanarch-audit-*` for retention. The app code doesn't change.
+
+**All of that is already done** in the Docker production stack, if that is where you are heading:
+[`../observability/docker/docker-compose.prod.elk.yml`](../observability/docker/docker-compose.prod.elk.yml)
+turns security on and mints a least-privilege API key for the app (one that can append audit records but
+not overwrite or delete them), and `scripts/bootstrap-elk.sh` installs the ILM retention policy. See
+[`../observability/docker/README-production.md`](../observability/docker/README-production.md).

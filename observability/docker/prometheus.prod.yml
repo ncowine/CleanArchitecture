@@ -1,0 +1,84 @@
+# =============================================================================
+#  Prometheus — PRODUCTION scrape config (split deployment)
+# =============================================================================
+# Difference from the dev config: the target is not a container on this host. It
+# is the CleanArch.Api site running on IIS on a separate Windows Server, reached
+# over the public internet.
+#
+# ⚠️  PROMETHEUS DOES NOT SUBSTITUTE ENVIRONMENT VARIABLES IN THIS FILE.
+#     Unlike the compose files, ${...} means nothing here. Every placeholder
+#     below marked REPLACE_ has to be edited by hand on the server.
+#
+# Reload after editing: restart the container. The production stack deliberately
+# omits --web.enable-lifecycle, because it is an unauthenticated reconfigure
+# endpoint.
+#
+#     docker compose -f docker-compose.prod.yml restart prometheus
+#
+# Check the result at Grafana → Explore → Prometheus, or from the VM:
+#     docker compose -f docker-compose.prod.yml exec prometheus \
+#       wget -qO- http://localhost:9090/api/v1/targets | grep -o '"health":"[^"]*"'
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  # Negotiate classic underscore metric names (http_server_request_duration_seconds)
+  # that the dashboard expects, instead of Prometheus 3.x UTF-8 dotted names.
+  metric_name_escaping_scheme: underscores
+
+scrape_configs:
+
+  # Prometheus scraping itself, over loopback inside its own container.
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ── The application, on the Windows/IIS server ─────────────────────────────
+  - job_name: cleanarch-api
+    metrics_path: /metrics
+
+    # HTTPS, not HTTP. This request crosses the public internet, and /metrics is
+    # not innocuous: it enumerates every route, request rate, error count and
+    # runtime internal in the service. Over plain HTTP all of that is readable
+    # by anything on the path. IIS must have a valid certificate for this name.
+    scheme: https
+
+    static_configs:
+      # The PUBLIC hostname of the Windows server, matching its IIS certificate.
+      # Include the port only if IIS serves this site on something other than 443.
+      - targets: ['REPLACE_WITH_WINDOWS_PUBLIC_HOSTNAME']
+
+    # ── Access control ────────────────────────────────────────────────────────
+    # The primary control is at the Windows end, and it is not in this file:
+    # a Windows Firewall inbound rule that lets only THIS VM's public IP reach
+    # the site, plus an IIS IP restriction on the /metrics path. See
+    # README-windows-iis.md. Set that up first — it works regardless of what
+    # follows here.
+    #
+    # OPTIONAL SECOND LAYER, worth adding once the scrape is confirmed working:
+    # make the app require a credential on /metrics as well, so an IP allowlist
+    # is not the only thing protecting it.
+    #
+    #   1. Mint a key on the Windows box:
+    #        dotnet CleanArch.Api.dll --mint-api-key=prometheus-scraper --mint-api-key-roles=service
+    #   2. Set Observability__Metrics__RequireAuthentication=true on the app.
+    #   3. Uncomment the block below and paste the key in.
+    #
+    # VERIFY IT BEFORE RELYING ON IT. "http_headers" needs Prometheus 2.51 or
+    # newer (this stack pins 3.1.0, so it is supported), and if the header is
+    # wrong the target simply goes DOWN — you lose metrics rather than getting a
+    # loud error. Change one end at a time and watch /targets in between.
+    #
+    # http_headers:
+    #   X-Api-Key:
+    #     values:
+    #       - 'REPLACE_WITH_THE_MINTED_API_KEY'
+
+    # If IIS uses a certificate from a private/corporate CA rather than a public
+    # one, Prometheus will not trust it by default. Point it at the CA bundle
+    # (mount the file into the container first) rather than disabling
+    # verification — insecure_skip_verify would undo the reason for using HTTPS.
+    #
+    # tls_config:
+    #   ca_file: /etc/prometheus/corporate-ca.crt

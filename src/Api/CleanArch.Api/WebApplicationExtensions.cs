@@ -12,13 +12,22 @@ namespace CleanArch.Api;
 internal static class WebApplicationExtensions
 {
     /// <summary>
-    /// Development-only host setup: applies pending migrations, exposes Swagger UI, and maps a couple
-    /// of diagnostic endpoints. No-op outside Development. (Applying migrations at startup is a
-    /// convenience for local runs — in production migrations should be a separate deploy step.)
+    /// Applies pending migrations for every database. Runs unconditionally in Development (local
+    /// convenience); outside Development it is OPT-IN via <c>Database:MigrateOnStartup</c>, because
+    /// changing a production schema is a deployment decision rather than a side effect of booting.
+    ///
+    /// Seeds nothing — no dev API keys, no sample content — so it is safe against a real deployment.
+    ///
+    /// CAVEAT: this migrates from inside the app process, which assumes ONE instance starts at a time.
+    /// If you ever scale to multiple replicas, two of them can race on the same schema; at that point
+    /// move migrations to a separate one-shot step that runs before the new version rolls out.
     /// </summary>
-    public static async Task UseDevelopmentSetupAsync(this WebApplication app)
+    public static async Task UseDatabaseMigrationsAsync(this WebApplication app)
     {
-        if (!app.Environment.IsDevelopment())
+        var shouldMigrate = app.Environment.IsDevelopment()
+            || app.Configuration.GetValue<bool>("Database:MigrateOnStartup");
+
+        if (!shouldMigrate)
         {
             return;
         }
@@ -31,11 +40,30 @@ internal static class WebApplicationExtensions
         await scope.ServiceProvider.GetRequiredService<TestPlansDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<TesterGuideDbContext>().Database.MigrateAsync();
 
+        // The API-key store shares students.db but migrates on its own history table. The auth project
+        // owns the migration so the host needn't touch the internal context.
+        await ApiKeyStoreSetup.MigrateAsync(scope.ServiceProvider);
+    }
+
+    /// <summary>
+    /// Development-only host setup: seeds sample data and the well-known dev API keys, exposes Swagger
+    /// UI, and maps a couple of diagnostic endpoints. No-op outside Development. Migrations are handled
+    /// separately by <see cref="UseDatabaseMigrationsAsync"/>, which runs first.
+    /// </summary>
+    public static async Task UseDevelopmentSetupAsync(this WebApplication app)
+    {
+        if (!app.Environment.IsDevelopment())
+        {
+            return;
+        }
+
+        using var scope = app.Services.CreateScope();
+
         // Seed a small Test Plans content tree so the stand-in system of record has something to reference.
         await TestPlansSeeder.SeedAsync(scope.ServiceProvider);
 
-        // The API-key store shares students.db but migrates on its own history table. The auth project
-        // owns its migrate+seed, so the host needn't touch the internal context/seeder.
+        // Well-known dev keys — convenience for local runs and the docs. Deliberately Development-only:
+        // these values are published in the README, so seeding them anywhere reachable is a backdoor.
         await ApiKeyDevelopmentSetup.MigrateAndSeedAsync(scope.ServiceProvider);
 
         app.UseSwagger();

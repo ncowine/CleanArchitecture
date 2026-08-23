@@ -1,0 +1,43 @@
+# =============================================================================
+#  Tempo — TRACES store, production variant of tempo.yaml
+# =============================================================================
+# Two differences from the dev config, both about not filling the disk and not
+# accepting traffic we do not need.
+#
+# There is no authentication here and none is available in single-binary Tempo.
+# Its protection is that docker-compose.prod.yml puts it on the internal-only
+# "backend" network and publishes no ports: the only things that can reach 3200
+# or 4317 are the api and grafana containers.
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"      # the app pushes traces here
+        # The OTLP/HTTP receiver on 4318 is REMOVED. The dev config keeps it as a
+        # harmless spare door; in production an unused listener is just surface
+        # area. Re-add it only if something actually needs HTTP ingest.
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+
+# ── Retention: the part the dev config has no answer for ─────────────────────
+# Without this, trace blocks accumulate until the volume is full and Tempo (then
+# usually the whole host) stops working. 720h = 30 days; lower it if the volume
+# is small or the service is chatty. Check actual growth after a week with:
+#   docker system df -v | grep tempo-data
+compactor:
+  compaction:
+    block_retention: 720h
+
+usage_report:
+  reporting_enabled: false
