@@ -25,3 +25,9 @@ artifacts/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Production secrets for the Docker observability stack — never commit these.
+# See observability/docker/.env.example for the template.
+observability/docker/.env
+**/.env
+!**/.env.example

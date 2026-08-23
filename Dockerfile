@@ -30,10 +30,22 @@ RUN apt-get update \
 
 # The SQLite database files live here; docker-compose mounts a named volume over this path so the
 # data survives `docker compose down` / container rebuilds.
-RUN mkdir -p /app/data
+#
+# Ownership matters: the container drops to the non-root "app" user below, and a FRESH named volume
+# inherits the ownership of the directory it covers — so chowning here is what lets the app write its
+# databases. An EXISTING volume from an earlier root-owned run keeps root ownership and the app will
+# fail to open the files; fix that one volume once with:
+#   docker run --rm -v cleanarch-observability_api-data:/data alpine chown -R app:app /data
+RUN mkdir -p /app/data && chown -R app:app /app
 
 # Bring over ONLY the published app from stage 1 (no source, no SDK).
-COPY --from=build /app .
+COPY --from=build --chown=app:app /app .
+
+# Drop root. The .NET runtime images ship a non-root "app" user for exactly this; a bug in the app is
+# then not root inside the container, which is the difference between a contained problem and a host
+# one when combined with no-new-privileges and a read-only root filesystem (set in the prod compose).
+# Kestrel listens on 5235 (>1024), so no privileged port bind is needed.
+USER app
 
 # The app listens here (see ASPNETCORE_URLS in docker-compose.yml). EXPOSE is documentation only.
 EXPOSE 5235

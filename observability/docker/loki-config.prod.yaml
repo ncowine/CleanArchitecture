@@ -1,0 +1,85 @@
+# =============================================================================
+#  Loki — LOGS store, production variant of loki-config.yaml
+# =============================================================================
+# The important addition is retention. Everything else is the same single-node,
+# filesystem-backed setup, because on one VM that is the right shape.
+#
+# ── About "auth_enabled" ─────────────────────────────────────────────────────
+# It is tempting to flip this to true for production. Do not do it expecting
+# security. In Loki, auth_enabled does NOT mean authentication — it means
+# multi-tenancy: when true, Loki requires an X-Scope-OrgID header naming a tenant
+# and keeps each tenant's data separate. It validates no credential of any kind.
+# Turning it on here would just break the app's OTLP push and Grafana's queries
+# while adding zero protection.
+#
+# Loki's real protection in this deployment is that it is on the internal-only
+# "backend" network with no published ports, so only the api (write) and grafana
+# (read) containers can reach it. If you ever need Loki reachable from outside
+# this host, put an authenticating reverse proxy in front of it — that is the
+# supported pattern.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  # Quieter logs in production; Loki's own info-level chatter is substantial and
+  # it is being scraped into itself.
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  allow_structured_metadata: true   # REQUIRED for OTLP logs (attaches trace_id etc.)
+  volume_enabled: true
+
+  # ── Retention ──────────────────────────────────────────────────────────────
+  # How long log lines are kept before the compactor deletes them. 720h = 30 days.
+  # This line alone does nothing: deletion only happens if the compactor below
+  # has retention_enabled. Both are required.
+  retention_period: 720h
+
+  # ── Ingestion limits ───────────────────────────────────────────────────────
+  # A bug that logs in a tight loop should be throttled, not allowed to fill the
+  # disk overnight. These reject the excess with a 429 and a clear error rather
+  # than quietly absorbing it. Raise them if you see legitimate rejections.
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+  # Refuse absurdly long lines and absurdly wide label sets, both of which are
+  # usually a logging bug and are expensive to index.
+  max_line_size: 256KB
+  max_label_names_per_series: 30
+
+# ── The compactor is what actually enforces retention ────────────────────────
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true            # without this, retention_period is ignored
+  # Grace period between marking data for deletion and deleting it, so a
+  # mistaken retention change can be caught before the data is gone.
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+  # Required whenever retention is enabled: where delete requests are recorded.
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false

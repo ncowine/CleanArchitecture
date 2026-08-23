@@ -1,0 +1,159 @@
+# =============================================================================
+#  Caddy — the only thing on this VM that listens to the internet
+# =============================================================================
+# TOPOLOGY THIS FILE IS BUILT FOR:
+#
+#   Windows Server (IIS)                      Ubuntu VM (this stack)
+#   ─────────────────────                     ──────────────────────
+#   CleanArch.Api  ──── traces  (OTLP/gRPC) ──▶ otlp.<domain>   ─▶ tempo:4317
+#                  ──── logs    (OTLP/HTTP) ──▶ otlp.<domain>   ─▶ loki:3100
+#                  ──── audit   (HTTPS)     ──▶ audit.<domain>  ─▶ elasticsearch:9200
+#                  ◀─── metrics (scrape)    ─── prometheus reaches OUT to IIS
+#
+#   your browser   ──── dashboards          ──▶ grafana.<domain>, kibana.<domain>
+#
+# The app is NOT in this compose stack — it runs on IIS on a different machine,
+# across the public internet. That is the fact that shapes this whole file:
+# telemetry that used to travel over a private Docker bridge now crosses the
+# internet, so every ingest endpoint needs TLS and a credential.
+#
+# ── Two classes of site, with different exposure ─────────────────────────────
+#
+#   INGEST  (otlp, audit)      must be publicly reachable — the Windows box
+#                              dials in from the internet. Gated by TLS, an IP
+#                              allowlist naming that one server, and a credential.
+#
+#   UI      (grafana, kibana)  must NOT be publicly reachable. Same public
+#                              address and a real certificate, but Caddy refuses
+#                              any request whose source IP is not allowlisted.
+#
+# ── Why an IP allowlist rather than "internal only" ──────────────────────────
+# This VM has a public IP by necessity (the app server has to reach it), so
+# there is no private-only interface to bind the dashboards to. "Internal" has
+# to be enforced by source address instead.
+#
+# It is a real control, not theatre: TCP needs a completed handshake, so a
+# forged source address cannot get a response back. But it is a perimeter, and
+# perimeters are single-layered — Grafana's own login is what stops someone
+# already inside the allowed range. Do not turn that off.
+#
+# ── ⚠️  A Caddy behaviour that matters for correctness here ──────────────────
+# Caddy does NOT execute directives in the order you write them. It sorts them
+# into a fixed default order, so a bare `respond` can pre-empt a `reverse_proxy`
+# written above it, and a security gate can end up running AFTER the thing it is
+# supposed to guard.
+#
+# Every site below therefore wraps its logic in a `route { }` block, which is
+# the construct that preserves literal order. Inside each route the sequence is
+# always: address gate, then credential gate, then routing. Named matchers are
+# declared at site level because that is where Caddy requires them.
+#
+# The gates are written out per-site rather than factored into snippets. That is
+# deliberate: this is security-critical config, and being able to read one site
+# block top to bottom and see exactly what guards it is worth more than avoiding
+# four repetitions.
+# =============================================================================
+
+{
+	email {$ACME_EMAIL}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
+
+# ── Telemetry ingest: traces and logs ────────────────────────────────────────
+# Tempo and Loki have NO authentication of their own and none can be configured
+# (Loki's auth_enabled is multi-tenancy, not authentication — see
+# loki-config.prod.yaml). On a single host that was fine, because nothing could
+# reach them. Now that the writer is across the internet, this site is the only
+# thing between a stranger and your traces and logs.
+{$INGEST_HOST} {
+	import security_headers
+
+	# Only the app server may talk to this hostname.
+	#
+	# The ACME exemption is required: Let's Encrypt validates domain ownership by
+	# fetching /.well-known/acme-challenge/... from ITS servers, which are on no
+	# allowlist of yours. Without this, certificate issuance and every later
+	# renewal would 403 and fail.
+	@blocked_source {
+		not remote_ip {$APP_SERVER_IPS}
+		not path /.well-known/acme-challenge/*
+	}
+
+	# gRPC is HTTP/2 with a particular content-type; Caddy recognises it.
+	@grpc protocol grpc
+
+	route {
+		# 1. Address gate.
+		respond @blocked_source "Forbidden" 403
+
+		# 2. Credential gate. Timing-safe, bcrypt-hashed. Generate the hash with:
+		#      docker run --rm caddy:2.9-alpine caddy hash-password --plaintext 'your-password'
+		#    The app sends the matching credential via
+		#    Observability__Tempo__Headers / Observability__Loki__Headers.
+		basic_auth {
+			{$INGEST_USER} {$INGEST_PASSWORD_HASH}
+		}
+
+		# 3. Routing. TRACES over gRPC: Caddy terminates TLS here and speaks
+		#    cleartext HTTP/2 (h2c) onward to Tempo, which is safe because that
+		#    leg never leaves this VM's internal network.
+		reverse_proxy @grpc h2c://tempo:4317
+
+		# LOGS over OTLP/HTTP. The app posts to /otlp/v1/logs, which is the path
+		# Loki serves its OTLP receiver on, so nothing needs rewriting.
+		reverse_proxy /otlp/* loki:3100
+
+		# Anything else on this hostname is not part of the ingest contract.
+		respond "Not found" 404
+	}
+}
+
+# ── Audit ingest: Elasticsearch ──────────────────────────────────────────────
+# Deliberately NO basic_auth here, and that is not an oversight. Elasticsearch
+# authenticates the app itself using an API key in the Authorization header;
+# Caddy's basic_auth would need that same header and the two would collide.
+#
+# So the API key is the credential, TLS stops it crossing the internet in the
+# clear (exactly what would happen without this site), and the address gate is
+# the extra layer.
+{$AUDIT_HOST} {
+	import security_headers
+
+	@blocked_source {
+		not remote_ip {$APP_SERVER_IPS}
+		not path /.well-known/acme-challenge/*
+	}
+
+	route {
+		respond @blocked_source "Forbidden" 403
+		reverse_proxy elasticsearch:9200
+	}
+}
+
+# ── Dashboards: reachable only from your own network ─────────────────────────
+{$GRAFANA_HOST} {
+	import security_headers
+
+	@blocked_source {
+		not remote_ip {$UI_ALLOWED_IPS}
+		not path /.well-known/acme-challenge/*
+	}
+
+	route {
+		respond @blocked_source "Forbidden" 403
+		reverse_proxy grafana:3000
+	}
+}
+
+# Kibana's site is added by docker-compose.prod.elk.yml, so it exists only when
+# the ELK add-on is actually running.
+import /etc/caddy/conf.d/*.caddyfile

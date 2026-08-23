@@ -10,6 +10,12 @@ small config files in this folder. This guide assumes zero prior Docker knowledg
 > This is the Linux/Ubuntu path. The native-Windows dev setup (downloaded `.exe`s) lives one folder up
 > and is unaffected.
 
+> ⚠️ **This stack is for development.** It publishes eight ports, runs Grafana as an anonymous admin,
+> and starts the app in `Development` mode — which seeds the API keys published in this repo. It is
+> safe on a laptop and unsafe on anything with a public IP. For a real deployment use
+> **[README-production.md](README-production.md)** and `docker-compose.prod.yml`, which exist for
+> exactly this reason.
+
 ---
 
 ## 1. What's happening (the 2-minute mental model)
@@ -308,14 +314,27 @@ docker compose -f docker-compose.yml -f docker-compose.elk.yml up -d
 
 ## 15. A note on security (before you expose it)
 
-This setup is tuned for easy local/reference use, **not** for a public network:
-- **Grafana** has anonymous admin access. Remove the `GF_AUTH_ANONYMOUS_*` /
-  `GF_AUTH_DISABLE_LOGIN_FORM` env vars to require a login.
-- **The app** runs in `Development` mode (verbose errors, Swagger, auto-migrate). A real production
-  deploy would run `Production` and apply migrations as a separate step.
+This setup is tuned for easy local/reference use, **not** for a public network. The four things that
+matter most:
 
-Keep it bound to `localhost` (or behind a firewall / SSH tunnel) until you've hardened those. The ELK
-add-on also runs with security disabled — same caveat.
+- **The app runs in `Development` mode**, which seeds the API keys `dev-api-key-reporting` and
+  `dev-api-key-integration`. Those strings are printed in this repository. Anyone who reaches the app
+  has full write access with a credential they can read on GitHub.
+- **Grafana has anonymous *admin* access** — not viewer, admin.
+- **Everything publishes a port**, and this is the part that surprises people: Docker inserts its own
+  `iptables` rules ahead of UFW's, so a published port is reachable from the internet **even when
+  `ufw status` says it is denied**. "I have a firewall" does not cover this.
+- **Nothing has a retention limit.** Loki, Tempo, Prometheus and Elasticsearch grow until the disk is
+  full. This is the one that is most likely to actually happen to you, usually a month or two in.
+
+The ELK add-on additionally runs Elasticsearch with security disabled, so the audit trail can be read,
+forged or deleted by anyone who can reach port 9200.
+
+Keep this stack on a laptop, or bound to `localhost` behind an SSH tunnel.
+
+**Do not harden this file — use the one that is already hardened.**
+[README-production.md](README-production.md) explains each difference and walks through a first
+deploy; `docker-compose.prod.yml` and `docker-compose.prod.elk.yml` are the stacks it describes.
 
 ---
 

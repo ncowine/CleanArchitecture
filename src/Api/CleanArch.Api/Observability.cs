@@ -31,6 +31,19 @@ internal static class ObservabilityExtensions
         var tempoEndpoint = configuration["Observability:Tempo:OtlpEndpoint"] ?? "http://localhost:4317";
         var lokiEndpoint = configuration["Observability:Loki:OtlpEndpoint"] ?? "http://localhost:3100/otlp/v1/logs";
 
+        // Optional headers sent with every OTLP export, in "key=value,key2=value2" form.
+        //
+        // Empty for local development, where the collector is on localhost and there is nothing to
+        // authenticate to. They exist for the deployment where the app and the telemetry stores are on
+        // DIFFERENT hosts: Tempo and Loki have no authentication of their own, so the only thing that can
+        // stop a stranger writing into your traces and logs is a credential checked by whatever proxy
+        // fronts them. Typically:
+        //     Observability__Tempo__Headers = "Authorization=Basic <base64 of user:password>"
+        //
+        // SECRET — supply from an environment variable or a secret store, never from appsettings.json.
+        var tempoHeaders = configuration["Observability:Tempo:Headers"];
+        var lokiHeaders = configuration["Observability:Loki:Headers"];
+
         // Make log bodies human-readable in Loki (rendered message + scopes as attributes) instead of
         // raw message templates.
         services.Configure<OpenTelemetryLoggerOptions>(options =>
@@ -49,6 +62,11 @@ internal static class ObservabilityExtensions
                 {
                     otlp.Endpoint = new Uri(tempoEndpoint);
                     otlp.Protocol = OtlpExportProtocol.Grpc;
+
+                    if (!string.IsNullOrWhiteSpace(tempoHeaders))
+                    {
+                        otlp.Headers = tempoHeaders;
+                    }
                 }))
             .WithMetrics(metrics => metrics
                 .AddAspNetCoreInstrumentation()
@@ -65,6 +83,11 @@ internal static class ObservabilityExtensions
                 {
                     otlp.Endpoint = new Uri(lokiEndpoint);
                     otlp.Protocol = OtlpExportProtocol.HttpProtobuf;
+
+                    if (!string.IsNullOrWhiteSpace(lokiHeaders))
+                    {
+                        otlp.Headers = lokiHeaders;
+                    }
                 }));
 
         return services;
