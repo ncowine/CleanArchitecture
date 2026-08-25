@@ -1,0 +1,17 @@
+# Auto-import every dashboard JSON found in /var/lib/grafana/dashboards.
+# Both compose files mount ../grafana/dashboard-cleanarch-api.json into that folder,
+# so "CleanArch.Api — Service Overview" appears with nothing to click.
+
+apiVersion: 1
+
+providers:
+  - name: CleanArch
+    orgId: 1
+    folder: ''                 # top-level "General" folder
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true       # UI tweaks allowed; they are not written back to the file
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

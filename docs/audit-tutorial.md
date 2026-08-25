@@ -5,7 +5,8 @@
 > works, and how to run the whole thing (Elasticsearch + Kibana) yourself. Plenty of analogies.
 >
 > Companion reads: [`observability-tutorial.md`](observability-tutorial.md) (the metrics/traces/logs
-> story) and [`../elk/README.md`](../elk/README.md) (the runnable Elasticsearch + Kibana stack).
+> story) and [`../observability/README.md`](../observability/README.md) (the runnable stack,
+> Elasticsearch and Kibana included).
 
 ---
 
@@ -230,20 +231,21 @@ records **to** Elasticsearch. So the app config holds Elasticsearch's address
 
 ## 7. Setup part 1 — run Elasticsearch + Kibana
 
-Everything lives in the [`elk/`](../elk/) folder (its own README has the full detail). The short version:
+Elasticsearch and Kibana run as containers alongside the rest of the observability stack. They sit
+behind a profile because Elasticsearch wants about a gigabyte of RAM, so you start them only when you
+want the audit trail:
 
-1. **Download** Elasticsearch **9.x** and Kibana **9.x** (Windows `.zip`) — 9.x to match the app's
-   `Elastic.Clients.Elasticsearch` 9.x client. Extract them into `elk/elasticsearch/` and `elk/kibana/`.
-2. **Launch**:
-   ```powershell
-   cd X:\Repos\CleanArchitecture\elk
-   powershell -ExecutionPolicy Bypass -File .\start-elk.ps1
-   ```
-   The script starts Elasticsearch with **security disabled** (dev-only, single-node, heap capped so
-   it's laptop-friendly), waits for it, then starts Kibana pointed at it. Security-off is what lets the
-   app connect to plain `http://localhost:9200` with no credentials.
-3. **Confirm**: Elasticsearch <http://localhost:9200> returns JSON; Kibana <http://localhost:5601>
-   comes up after ~1–2 minutes (first boot initialises a lot of plugins).
+```bash
+cd observability/dev
+docker compose --profile elk up -d
+```
+
+**Confirm**: Elasticsearch <http://localhost:9200> returns JSON; Kibana <http://localhost:5601> comes
+up after a minute or two (first boot initialises a lot of plugins).
+
+The dev stack runs Elasticsearch with **security disabled** — single-node, plain `http`, no
+credentials — which is what lets the app connect to `http://localhost:9200` with nothing configured.
+Full setup: [`../observability/README.md`](../observability/README.md).
 
 > This is a **development** setup. Never disable security in production — see section 13.
 
@@ -432,9 +434,10 @@ too** (the behavior sits outside validation), so you can see what was *tried*, n
 The dev setup keeps things simple; production tightens each part. The app code doesn't change — only
 config and the surrounding infrastructure.
 
-- **Turn security back on.** Re-enable `xpack.security` (TLS + auth) on Elasticsearch, then give the app
-  credentials instead of anonymous access: set `Audit:Elasticsearch:ApiKey` (preferred) or
-  `Username`/`Password`, sourced from env vars / Key Vault / user-secrets — **never** committed.
+- **Turn security back on.** The production stack in [`../observability/prod`](../observability/prod)
+  already does this: `xpack.security` on, and a write-only `audit-writer` account the app authenticates
+  as via `Audit__Elasticsearch__Username`/`Password` from the environment — **never** committed. Add
+  TLS on top if the network between the app and Elasticsearch is not one you trust.
 - **Real actor identity.** Require authentication on auditable commands so `actor` is a verified user,
   not the `X-Actor` dev header.
 - **Retention (ILM).** Add an Index Lifecycle Management policy on `cleanarch-audit-*` to roll over and
@@ -452,6 +455,6 @@ stores it, Kibana shows it — and reverting is a new audited action, not a repl
 
 ---
 
-*Companion files: the runnable stack lives in [`../elk/`](../elk/); the app wiring is in
+*Companion files: the runnable stack lives in [`../observability/`](../observability/); the app wiring is in
 `src/BuildingBlocks/Auditing/`, `src/BuildingBlocks.Persistence/AuditingSaveChangesInterceptor.cs`, and
 `src/BuildingBlocks.Auditing.Elasticsearch/`.*

@@ -192,102 +192,26 @@ better and lets Prometheus notice when a target goes silent).
 
 ## 6. Setup part 1 — the storage services
 
-Everything here runs natively on Windows over `localhost`. No Docker. We keep each service in its own
-folder so its program, its config, and its data live together:
+The three storage services run as Docker containers, one command to start them
+all. Rather than repeat the steps here, follow the development quickstart in
+[`../observability/README.md`](../observability/README.md) — it is the same
+stack this tutorial describes, already configured.
 
-```
-observability/
-  start-all.ps1              ← one script to launch all three storage services
-  tempo/                     ← traces
-      tempo.exe
-      tempo.yaml             ← its config
-      tempo-data/            ← where it writes traces (created on first run)
-  loki/                      ← logs
-      loki-windows-amd64.exe
-      loki-config.yaml
-      loki-data/
-  prometheus/                ← metrics
-      prometheus.exe
-      prometheus.yml
-      data/
-  grafana/                   ← files for Grafana (not a running service; see part 8)
-      datasources.yaml
-      dashboard-cleanarch-api.json
-```
+What matters for understanding it:
 
-### Step 6.1 — Download the two you don't have
+| Service | Port | Why that port |
+|---------|------|---------------|
+| Tempo | 4317 (ingest), 3200 (queries) | 4317 is the standard OTLP/gRPC port — the app pushes here |
+| Loki | 3100 | one port does both: the app posts to `/otlp/v1/logs`, Grafana reads from the same API |
+| Prometheus | 9090 | its UI, and where `/targets` shows whether scraping is working |
+| Grafana | 3000 | the only one you actually browse day to day |
 
-You already ran **Grafana** and **Prometheus**. You only need **Tempo** and **Loki**. Both are single
-`.exe` files — no installer.
+Each service gets a config file (`tempo.yaml`, `loki.yaml`, `prometheus.yml`)
+that says which ports to listen on and where to store data — nothing more
+exotic than that. They are short and commented; read them once and the shape of
+the system is clear.
 
-| Tool | Where | Which file |
-|------|-------|-----------|
-| Tempo | <https://github.com/grafana/tempo/releases/latest> | `tempo_*_windows_amd64.tar.gz` |
-| Loki | <https://github.com/grafana/loki/releases/latest> | `loki-windows-amd64.exe.zip` |
-
-Unzip them into `observability/tempo/` and `observability/loki/` respectively. (The Tempo download
-is a `.tar.gz`; Windows 10+ can unpack it with `tar -xzf thefile.tar.gz`.)
-
-### Step 6.2 — Understand the config files
-
-A config file just tells each service which ports to listen on and where to store data. Here's the
-essence of each (full versions are in the repo, with comments on every line).
-
-**`tempo/tempo.yaml`** — the traces database:
-
-```yaml
-server:
-  http_listen_port: 3200          # Grafana reads traces from here
-distributor:
-  receivers:
-    otlp:                         # the "front door" — accept data in OTLP format
-      protocols:
-        grpc:
-          endpoint: "0.0.0.0:4317"   # the app PUSHES traces to this port
-storage:
-  trace:
-    backend: local                # store traces as files on disk (no cloud in dev)
-    local:
-      path: ./tempo-data/blocks
-    wal:
-      path: ./tempo-data/wal
-```
-
-**`loki/loki-config.yaml`** — the logs database. The key line is `http_listen_port: 3100`, which is
-both where Grafana reads logs *and* where the app pushes them (to `http://localhost:3100/otlp/v1/logs`).
-The rest configures local file storage, exactly like Tempo.
-
-**`prometheus/prometheus.yml`** — the metrics database. Because Prometheus *pulls*, its config lists
-**what to go scrape**:
-
-```yaml
-global:
-  scrape_interval: 15s            # go fetch metrics every 15 seconds
-  metric_name_escaping_scheme: underscores   # (explained in Gotchas — keep this line!)
-
-scrape_configs:
-  - job_name: cleanarch-api
-    metrics_path: /metrics        # the page to fetch
-    static_configs:
-      - targets: ['localhost:5235']   # ...on the app
-```
-
-### Step 6.3 — Launch them
-
-From the `observability/` folder, run the helper script:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start-all.ps1
-```
-
-It opens Tempo, Loki, and Prometheus each in its own window (so you can see their logs). Grafana you
-keep running as its own Windows service.
-
-**Confirm they're alive** (each should return "ready" in a browser or with `curl`):
-
-- Tempo: <http://localhost:3200/ready>
-- Loki: <http://localhost:3100/ready>  *(takes ~30s the first time)*
-- Prometheus: <http://localhost:9090/-/ready>
+Come back here once `docker compose up -d` is running.
 
 ---
 
@@ -374,33 +298,18 @@ to collect.
 
 ## 8. Setup part 3 — connecting Grafana
 
-Grafana needs two things: **data sources** (so it knows where the three databases live) and a
-**dashboard** (the actual graphs).
+Grafana needs two things: **data sources** (where the three stores live) and a
+**dashboard** (the graphs). Both are already set up for you by *provisioning* —
+Grafana reads `observability/grafana/provisioning/` at startup and creates the
+three connections, wires the trace↔log links, and imports
+`dashboard-cleanarch-api.json`. Nothing to click.
 
-### Step 8.1 — Add the three data sources
+Worth knowing because it explains what you are looking at: a "data source" is
+just a saved connection to one of the three stores, and the dashboard JSON
+refers to them by the stable ids `prometheus`, `tempo` and `loki` — which is why
+those ids must not be renamed.
 
-A "data source" is just a saved connection to a database. Two ways:
-
-**Option A — automatic (provisioning).** Copy `observability/grafana/datasources.yaml` into Grafana's
-provisioning folder (on a native Windows install, typically
-`C:\Program Files\GrafanaLabs\grafana\conf\provisioning\datasources\`) and restart the Grafana
-service. It pre-creates all three connections and even wires the trace↔log links.
-
-**Option B — by hand.** In Grafana → **Connections → Data sources → Add**, create three:
-
-| Type | URL |
-|------|-----|
-| Prometheus | `http://localhost:9090` |
-| Tempo | `http://localhost:3200` |
-| Loki | `http://localhost:3100` |
-
-### Step 8.2 — Import the dashboard
-
-In Grafana → **Dashboards → New → Import → Upload JSON file** → choose
-`observability/grafana/dashboard-cleanarch-api.json` → **Import**. If it already exists, Grafana asks
-to **Overwrite** — say yes.
-
-That's it. You now have the full loop: **app → databases → Grafana → your eyes.**
+You now have the full loop: **app → stores → Grafana → your eyes.**
 
 ---
 
@@ -501,7 +410,9 @@ are all Tempo needs, and it has sensible defaults for the rest.
 ## 12. Where to go next (production)
 
 Everything here is a **local development** setup: single-node, storing to local files, no security.
-For real deployments the shape stays the same, with a few upgrades:
+The production stack in [`../observability/prod`](../observability/prod) is the first step up — same
+four services, plus retention, passwords and a network boundary. Beyond that the shape stays the
+same, with a few upgrades:
 
 - **Add a collector in the middle.** Put **Grafana Alloy** (or the OpenTelemetry Collector) between
   the app and the databases. The app then pushes to *one* address (the collector), and the collector
@@ -517,6 +428,3 @@ But the mental model never changes: **the app emits, the databases store, Grafan
 clicks, every observability system you'll ever meet is a variation on this same theme.
 
 ---
-
-*Companion files: the runnable configs live in [`../observability/`](../observability/); a shorter
-operational runbook is in [`observability.md`](observability.md).*

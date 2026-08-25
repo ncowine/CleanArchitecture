@@ -1,0 +1,223 @@
+# =============================================================================
+#  PRODUCTION stack — internal network, one Docker host
+# =============================================================================
+# The application is NOT here: CleanArch.Api runs on IIS on a Windows Server and
+# talks to this box over the LAN. This host runs only the telemetry stores.
+#
+#   docker compose up -d          start (or apply changes)
+#   docker compose ps             what is running
+#   docker compose logs -f loki   follow one service
+#   docker compose down           stop  (never add -v here — it deletes the data)
+#
+# Every port is published on ${BIND_ADDR}, which should be the LAN address of
+# this VM. Tempo and Loki have no authentication of their own and none is
+# available in the single-binary builds, so the network boundary IS their
+# protection: keep this host off the public internet and firewalled to the IIS
+# server and your admin subnet. Elasticsearch and Grafana do authenticate.
+#
+# Setup, verification and the IIS-side settings: ../README.md
+# =============================================================================
+
+name: cleanarch-prod
+
+# Reused by every service below (&name defines, *name references).
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"      # without this, container logs grow until the disk is full
+      max-file: "3"
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+
+services:
+
+  # TRACES — the app pushes to :4317, Grafana reads :3200.
+  tempo:
+    image: grafana/tempo:${TEMPO_VERSION}
+    <<: [*logging, *hardening]
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "${BIND_ADDR}:4317:4317"   # OTLP/gRPC ingest — from the IIS server
+      - "${BIND_ADDR}:3200:3200"   # query API — Grafana reads here
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3200/ready | grep -q ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    mem_limit: 1g
+
+  # LOGS — one port: ingest at /otlp/v1/logs, queries from Grafana.
+  loki:
+    image: grafana/loki:${LOKI_VERSION}
+    <<: [*logging, *hardening]
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "${BIND_ADDR}:3100:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    mem_limit: 1g
+
+  # METRICS — Prometheus PULLS from the IIS server (target in prometheus.yml).
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION}
+    <<: [*logging, *hardening]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME}"
+      - "--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE}"
+      # No --web.enable-lifecycle: it is an unauthenticated reconfigure endpoint.
+      # Apply config changes with `docker compose restart prometheus` instead.
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${BIND_ADDR}:9090:9090"
+    # prometheus.yml scrapes the name "api-host"; this is what it resolves to.
+    extra_hosts:
+      - "api-host:${API_HOST_IP:?set API_HOST_IP in .env — the IIS server IP}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready | grep -q Ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    mem_limit: 1g
+
+  # DASHBOARDS — real login required, unlike the dev stack.
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION}
+    <<: [*logging, *hardening]
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://${BIND_ADDR}:3000"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboard-cleanarch-api.json:/var/lib/grafana/dashboards/cleanarch-api.json:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${BIND_ADDR}:3000:3000"
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+    mem_limit: 512m
+
+  # ── Audit trail ────────────────────────────────────────────────────────────
+
+  # Stores the audit records the app ships. Security is ON: the app authenticates
+  # as AUDIT_USER, Kibana as kibana_system, you as elastic.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
+    <<: [*logging, *hardening]
+    environment:
+      discovery.type: "single-node"
+      xpack.security.enabled: "true"
+      # Sets the built-in "elastic" superuser on the FIRST start of an empty
+      # volume only. Changing it later needs elasticsearch-reset-password.
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env}"
+      # TLS off: this link is LAN-internal. Turn it on if the network is shared.
+      xpack.security.http.ssl.enabled: "false"
+      ES_JAVA_OPTS: "-Xms${ES_HEAP} -Xmx${ES_HEAP}"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - "${BIND_ADDR}:9200:9200"   # audit ingest — from the IIS server
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -u elastic:$${ELASTIC_PASSWORD} http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    mem_limit: 2g
+
+  # One-shot: creates the two accounts the stack needs, then exits. Re-running is
+  # safe (each call overwrites), so it runs on every up and needs no manual step.
+  es-setup:
+    image: curlimages/curl:8.11.1
+    <<: *logging
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
+      KIBANA_SYSTEM_PASSWORD: "${KIBANA_SYSTEM_PASSWORD:?set KIBANA_SYSTEM_PASSWORD in .env}"
+      AUDIT_USER: "${AUDIT_USER}"
+      AUDIT_PASSWORD: "${AUDIT_PASSWORD:?set AUDIT_PASSWORD in .env}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        ES=http://elasticsearch:9200
+        A="elastic:$${ELASTIC_PASSWORD}"
+
+        echo "- kibana_system password"
+        curl -sSf -u "$$A" -X POST "$$ES/_security/user/kibana_system/_password" \
+          -H "Content-Type: application/json" \
+          -d "{\"password\":\"$${KIBANA_SYSTEM_PASSWORD}\"}" >/dev/null
+
+        echo "- role cleanarch-audit-writer (write-only, audit indices only)"
+        curl -sSf -u "$$A" -X PUT "$$ES/_security/role/cleanarch-audit-writer" \
+          -H "Content-Type: application/json" \
+          -d "{\"indices\":[{\"names\":[\"cleanarch-audit-*\"],\"privileges\":[\"auto_configure\",\"create_index\",\"write\"]}]}" >/dev/null
+
+        echo "- user $${AUDIT_USER} — what the app on IIS logs in as"
+        curl -sSf -u "$$A" -X PUT "$$ES/_security/user/$${AUDIT_USER}" \
+          -H "Content-Type: application/json" \
+          -d "{\"password\":\"$${AUDIT_PASSWORD}\",\"roles\":[\"cleanarch-audit-writer\"]}" >/dev/null
+
+        echo "elasticsearch accounts ready"
+    restart: "no"
+
+  # Reads the audit indices. Log in as "elastic" with ELASTIC_PASSWORD.
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}
+    <<: [*logging, *hardening]
+    environment:
+      ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+      ELASTICSEARCH_USERNAME: "kibana_system"
+      ELASTICSEARCH_PASSWORD: "${KIBANA_SYSTEM_PASSWORD}"
+      # Must be stable across restarts. If Kibana generates its own it changes on
+      # every boot, and saved objects, alerts and reports are silently lost.
+      XPACK_SECURITY_ENCRYPTIONKEY: "${KIBANA_ENCRYPTION_KEY:?set KIBANA_ENCRYPTION_KEY in .env (32+ chars)}"
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: "${KIBANA_ENCRYPTION_KEY}"
+      XPACK_REPORTING_ENCRYPTIONKEY: "${KIBANA_ENCRYPTION_KEY}"
+      SERVER_PUBLICBASEURL: "http://${BIND_ADDR}:5601"
+    ports:
+      - "${BIND_ADDR}:5601:5601"
+    depends_on:
+      es-setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5601/api/status || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+    mem_limit: 1g
+
+volumes:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  grafana-data:
+  es-data:

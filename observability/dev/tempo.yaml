@@ -1,0 +1,22 @@
+# Tempo — traces store (development). Single binary, local disk, no retention limit.
+
+server:
+  http_listen_port: 3200          # query API — Grafana's Tempo data source reads here
+
+distributor:
+  receivers:
+    otlp:                         # OTLP = what the app's OpenTelemetry exporter speaks
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+
+storage:
+  trace:
+    backend: local                # plain files on the tempo-data volume
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+
+usage_report:
+  reporting_enabled: false

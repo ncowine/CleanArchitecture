@@ -1,0 +1,36 @@
+# Loki — logs store (development). Single node, local filesystem, no retention limit.
+
+auth_enabled: false               # NB: this is multi-tenancy, not authentication
+
+server:
+  http_listen_port: 3100          # the app posts to /otlp/v1/logs here; Grafana reads here
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2020-10-24            # "in effect from" — leave as-is
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  allow_structured_metadata: true # REQUIRED for OTLP logs (carries trace_id etc.)
+  volume_enabled: true            # the log-volume bar in Explore
+
+analytics:
+  reporting_enabled: false

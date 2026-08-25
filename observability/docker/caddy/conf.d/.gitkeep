@@ -1,2 +1,0 @@
-Keeps this folder in git. Optional per-add-on site files land here at deploy time
-(see the `import` at the end of ../Caddyfile).
