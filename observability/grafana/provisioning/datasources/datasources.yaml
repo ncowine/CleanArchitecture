@@ -1,0 +1,45 @@
+# Grafana data sources, added automatically at startup ("provisioning").
+# Shared by ../../dev and ../../prod — both mount this folder read-only.
+# URLs use compose SERVICE NAMES: Grafana reaches the stores over the Docker network.
+
+apiVersion: 1
+
+datasources:
+  # ── METRICS ────────────────────────────────────────────────────────────────
+  - name: Prometheus
+    uid: prometheus           # stable id the dashboard JSON refers to — don't rename
+    type: prometheus
+    access: proxy             # Grafana's backend queries, not your browser
+    url: http://prometheus:9090
+    isDefault: true
+
+  # ── TRACES ─────────────────────────────────────────────────────────────────
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      # "Logs for this trace" button — jumps into Loki filtered by trace id.
+      tracesToLogsV2:
+        datasourceUid: loki
+        filterByTraceID: true
+        spanStartTimeShift: '-5m'
+        spanEndTimeShift: '5m'
+      serviceMap:
+        datasourceUid: prometheus
+
+  # ── LOGS ───────────────────────────────────────────────────────────────────
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # The reverse link: a trace_id in a log line becomes a link back to Tempo.
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          url: '$${__value.raw}'
+          datasourceUid: tempo

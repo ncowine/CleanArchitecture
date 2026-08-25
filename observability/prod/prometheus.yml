@@ -1,0 +1,44 @@
+# Prometheus — metrics scrape config (production).
+#
+# The target is the CleanArch.Api site on IIS. "api-host" is not DNS: it is the
+# name docker-compose.yml maps to API_HOST_IP from .env. Only the PORT below has
+# to match your IIS site binding.
+#
+# Prometheus does NOT expand ${...} — everything here is edited by hand.
+# Apply changes with:  docker compose restart prometheus
+# Then check Grafana - Explore - Prometheus, or:
+#   docker compose exec prometheus wget -qO- http://localhost:9090/api/v1/targets
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  # Classic underscore metric names (http_server_request_duration_seconds), which
+  # the dashboard expects, instead of Prometheus 3.x UTF-8 dotted names.
+  metric_name_escaping_scheme: underscores
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: cleanarch-api
+    metrics_path: /metrics
+    # http is fine on a trusted internal LAN. If the site is HTTPS-only, set
+    # scheme: https and make sure the certificate name matches "api-host" — or
+    # replace the target below with the real hostname.
+    scheme: http
+    static_configs:
+      - targets: ['api-host:5235']       # <-- match your IIS site port
+
+    # /metrics enumerates every route, request rate and error count. The first
+    # control is a Windows Firewall rule allowing only this VM to reach it. To
+    # also require a credential:
+    #   1. on the IIS box:  dotnet CleanArch.Api.dll --mint-api-key=prometheus-scraper --mint-api-key-roles=service
+    #   2. set Observability__Metrics__RequireAuthentication=true on the app
+    #   3. uncomment below and paste the key
+    # Change one end at a time: a wrong header makes the target go DOWN quietly.
+    #
+    # http_headers:
+    #   X-Api-Key:
+    #     values:
+    #       - 'PASTE_THE_MINTED_API_KEY'

@@ -1,0 +1,25 @@
+# Prometheus — metrics scrape config (development).
+#
+# "api-host" is not DNS: docker-compose.yml maps it to your machine via
+# host-gateway, so this scrapes the API you run in Visual Studio / `dotnet run`.
+# Change the port here if you run the API on something other than 5235.
+#
+# Prometheus does NOT expand ${...} — edit values in this file, not in .env.
+# After editing:  curl -X POST http://localhost:9090/-/reload
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  # Classic underscore metric names (http_server_request_duration_seconds), which
+  # the dashboard expects, instead of Prometheus 3.x UTF-8 dotted names.
+  metric_name_escaping_scheme: underscores
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: cleanarch-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['api-host:5235']

@@ -1,13 +1,8 @@
-# Downloaded binaries and runtime data — not source. Configs, scripts, and Grafana
-# JSON stay tracked; everyone re-downloads the binaries per docs/observability.md.
-*.exe
-tempo/tempo-data/
-loki/loki-data/
-prometheus/data/
+# Compose secrets (dev/.env, prod/.env). Templates are tracked as .env.example.
+.env
 
-# Tarball-bundled docs (not ours)
-tempo/CHANGELOG.md
-tempo/LICENSE
-tempo/README.md
-prometheus/LICENSE
-prometheus/NOTICE
+# Leftovers from the retired native-Windows stack: downloaded binaries and their
+# runtime data, never source. Safe to delete these folders from your working copy.
+/tempo/
+/loki/
+/prometheus/

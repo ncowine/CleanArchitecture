@@ -1,0 +1,59 @@
+# Loki — logs store (production). Same as dev plus retention and ingest limits.
+#
+# auth_enabled stays false on purpose. In Loki it means multi-tenancy, not
+# authentication: turning it on would require an X-Scope-OrgID header, validate
+# no credential, and break both the app push and Grafana queries. Loki is
+# protected here by the network boundary.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn                 # Loki at info level is very chatty
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  allow_structured_metadata: true # REQUIRED for OTLP logs (carries trace_id etc.)
+  volume_enabled: true
+
+  # 30 days. On its own this line does nothing — the compactor below enforces it.
+  retention_period: 720h
+
+  # A bug that logs in a tight loop gets a 429, not the whole disk. Raise these
+  # if you see legitimate rejections.
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+  max_line_size: 256KB
+  max_label_names_per_series: 30
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true         # without this, retention_period is ignored
+  retention_delete_delay: 2h      # grace window to catch a mistaken change
+  retention_delete_worker_count: 150
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false

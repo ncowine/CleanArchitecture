@@ -26,8 +26,11 @@ artifacts/
 .DS_Store
 Thumbs.db
 
-# Production secrets for the Docker observability stack — never commit these.
-# See observability/docker/.env.example for the template.
-observability/docker/.env
+# Compose secrets — never commit these. Templates live next to them as
+# .env.example (observability/dev/, observability/prod/).
 **/.env
 !**/.env.example
+
+# Locally downloaded Elasticsearch/Kibana distributions. Both environments now
+# run ELK from Docker images; this folder is a leftover and can be deleted.
+/elk/

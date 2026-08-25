@@ -8,7 +8,7 @@ application layer rather than with cross-database joins.
 > Status: POC. The architecture and patterns are production-shaped; some operational pieces are
 > deliberately stubbed (see [Production notes](#production-notes)).
 
-📚 **New here?** Start with **[docs/getting-started.md](docs/getting-started.md)** — install, run, and a plain-English glossary written for absolute beginners — then **[docs/clean-architecture-guide.md](docs/clean-architecture-guide.md)** for how the code is organized, how to add features, and a full **saga** tutorial. For the build/version plumbing, see **[docs/build-and-packages.md](docs/build-and-packages.md)** — the `Directory.*.props` files, Central Package Management, and the "multiple NuGet sources" (NU1507) fix.
+📚 **New here?** Start with **[docs/getting-started.md](docs/getting-started.md)** — install, run, and a plain-English glossary written for absolute beginners — then **[docs/clean-architecture-guide.md](docs/clean-architecture-guide.md)** for how the code is organized, how to add features, and a full **saga** tutorial. For the build/version plumbing, see **[docs/build-and-packages.md](docs/build-and-packages.md)** — the `Directory.*.props` files, Central Package Management, and the "multiple NuGet sources" (NU1507) fix. To run the telemetry stack, see **[observability/README.md](observability/README.md)** (dev and prod, both on Docker) and **[docs/deploy-iis.md](docs/deploy-iis.md)** for hosting the API itself.
 
 ## What it demonstrates
 
@@ -174,13 +174,13 @@ dotnet test
 
 - **Redis cache**: add `Microsoft.Extensions.Caching.StackExchangeRedis` + `AddStackExchangeRedisCache(...)`; HybridCache uses it as L2 automatically — no code change.
 - **Auth**: API key + Basic/AD + **Okta JWT bearer** are all wired. The JWT scheme is config-gated — set `Okta:Authority` (your Okta issuer, e.g. `https://<domain>/oauth2/default`) and `Okta:Audience` (e.g. `api://default`) to enable token validation; it's off by default for the POC. **API keys are validated against the database** — stored as SHA-256 hashes (never plaintext) in `students.db` behind a dedicated `ApiKeyDbContext` (its own `__AuthMigrationsHistory`, isolated from the Students domain), with expiry/revocation columns and a short-TTL validation cache. The two `dev-api-key-*` keys are seeded for local use. For service-to-service auth in a system that already has Okta, prefer the **OAuth2 client-credentials** grant (machines become JWT callers) over long-lived keys.
-- **Telemetry to Kibana/Grafana**: swap the console exporter for OTLP; audit (structured logs) flows to Elasticsearch by adding a logging sink.
+- **Telemetry to Grafana/Kibana**: already wired — OpenTelemetry pushes traces to Tempo and logs to Loki, Prometheus scrapes `/metrics`, and audit records ship to Elasticsearch. Two ready stacks in [`observability/`](observability/): `dev/` (Docker Desktop, no passwords) and `prod/` (internal network, API on IIS).
 - **Databases**: SQLite here for zero-setup; point each module's connection string at its real engine.
 
 ### Known gaps (intentional for a POC)
 
 - Outbox: no exponential backoff (fixed 2s poll) and no archival of processed rows.
-- No CI pipeline / Dockerfile.
+- No CI pipeline, and the app is not containerized: it deploys to IIS ([docs/deploy-iis.md](docs/deploy-iis.md)). Only the observability stack runs on Docker.
 - Cache invalidation is wired only where a write changes cached data today (extend per new write).
 
 ## Build note (low-RAM machines)

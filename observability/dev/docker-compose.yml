@@ -1,0 +1,140 @@
+# =============================================================================
+#  DEVELOPMENT stack — Tempo, Loki, Prometheus, Grafana (+ optional ELK)
+# =============================================================================
+# The API is NOT in here. You run it on your machine (Visual Studio or
+# `dotnet run`), exactly like production runs it on IIS — Docker only ever hosts
+# the telemetry stores.
+#
+#   docker compose up -d                     stores + Grafana
+#   docker compose --profile elk up -d       ... plus Elasticsearch + Kibana
+#   docker compose down                      stop   (add -v to wipe the data)
+#
+# Ports are published on ${BIND_ADDR} (127.0.0.1 by default), so nothing here is
+# reachable from the rest of the network. Setup and URLs: ../README.md
+# =============================================================================
+
+name: cleanarch-dev
+
+services:
+
+  # TRACES. The app pushes spans to :4317 (OTLP/gRPC); Grafana reads :3200.
+  tempo:
+    image: grafana/tempo:${TEMPO_VERSION}
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "${BIND_ADDR}:3200:3200"   # query API (Grafana)
+      - "${BIND_ADDR}:4317:4317"   # OTLP/gRPC ingest (the app)
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3200/ready | grep -q ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # LOGS. One port does both: the app posts to /otlp/v1/logs, Grafana reads back.
+  loki:
+    image: grafana/loki:${LOKI_VERSION}
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "${BIND_ADDR}:3100:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # METRICS. Prometheus PULLS: it scrapes the API on your host every 15s.
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION}
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"          # POST /-/reload after editing the config
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${BIND_ADDR}:9090:9090"
+    # prometheus.yml scrapes the name "api-host"; host-gateway points it at your
+    # machine (works on Docker Desktop and native Linux alike).
+    extra_hosts:
+      - "api-host:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready | grep -q Ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # DASHBOARDS. Stores nothing — queries the three above. Anonymous admin: dev only.
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION}
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboard-cleanarch-api.json:/var/lib/grafana/dashboards/cleanarch-api.json:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${BIND_ADDR}:3000:3000"
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+    restart: unless-stopped
+
+  # ── Audit trail (optional) ─────────────────────────────────────────────────
+  # Behind the "elk" profile because Elasticsearch is heavy. Without it the audit
+  # records still work — they go to the normal logs, and so reach Loki.
+  # Security is OFF here: plain http, no credentials. Dev only.
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
+    profiles: ["elk"]
+    environment:
+      discovery.type: "single-node"
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms${ES_HEAP} -Xmx${ES_HEAP}"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - "${BIND_ADDR}:9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s          # ES is slow to boot
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}
+    profiles: ["elk"]
+    environment:
+      ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+    ports:
+      - "${BIND_ADDR}:5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  grafana-data:
+  es-data:
