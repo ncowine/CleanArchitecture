@@ -97,6 +97,12 @@ the collected telemetry.
 The Docker host and the IIS server both sit on the internal network. Nothing in
 this stack is exposed publicly, and nothing here terminates TLS.
 
+> Doing this on a fresh Ubuntu server, without Docker experience and without a
+> copy of this repository? Follow
+> [`../docs/observability-elk-ubuntu-setup.md`](../docs/observability-elk-ubuntu-setup.md)
+> instead — it reproduces every file below from scratch and explains each line.
+> The summary here assumes you already have the repo to copy from.
+
 ### 1. Prepare the Docker host
 
 ```bash
