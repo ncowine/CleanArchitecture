@@ -99,7 +99,7 @@ this stack is exposed publicly, and nothing here terminates TLS.
 
 > Doing this on a fresh Ubuntu server, without Docker experience and without a
 > copy of this repository? Follow
-> [`../docs/observability-elk-ubuntu-setup.md`](../docs/observability-elk-ubuntu-setup.md)
+> [`../tutorials/90-observability-server-ubuntu.md`](../tutorials/90-observability-server-ubuntu.md)
 > instead — it reproduces every file below from scratch and explains each line.
 > The summary here assumes you already have the repo to copy from.
 
