@@ -11,8 +11,11 @@ namespace CleanArch.DesktopClient;
 
 public partial class App : PrismApplication
 {
-    // Where the API is hosted. For a real client this would come from config/per-environment.
-    private const string ApiBaseUrl = "http://localhost:5080/";
+    // Where the API is hosted. Matches the "http" launch profile in
+    // src/Api/CleanArch.Api/Properties/launchSettings.json — keep the two in step, or the client
+    // starts up fine and fails on its first call. For a real client this would come from
+    // config/per-environment.
+    private const string ApiBaseUrl = "http://localhost:5235/";
 
     // Service API key the API authorizes this client by (X-Api-Key). This is the well-known seeded dev
     // key; a real client would read a provisioned key from config/secret storage, not hard-code it.

@@ -8,7 +8,7 @@ MIT-licensed Prism) using MVVM, with unit-tested ViewModels. It has its own solu
 
 | Project | TFM | Role |
 |---|---|---|
-| `CleanArch.DesktopClient.Api` | net10.0 | Typed API clients (`IStudentsApiClient`, `ILibraryApiClient`), DTOs, JWT bearer handler, dev token store. No WPF dependency. |
+| `CleanArch.DesktopClient.Api` | net10.0 | Typed API clients (`IStudentsApiClient`, `ILibraryApiClient`), DTOs, API-key auth handler (`X-Api-Key` + `X-Actor` + correlation id). No WPF dependency. |
 | `CleanArch.DesktopClient` | net10.0-windows | WPF + Prism (DryIoc). Shell + region navigation, Views, ViewModels, DI bootstrap. |
 | `CleanArch.DesktopClient.Tests` | net10.0-windows | xUnit tests for the ViewModels (fakes for the API clients + navigation). |
 
@@ -35,7 +35,8 @@ drop, grade, cancel; browse Courses).
 
 ## Running
 
-The client points at `http://localhost:5080/` (see `App.ApiBaseUrl`). Start the API first, then run the
+The client points at `http://localhost:5235/` (see `App.ApiBaseUrl`), which is the API's `http` launch
+profile. Start the API first, then run the
 client from Visual Studio / `dotnet run --project CleanArch.DesktopClient`. (A display is required to show
 the window; the build and tests run headless.)
 
