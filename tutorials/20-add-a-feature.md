@@ -80,7 +80,7 @@ codebase.
 | Loads | The aggregate, through a repository | Nothing — projects straight to the response |
 | Enforces rules | Yes, in the domain | No rules to enforce |
 | Transaction | Yes, via the module's marker | No |
-| Audited | Yes, via `IAuditableRequest` | No |
+| Audited | Yes, via `IAuditableRequest` | Only if it exposes sensitive data, via `IAuditableRead` |
 | Returns | An id, or a small result | A per-endpoint response record |
 | Depends on | `I<Thing>Repository` | `I<Thing>ReadService` |
 
@@ -585,7 +585,7 @@ For a **read** feature:
 | Read query is slow | Loading the aggregate rather than projecting | `AsNoTracking()` + `.Select(...)` in a read service |
 | `More than one DbContext was found` | `dotnet ef` can't guess | Add `--context <Module>DbContext` |
 | Migration wants to drop a column you renamed | EF sees drop + add | Edit the migration to a rename before running it |
-| Feature audited but `changes` is empty | The module's `DbContext` has no audit interceptor | [Guide 40, chapter 6](40-auditing.md#6-step-2--capture-before-and-after) |
+| Feature audited but `changes` is empty | The module's `DbContext` has no audit interceptor | [Guide 40, chapter 8](40-auditing.md#8-step-4--capture-before-and-after) |
 
 ---
 

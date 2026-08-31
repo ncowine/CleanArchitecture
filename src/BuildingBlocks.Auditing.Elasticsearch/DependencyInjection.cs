@@ -12,6 +12,19 @@ public static class DependencyInjection
     /// audit sink at it — overriding the default logging sink. If <c>Audit:Elasticsearch:Uri</c> is not
     /// configured, this is a no-op and auditing keeps using the logging sink, so it's safe by default.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Apply <c>audit-index-template.json</c> (next to this file) before shipping to a real cluster.</b>
+    /// It maps <c>details</c> as <c>flattened</c>. Without it, Elasticsearch maps every distinct annotation
+    /// key as its own field, and an index that reaches the 1000-field limit starts <i>rejecting</i>
+    /// records — which this sink logs and drops, so the trail would thin out silently.
+    /// </para>
+    /// <para>
+    /// It is applied as an operations step rather than at startup on purpose: the shipping account is meant
+    /// to be write-only to <c>cleanarch-audit-*</c>, and creating templates needs cluster privileges that
+    /// an append-only pipe should not hold.
+    /// </para>
+    /// </remarks>
     public static IServiceCollection AddElasticsearchAudit(this IServiceCollection services, IConfiguration configuration)
     {
         var section = configuration.GetSection(ElasticsearchAuditOptions.SectionName);

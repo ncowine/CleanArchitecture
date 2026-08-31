@@ -1,0 +1,44 @@
+{
+  "index_patterns": ["cleanarch-audit-*"],
+  "priority": 100,
+  "_meta": {
+    "description": "Mapping for the CleanArch audit trail. The critical line is details: flattened — without it every distinct annotation key becomes its own mapped field and the index eventually hits the 1000-field limit, after which indexing fails and records are dropped."
+  },
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "correlationId": { "type": "keyword" },
+        "actor":         { "type": "keyword" },
+        "action":        { "type": "keyword" },
+        "occurredOnUtc": { "type": "date" },
+        "succeeded":     { "type": "boolean" },
+        "elapsedMs":     { "type": "long" },
+        "error":         { "type": "text" },
+        "category":      { "type": "keyword" },
+        "source":        { "type": "keyword" },
+        "resource":      { "type": "keyword" },
+
+        "details": { "type": "flattened" },
+
+        "changes": {
+          "properties": {
+            "entityType": { "type": "keyword" },
+            "entityId":   { "type": "keyword" },
+            "operation":  { "type": "keyword" },
+            "properties": {
+              "properties": {
+                "name":     { "type": "keyword" },
+                "oldValue": { "type": "keyword", "ignore_above": 1024 },
+                "newValue": { "type": "keyword", "ignore_above": 1024 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
