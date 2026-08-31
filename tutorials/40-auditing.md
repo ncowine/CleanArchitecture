@@ -256,8 +256,12 @@ the call site.
 
 The action is taken from the **enclosing type's** name, not the command's. Vertical-slice
 commands are nested types, so `typeof(TRequest).Name` would be the useless string
-`"Command"` for every command in the system. The behaviour reads
-`requestType.DeclaringType?.Name` instead, which gives you `CreateFocus`.
+`"Command"` for every command in the system. The behaviour asks `RequestName.Feature(…)` for
+the enclosing type's name instead, which gives you `CreateFocus`.
+
+That rule lives in one place because logs need it too: `LoggingBehavior` calls
+`RequestName.Display(…)` for the fuller `CreateFocus.Command`, since a log line is read on its
+own and has no surrounding record to say whether a read or a write ran.
 
 Practical consequence: **your feature class name is what appears in the audit trail**, so
 name it as an action someone investigating would search for. `WithdrawStudent` is a good
@@ -1013,6 +1017,7 @@ Nothing in this list is something you write; it is where to look when something 
 src/BuildingBlocks/
 ├── Messaging/IAuditableRequest.cs                  the markers — IAuditableRequest, IAuditableRead
 ├── Messaging/Behaviors/AuditBehavior.cs            wraps the request; builds the record
+├── Messaging/RequestName.cs                        how a request is named, for logs and audit
 └── Auditing/
     ├── AuditEntry.cs                               the record's shape
     ├── AuditCategory.cs                            Write / Read / External / Security / Custom
@@ -1020,7 +1025,7 @@ src/BuildingBlocks/
     ├── IAuditRecorder.cs                           record / track / annotate — the general capture point
     ├── AuditRecorder.cs                            stamps the ambient actor, correlation id, timestamp
     ├── DependencyInjection.cs                      AddAuditing — sink, actor, scope, recorder
-    ├── AuditRedaction.cs                             one redaction/truncation/size policy, every route
+    ├── AuditRedaction.cs                           one redaction/truncation/size policy, every route
     ├── EntityChange.cs                             per-entity + per-property changes
     ├── IAuditScope.cs                              the per-request notepad: changes + annotations
     ├── IAuditSink.cs                               where records go — the seam

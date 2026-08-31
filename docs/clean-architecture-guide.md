@@ -201,7 +201,8 @@ How does sending a `Command` end up running validation and a transaction without
 
 - `ISender.Send(request)` finds the one handler for that request type and runs it — but first it wraps the call in a chain of **pipeline behaviors** (`IPipelineBehavior<TRequest, TResponse>`).
 - The behaviors, in `src/BuildingBlocks/Messaging/Behaviors/`:
-  - **`LoggingBehavior`** — logs every request.
+  - **`LoggingBehavior`** — logs every request, naming the feature rather than the request class:
+    `Handling CreateStudent.Command` … `Handled CreateStudent.Command in 42ms`.
   - **`AuditBehavior`** — records requests marked `IAuditableRequest` to an audit sink.
   - **`ValidationBehavior`** — runs the FluentValidation `Validator` (if any) and throws before the handler if invalid.
 - Each module adds its own **`TransactionBehavior`** (`Students.Infrastructure/Behaviors/`): for requests marked `IStudentsCommand`, it opens a DB transaction, runs the handler, then `SaveChanges` + commits. That's why your handler can just call `AddAsync` and return — the behavior commits everything (the new entity *and* any outbox messages) atomically.

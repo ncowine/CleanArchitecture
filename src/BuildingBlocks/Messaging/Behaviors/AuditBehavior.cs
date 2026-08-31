@@ -17,6 +17,10 @@ public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequ
     private readonly IAuditSink _sink;
     private readonly ICurrentActor _actor;
     private readonly ICorrelationContext _correlation;
+    // The action names the operation, not the request class: see RequestName. Resolved once per closed
+    // generic, since the request type is fixed.
+    private static readonly string Action = RequestName.Feature(typeof(TRequest));
+
     private readonly IAuditScope _scope;
 
     public AuditBehavior(IAuditSink sink, ICurrentActor actor, ICorrelationContext correlation, IAuditScope scope)
@@ -33,10 +37,7 @@ public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequ
         CancellationToken cancellationToken)
     {
         var actor = _actor.Current;
-        // Vertical-slice commands are nested (e.g. CreateStudent.Command), so Type.Name is just
-        // "Command" — use the enclosing feature type's name for a meaningful action.
-        var requestType = typeof(TRequest);
-        var action = requestType.DeclaringType?.Name ?? requestType.Name;
+        var action = Action;
         var category = request is IAuditableRead ? AuditCategory.Read : AuditCategory.Write;
         var resource = request.AuditResource;
         var occurredOnUtc = DateTime.UtcNow;
