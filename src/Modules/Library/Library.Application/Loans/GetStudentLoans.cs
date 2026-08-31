@@ -1,3 +1,5 @@
+using System.Globalization;
+using BuildingBlocks.Auditing;
 using BuildingBlocks.Messaging;
 using BuildingBlocks.Pagination;
 using FluentValidation;
@@ -11,11 +13,17 @@ namespace Library.Application.Loans;
 /// The dominant multi-database read: the student's identity from the main DB (via the published
 /// contract) plus a page of their loans from the Library DB, composed in memory. No transaction, no
 /// cross-DB join. The student envelope is returned once; the loans themselves are paged.
+/// Audited as a read (<see cref="IAuditableRead"/>): this exposes one named student's borrowing history,
+/// which is exactly the kind of access someone can later be asked to account for having looked at.
 /// </summary>
 public static class GetStudentLoans
 {
     public sealed record Query(Guid StudentId, int Page = 1, int PageSize = 20)
-        : PagedRequest(Page, PageSize), IRequest<Response>;
+        : PagedRequest(Page, PageSize), IRequest<Response>, IAuditableRead
+    {
+        // Names whose data was read, so the audit record answers "whose?" and not just "which query?".
+        public string AuditResource => $"Student/{StudentId}";
+    }
 
     public sealed record Response(
         Guid StudentId,
@@ -49,12 +57,15 @@ public static class GetStudentLoans
         private readonly ILoanRepository _loans;
         private readonly IBookReadService _books;
         private readonly IStudentDirectory _students;
+        private readonly IAuditRecorder _audit;
 
-        public Handler(ILoanRepository loans, IBookReadService books, IStudentDirectory students)
+        public Handler(
+            ILoanRepository loans, IBookReadService books, IStudentDirectory students, IAuditRecorder audit)
         {
             _loans = loans;
             _books = books;
             _students = students;
+            _audit = audit;
         }
 
         public async Task<Response> Handle(Query query, CancellationToken cancellationToken)
@@ -79,6 +90,12 @@ public static class GetStudentLoans
                     loan.FineAmount,
                     loan.RenewalCount))
                 .ToList();
+
+            // Custom facts attached to this request's own audit record — how much of the student's
+            // history was exposed, and where the identity half came from (a different database, reached
+            // through the published contract rather than a join).
+            _audit.Annotate("loansReturned", summaries.Count.ToString(CultureInfo.InvariantCulture));
+            _audit.Annotate("identitySource", "Module:Students");
 
             return new Response(
                 student.Id,

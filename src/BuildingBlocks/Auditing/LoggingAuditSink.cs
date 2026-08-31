@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 
 namespace BuildingBlocks.Auditing;
@@ -17,12 +18,41 @@ internal sealed class LoggingAuditSink : IAuditSink
         _logger = logger;
     }
 
+    [SuppressMessage(
+        "Performance", "CA1873:Avoid potentially expensive logging",
+        Justification = "Format is guarded by IsEnabled below; the analyzer doesn't track the guard " +
+                        "through the source-generated LoggerMessage method.")]
     public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken)
     {
-        AuditLog.Recorded(
-            _logger, entry.CorrelationId, entry.Action, entry.Actor, entry.Succeeded, entry.ElapsedMs, entry.Error);
+        // Flattening the details costs an allocation, so skip the whole record when the event would be
+        // dropped anyway — audit runs on every auditable request, including the ones nobody is watching.
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            AuditLog.Recorded(
+                _logger,
+                entry.Category,
+                entry.CorrelationId,
+                entry.Action,
+                entry.Actor,
+                entry.Succeeded,
+                entry.ElapsedMs,
+                entry.Source,
+                entry.Resource,
+                Format(entry.Details),
+                entry.Error);
+        }
+
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Flattens the custom details to <c>key=value; key=value</c> so they stay readable in a plain text
+    /// log. Structured sinks (Elasticsearch) index the dictionary itself and never call this.
+    /// </summary>
+    private static string? Format(IReadOnlyDictionary<string, string?>? details)
+        => details is null or { Count: 0 }
+            ? null
+            : string.Join("; ", details.Select(detail => $"{detail.Key}={detail.Value}"));
 }
 
 internal static partial class AuditLog
@@ -30,7 +60,18 @@ internal static partial class AuditLog
     [LoggerMessage(
         EventId = 1000,
         Level = LogLevel.Information,
-        Message = "AUDIT [{CorrelationId}] {Action} by {Actor} succeeded={Succeeded} in {ElapsedMs}ms {Error}")]
+        Message = "AUDIT({Category}) [{CorrelationId}] {Action} by {Actor} succeeded={Succeeded} " +
+                  "in {ElapsedMs}ms source={Source} resource={Resource} details=[{Details}] {Error}")]
     public static partial void Recorded(
-        ILogger logger, string correlationId, string action, string actor, bool succeeded, long elapsedMs, string? error);
+        ILogger logger,
+        AuditCategory category,
+        string correlationId,
+        string action,
+        string actor,
+        bool succeeded,
+        long elapsedMs,
+        string? source,
+        string? resource,
+        string? details,
+        string? error);
 }

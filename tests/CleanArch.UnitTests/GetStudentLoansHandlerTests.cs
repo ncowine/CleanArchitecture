@@ -20,7 +20,8 @@ public class GetStudentLoansHandlerTests
         loans.Seed(Loan.Borrow(studentId, copyId, Today, Due));
         var books = new FakeBookReadService();
         books.Titles[copyId] = "TAOCP";
-        var handler = new GetStudentLoans.Handler(loans, books, directory);
+        var audit = new FakeAuditRecorder();
+        var handler = new GetStudentLoans.Handler(loans, books, directory, audit);
 
         var response = await handler.Handle(new GetStudentLoans.Query(studentId), default);
 
@@ -29,13 +30,18 @@ public class GetStudentLoansHandlerTests
         Assert.Single(response.Loans.Items);
         Assert.Equal(1, response.Loans.TotalCount);
         Assert.Equal("TAOCP", response.Loans.Items[0].BookTitle);
+
+        // The read is audited: the record says whose data was read and how much of it came back.
+        Assert.Equal($"Student/{studentId}", new GetStudentLoans.Query(studentId).AuditResource);
+        Assert.Equal("1", audit.Annotations["loansReturned"]);
+        Assert.Equal("Module:Students", audit.Annotations["identitySource"]);
     }
 
     [Fact]
     public async Task Unknown_student_throws()
     {
         var handler = new GetStudentLoans.Handler(
-            new FakeLoanRepository(), new FakeBookReadService(), new FakeStudentDirectory(null));
+            new FakeLoanRepository(), new FakeBookReadService(), new FakeStudentDirectory(null), new FakeAuditRecorder());
 
         await Assert.ThrowsAsync<DomainException>(
             () => handler.Handle(new GetStudentLoans.Query(Guid.NewGuid()), default));

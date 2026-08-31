@@ -24,13 +24,12 @@ public static class DependencyInjection
         services.TryAddScoped<ICorrelationContext, CorrelationContext>();
 
         // Audit: structured-logging sink + a default actor; the host overrides both (last wins) — e.g.
-        // an Elasticsearch sink for Kibana. The audit scope collects per-command entity changes.
-        services.TryAddScoped<IAuditSink, LoggingAuditSink>();
-        services.TryAddScoped<ICurrentActor, SystemActor>();
-        services.TryAddScoped<IAuditScope, AuditScope>();
+        // an Elasticsearch sink for Kibana. The audit scope collects per-command entity changes, and the
+        // recorder lets any code audit what the pipeline can't see (third-party calls, reads, security).
+        services.AddAuditing();
 
         // Outermost to innermost. Audit sits outside validation so rejected commands are still audited;
-        // it only wraps IAuditableRequest, so reads pass straight through.
+        // it only wraps IAuditableRequest (and IAuditableRead), so everything else passes straight through.
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(AuditBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));

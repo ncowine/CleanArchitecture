@@ -14,12 +14,6 @@ namespace BuildingBlocks.Persistence;
 /// </summary>
 public sealed class AuditingSaveChangesInterceptor : SaveChangesInterceptor
 {
-    private const int MaxValueLength = 512;
-
-    // Property names containing any of these (case-insensitive) are recorded as redacted.
-    private static readonly string[] SensitiveMarkers =
-        ["password", "secret", "token", "apikey", "api_key", "salt", "hash", "credential"];
-
     private readonly IAuditScope _scope;
 
     public AuditingSaveChangesInterceptor(IAuditScope scope) => _scope = scope;
@@ -100,18 +94,9 @@ public sealed class AuditingSaveChangesInterceptor : SaveChangesInterceptor
         }
     }
 
-    private static bool IsSensitive(string propertyName)
-    {
-        foreach (var marker in SensitiveMarkers)
-        {
-            if (propertyName.Contains(marker, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    // The markers, the length limit and the redaction text are shared with every other route into the
+    // trail (see AuditRedaction) — one policy, so a value is treated the same however it was captured.
+    private static bool IsSensitive(string propertyName) => AuditRedaction.IsSensitive(propertyName);
 
     private static string PrimaryKey(EntityEntry entry)
     {
@@ -139,15 +124,9 @@ public sealed class AuditingSaveChangesInterceptor : SaveChangesInterceptor
 
         if (sensitive)
         {
-            return "***REDACTED***";
+            return AuditRedaction.RedactedValue;
         }
 
-        var text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? value.ToString();
-        if (text is { Length: > MaxValueLength })
-        {
-            text = text[..MaxValueLength] + "…";
-        }
-
-        return text;
+        return AuditRedaction.Truncate(Convert.ToString(value, CultureInfo.InvariantCulture) ?? value.ToString());
     }
 }

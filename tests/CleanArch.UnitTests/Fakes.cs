@@ -1,3 +1,4 @@
+using BuildingBlocks.Auditing;
 using BuildingBlocks.Outbox;
 using BuildingBlocks.Pagination;
 using Library.Application.Abstractions;
@@ -308,4 +309,37 @@ internal sealed class FakeStudentOutbox : IStudentOutbox
     public List<object> Events { get; } = new();
 
     public void Enqueue<TEvent>(TEvent integrationEvent) where TEvent : class => Events.Add(integrationEvent);
+}
+
+/// <summary>
+/// Captures what a handler audits so tests can assert on it, without a sink or DI container.
+/// </summary>
+internal sealed class FakeAuditRecorder : IAuditRecorder
+{
+    public List<AuditFact> Facts { get; } = new();
+
+    public Dictionary<string, string?> Annotations { get; } = new(StringComparer.Ordinal);
+
+    public Task RecordAsync(AuditFact fact, CancellationToken cancellationToken = default)
+    {
+        Facts.Add(fact);
+        return Task.CompletedTask;
+    }
+
+    public async Task<T> TrackAsync<T>(
+        AuditFact fact, Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken = default)
+    {
+        var result = await operation(cancellationToken);
+        Facts.Add(fact);
+        return result;
+    }
+
+    public async Task TrackAsync(
+        AuditFact fact, Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+    {
+        await operation(cancellationToken);
+        Facts.Add(fact);
+    }
+
+    public void Annotate(string key, string? value) => Annotations[key] = value;
 }

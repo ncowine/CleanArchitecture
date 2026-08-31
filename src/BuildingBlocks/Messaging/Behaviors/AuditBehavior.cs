@@ -8,7 +8,8 @@ namespace BuildingBlocks.Messaging.Behaviors;
 /// Records an audit entry for every <see cref="IAuditableRequest"/> — who, what, when, outcome, and how
 /// long it took — by wrapping the handler. Sits outside validation, so rejected commands are audited too.
 /// Capture happens here once for all auditable requests; the destination is the swappable
-/// <see cref="IAuditSink"/>.
+/// <see cref="IAuditSink"/>. Requests marked <see cref="IAuditableRead"/> are recorded as reads, so
+/// "who looked at this?" is captured by the same pipeline as "who changed this?".
 /// </summary>
 public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>, IAuditableRequest
@@ -36,6 +37,8 @@ public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequ
         // "Command" — use the enclosing feature type's name for a meaningful action.
         var requestType = typeof(TRequest);
         var action = requestType.DeclaringType?.Name ?? requestType.Name;
+        var category = request is IAuditableRead ? AuditCategory.Read : AuditCategory.Write;
+        var resource = request.AuditResource;
         var occurredOnUtc = DateTime.UtcNow;
         var stopwatch = Stopwatch.StartNew();
 
@@ -44,9 +47,13 @@ public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequ
             var response = await next();
             stopwatch.Stop();
             // The transaction behavior (nested inside this one) has committed by now, so the interceptor
-            // has populated the scope with the committed before/after changes.
+            // has populated the scope with the committed before/after changes. Anything the handler
+            // annotated on the way through (via IAuditRecorder.Annotate) rides along on the same record.
             await _sink.RecordAsync(
-                new AuditEntry(_correlation.CorrelationId, actor, action, occurredOnUtc, Succeeded: true, stopwatch.ElapsedMilliseconds, Error: null, _scope.Changes.ToArray()),
+                new AuditEntry(
+                    _correlation.CorrelationId, actor, action, occurredOnUtc, Succeeded: true,
+                    stopwatch.ElapsedMilliseconds, Error: null, _scope.Changes.ToArray(),
+                    category, Source: null, resource, Details(_scope)),
                 cancellationToken);
             return response;
         }
@@ -54,10 +61,18 @@ public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequ
         {
             stopwatch.Stop();
             // Failed command: its transaction rolled back, so report no changes (nothing was committed).
+            // The annotations still stand — they say how far the request got before it failed.
             await _sink.RecordAsync(
-                new AuditEntry(_correlation.CorrelationId, actor, action, occurredOnUtc, Succeeded: false, stopwatch.ElapsedMilliseconds, exception.Message, []),
+                new AuditEntry(
+                    _correlation.CorrelationId, actor, action, occurredOnUtc, Succeeded: false,
+                    stopwatch.ElapsedMilliseconds, exception.Message, [],
+                    category, Source: null, resource, Details(_scope)),
                 cancellationToken);
             throw;
         }
     }
+
+    // A record with an empty details bag reads better in the store than one with an empty object.
+    private static Dictionary<string, string?>? Details(IAuditScope scope)
+        => scope.Details.Count == 0 ? null : new Dictionary<string, string?>(scope.Details, StringComparer.Ordinal);
 }
