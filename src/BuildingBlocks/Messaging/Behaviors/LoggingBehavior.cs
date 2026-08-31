@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace BuildingBlocks.Messaging.Behaviors;
@@ -9,6 +10,10 @@ namespace BuildingBlocks.Messaging.Behaviors;
 public sealed class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {
+    // Resolved once per closed generic rather than per request: the request type never changes, and
+    // reflecting on every call to produce a constant string is work for nothing.
+    private static readonly string Request = RequestName.Display(typeof(TRequest));
+
     private readonly ILogger<LoggingBehavior<TRequest, TResponse>> _logger;
 
     public LoggingBehavior(ILogger<LoggingBehavior<TRequest, TResponse>> logger)
@@ -21,11 +26,15 @@ public sealed class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRe
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        var requestName = typeof(TRequest).Name;
+        LoggingBehaviorLog.Handling(_logger, Request);
 
-        LoggingBehaviorLog.Handling(_logger, requestName);
+        var startedAt = Stopwatch.GetTimestamp();
         var response = await next();
-        LoggingBehaviorLog.Handled(_logger, requestName);
+
+        // Hoisted out of the log call: a timestamp delta is trivial to compute, and doing it here keeps
+        // the analyzer honest about arguments that would be expensive when the level is disabled.
+        var elapsedMs = (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+        LoggingBehaviorLog.Handled(_logger, Request, elapsedMs);
 
         return response;
     }
@@ -37,6 +46,6 @@ internal static partial class LoggingBehaviorLog
     [LoggerMessage(Level = LogLevel.Information, Message = "Handling {Request}")]
     public static partial void Handling(ILogger logger, string request);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Handled {Request}")]
-    public static partial void Handled(ILogger logger, string request);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Handled {Request} in {ElapsedMs}ms")]
+    public static partial void Handled(ILogger logger, string request, long elapsedMs);
 }
