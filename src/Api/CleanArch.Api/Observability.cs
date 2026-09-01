@@ -1,4 +1,5 @@
 using BuildingBlocks.Outbox;
+using CleanArch.Api.Authentication;
 using Library.Infrastructure.Persistence;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
@@ -57,6 +58,9 @@ internal static class ObservabilityExtensions
             .WithTracing(tracing => tracing
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
+                // Token exchanges for On-Behalf-Of downstream calls. Without this the IdP round-trip is
+                // invisible and reads as unexplained latency on the downstream span.
+                .AddSource(OnBehalfOfDiagnostics.ActivitySourceName)
                 // Traces -> Tempo (OTLP/gRPC, :4317). gRPC uses no URL path, so the endpoint is used as-is.
                 .AddOtlpExporter(otlp =>
                 {

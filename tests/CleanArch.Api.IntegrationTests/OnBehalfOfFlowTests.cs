@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -28,8 +29,14 @@ public sealed class OnBehalfOfFlowTests
     private const string TokenEndpoint = "https://idp.example/oauth2/token";
     private const string ApiClientId = "students-api";
     private const string ApiClientSecret = "super-secret";
-    private const string DownstreamAudience = "billing-api";
-    private const string DownstreamScope = "billing.read";
+    // TWO downstreams, because one is the case that hides the bug this design exists to prevent: a
+    // single shared audience silently sends every service a token minted for one of them.
+    private const string BillingClient = "billing";
+    private const string BillingAudience = "billing-api";
+    private const string BillingScope = "billing.read";
+    private const string GradingClient = "grading";
+    private const string GradingAudience = "grading-api";
+    private const string GradingScope = "grades.write";
     private const string UserSubject = "alice@university.edu";
 
     private readonly ITestOutputHelper _output;
@@ -56,7 +63,7 @@ public sealed class OnBehalfOfFlowTests
         var accessor = provider.GetRequiredService<IHttpContextAccessor>();
         accessor.HttpContext = new DefaultHttpContext { RequestServices = provider };
 
-        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient("Downstream");
+        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient(BillingClient);
 
         // ── The actual outbound call. Our OnBehalfOfHandler intercepts it, exchanges the user token,
         //    and attaches the downstream-scoped token — all before the request leaves the process.
@@ -69,13 +76,13 @@ public sealed class OnBehalfOfFlowTests
         // ── Assertions: the downstream saw the ORIGINAL USER, scoped to ITS OWN audience.
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(UserSubject, seen.SeenSub);          // same user — true impersonation
-        Assert.Equal(DownstreamAudience, seen.SeenAud);   // re-scoped to the downstream API
+        Assert.Equal(BillingAudience, seen.SeenAud);      // re-scoped to the downstream API
         Assert.NotEqual(ApiClientId, seen.SeenAud);       // NOT the token we were handed
 
         // The exchange client built a spec-compliant RFC 8693 request, authenticated as our confidential client.
         Assert.Equal("urn:ietf:params:oauth:grant-type:token-exchange", idp.LastForm["grant_type"]);
         Assert.Equal(userToken, idp.LastForm["subject_token"]);
-        Assert.Equal(DownstreamAudience, idp.LastForm["audience"]);
+        Assert.Equal(BillingAudience, idp.LastForm["audience"]);
         Assert.Equal((ApiClientId, ApiClientSecret), idp.LastClientCredentials);
 
         // ── Caching decorator: a second call for the same user does NOT hit the IdP again.
@@ -88,6 +95,78 @@ public sealed class OnBehalfOfFlowTests
     }
 
     [Fact]
+    public async Task Mints_a_token_per_downstream_so_each_service_gets_its_own_audience()
+    {
+        var userToken = FakeJwt.Mint(("sub", UserSubject), ("aud", ApiClientId));
+        var idp = new FakeIdpHandler(_ => { });
+        var downstream = new FakeDownstreamHandler(_ => { });
+
+        await using var provider = BuildPipeline(userToken, idp, downstream);
+        provider.GetRequiredService<IHttpContextAccessor>().HttpContext =
+            new DefaultHttpContext { RequestServices = provider };
+        var factory = provider.GetRequiredService<IHttpClientFactory>();
+
+        var billingSeen = await Call(factory, BillingClient, "/invoices");
+        var gradingSeen = await Call(factory, GradingClient, "/grades");
+
+        // The same user reaches both services — but each receives a token minted for ITSELF. Sharing one
+        // audience across downstreams is the failure this design prevents: the second service would reject
+        // a token issued for the first, and the 401 would come from the far end with nothing to trace it to.
+        Assert.Equal(UserSubject, billingSeen.SeenSub);
+        Assert.Equal(UserSubject, gradingSeen.SeenSub);
+        Assert.Equal(BillingAudience, billingSeen.SeenAud);
+        Assert.Equal(GradingAudience, gradingSeen.SeenAud);
+
+        // Two exchanges, not one: the cache is keyed per downstream, so the second call cannot be served
+        // the first downstream's token.
+        Assert.Equal(2, idp.ExchangeCount);
+
+        // Each downstream still caches independently — repeats add no IdP traffic.
+        await Call(factory, BillingClient, "/invoices");
+        await Call(factory, GradingClient, "/grades");
+        Assert.Equal(2, idp.ExchangeCount);
+    }
+
+    [Fact]
+    public async Task Refuses_a_downstream_whose_configuration_section_is_missing()
+    {
+        var userToken = FakeJwt.Mint(("sub", UserSubject), ("aud", ApiClientId));
+        var idp = new FakeIdpHandler(_ => { });
+        var downstream = new FakeDownstreamHandler(_ => { });
+
+        // 'grading' is registered in code but has no audience or scope in this environment — the classic
+        // "it works on my machine" deployment mistake. In the real host ValidateOnStart turns this into a
+        // boot failure; here (a bare container, no host) it surfaces on first use. Either way it names the
+        // section, rather than silently minting a token with no audience for the downstream to reject.
+        await using var provider = BuildPipeline(userToken, idp, downstream, extraConfig:
+            new Dictionary<string, string?>
+            {
+                [$"OnBehalfOf:Downstreams:{GradingClient}:Audience"] = null,
+                [$"OnBehalfOf:Downstreams:{GradingClient}:Scope"] = null,
+            });
+        provider.GetRequiredService<IHttpContextAccessor>().HttpContext =
+            new DefaultHttpContext { RequestServices = provider };
+        var factory = provider.GetRequiredService<IHttpClientFactory>();
+
+        var ex = await Assert.ThrowsAsync<OptionsValidationException>(
+            () => factory.CreateClient(GradingClient).GetAsync("/grades"));
+        Assert.Contains($"OnBehalfOf:Downstreams:{GradingClient}", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, idp.ExchangeCount);
+
+        // And the misconfigured downstream does not take the healthy one down with it.
+        var billingSeen = await Call(factory, BillingClient, "/invoices");
+        Assert.Equal(BillingAudience, billingSeen.SeenAud);
+    }
+
+    private static async Task<DownstreamView> Call(
+        IHttpClientFactory factory, string clientName, string path)
+    {
+        var response = await factory.CreateClient(clientName).GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<DownstreamView>())!;
+    }
+
+    [Fact]
     public async Task Fails_loudly_when_the_caller_has_no_user_token()
     {
         var idp = new FakeIdpHandler(_ => { });
@@ -97,7 +176,7 @@ public sealed class OnBehalfOfFlowTests
         var accessor = provider.GetRequiredService<IHttpContextAccessor>();
         accessor.HttpContext = new DefaultHttpContext { RequestServices = provider };
 
-        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient("Downstream");
+        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient(BillingClient);
 
         // A service caller (API key / Basic) has no user token to exchange — OBO must refuse, not silently
         // fall back to a service identity. That refusal is the whole point of the design, and it surfaces
@@ -118,7 +197,7 @@ public sealed class OnBehalfOfFlowTests
         await using var provider = BuildPipeline(userToken, idp, downstream, clock);
         provider.GetRequiredService<IHttpContextAccessor>().HttpContext =
             new DefaultHttpContext { RequestServices = provider };
-        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient("Downstream");
+        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient(BillingClient);
 
         await http.GetAsync("/invoices");
         Assert.Equal(1, idp.ExchangeCount);
@@ -145,7 +224,7 @@ public sealed class OnBehalfOfFlowTests
         await using var provider = BuildPipeline(userToken, idp, downstream);
         provider.GetRequiredService<IHttpContextAccessor>().HttpContext =
             new DefaultHttpContext { RequestServices = provider };
-        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient("Downstream");
+        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient(BillingClient);
 
         // The provider returned 400 (invalid_grant) — the caller's token is the problem (→ 401), and the
         // downstream is never called with a bad token.
@@ -173,14 +252,14 @@ public sealed class OnBehalfOfFlowTests
         });
         provider.GetRequiredService<IHttpContextAccessor>().HttpContext =
             new DefaultHttpContext { RequestServices = provider };
-        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient("Downstream");
+        var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient(BillingClient);
 
         var response = await http.GetAsync("/invoices");
         var seen = await response.Content.ReadFromJsonAsync<DownstreamView>();
 
         // The flow still works end-to-end, as the authenticated user.
         Assert.Equal(UserSubject, seen!.SeenSub);
-        Assert.Equal(DownstreamAudience, seen.SeenAud);
+        Assert.Equal(BillingAudience, seen.SeenAud);
 
         // But NO secret / Basic header crossed the wire — the proof was a signed assertion instead.
         Assert.Null(idp.LastAuthorizationHeader);
@@ -222,8 +301,10 @@ public sealed class OnBehalfOfFlowTests
             ["OnBehalfOf:TokenEndpoint"] = TokenEndpoint,
             ["OnBehalfOf:ClientId"] = ApiClientId,
             ["OnBehalfOf:ClientSecret"] = ApiClientSecret,
-            ["OnBehalfOf:Audience"] = DownstreamAudience,
-            ["OnBehalfOf:Scope"] = DownstreamScope,
+            [$"OnBehalfOf:Downstreams:{BillingClient}:Audience"] = BillingAudience,
+            [$"OnBehalfOf:Downstreams:{BillingClient}:Scope"] = BillingScope,
+            [$"OnBehalfOf:Downstreams:{GradingClient}:Audience"] = GradingAudience,
+            [$"OnBehalfOf:Downstreams:{GradingClient}:Scope"] = GradingScope,
         };
         if (extraConfig is not null)
         {
@@ -256,9 +337,15 @@ public sealed class OnBehalfOfFlowTests
         services.AddHttpClient(TokenExchangeClient.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() => idp);
 
-        // The downstream API client, wearing the real OBO handler, with the downstream itself faked.
-        services.AddHttpClient("Downstream", c => c.BaseAddress = new Uri("https://billing.example/"))
-            .AddHttpMessageHandler<OnBehalfOfHandler>()
+        // Two downstream clients, each wearing the real per-downstream OBO handler, with the downstream
+        // services themselves faked. Neither names its audience here: AddOnBehalfOf() binds it from
+        // OnBehalfOf:Downstreams:<client name>, which is what keeps client and configuration in step.
+        services.AddHttpClient(BillingClient, c => c.BaseAddress = new Uri("https://billing.example/"))
+            .AddOnBehalfOf()
+            .ConfigurePrimaryHttpMessageHandler(() => downstream);
+
+        services.AddHttpClient(GradingClient, c => c.BaseAddress = new Uri("https://grading.example/"))
+            .AddOnBehalfOf()
             .ConfigurePrimaryHttpMessageHandler(() => downstream);
 
         return services.BuildServiceProvider();

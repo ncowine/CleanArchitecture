@@ -54,12 +54,16 @@ builder.Services
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 
-// Example: a downstream API client that calls AS the authenticated user (OAuth2 On-Behalf-Of). The
-// OnBehalfOfHandler exchanges the caller's OIDC token for a downstream-scoped token and attaches it.
-// Point the base address at the real downstream API and inject this client where you call out.
-//   builder.Services.AddHttpClient("Downstream", client =>
-//           client.BaseAddress = new Uri(builder.Configuration["DownstreamApi:BaseUrl"]!))
-//       .AddHttpMessageHandler<OnBehalfOfHandler>();
+// Example: downstream API clients that call AS the authenticated user (OAuth2 On-Behalf-Of). AddOnBehalfOf
+// exchanges the caller's OIDC token for one scoped to THAT downstream and attaches it. One line per
+// downstream; each reads its audience from OnBehalfOf:Downstreams:<client name>, so several downstreams
+// each get a token their own service accepts.
+//   builder.Services.AddHttpClient("billing", client =>
+//           client.BaseAddress = new Uri(builder.Configuration["Downstreams:Billing:BaseUrl"]!))
+//       .AddOnBehalfOf();
+//   builder.Services.AddHttpClient("grading", client =>
+//           client.BaseAddress = new Uri(builder.Configuration["Downstreams:Grading:BaseUrl"]!))
+//       .AddOnBehalfOf();
 
 var app = builder.Build();
 
