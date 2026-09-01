@@ -49,7 +49,16 @@ internal sealed class GlobalExceptionHandler : IExceptionHandler
                     ? (StatusCodes.Status401Unauthorized, "Unauthorized")
                     : (StatusCodes.Status502BadGateway, "Upstream identity provider unavailable");
                 await Results
-                    .Problem(detail: tokenExchange.Message, statusCode: status, title: title)
+                    .Problem(
+                        detail: tokenExchange.Message,
+                        statusCode: status,
+                        title: title,
+                        // Which downstream failed, as a machine-readable field — with several configured,
+                        // the response is otherwise indistinguishable between them.
+                        extensions: new Dictionary<string, object?>
+                        {
+                            ["downstream"] = tokenExchange.DownstreamName,
+                        })
                     .ExecuteAsync(httpContext);
                 return true;
 

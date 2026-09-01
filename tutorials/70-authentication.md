@@ -26,7 +26,7 @@ changes.
 | 7 | [One principal, whatever the door](#7-one-principal-whatever-the-door) | Claims transformation |
 | 8 | [Step 4 — Protect an endpoint](#8-step-4--protect-an-endpoint) | The easy part |
 | 9 | [Why the audit trail depends on this](#9-why-the-audit-trail-depends-on-this) | The point of the whole guide |
-| 10 | [Calling downstream as the user](#10-calling-downstream-as-the-user) | On-behalf-of |
+| 10 | [Calling downstream as the user](#10-calling-downstream-as-the-user) | On-behalf-of, to one downstream or several |
 | 11 | [Choosing a scheme for a new caller](#11-choosing-a-scheme-for-a-new-caller) | A decision table |
 | 12 | [The checklist](#12-the-checklist) | Run this when doing it for real |
 | 13 | [Troubleshooting](#13-troubleshooting) | Symptom, cause, fix |
@@ -443,24 +443,154 @@ When your API must call another API **as the user who called you** — not as it
 pattern is OAuth2 **On-Behalf-Of**: exchange the caller's token for a new one scoped to the
 downstream service.
 
-```csharp
-builder.Services.AddHttpClient("Downstream", client =>
-        client.BaseAddress = new Uri(builder.Configuration["DownstreamApi:BaseUrl"]!))
-    .AddHttpMessageHandler<OnBehalfOfHandler>();
-```
-
-The handler lifts the validated token off the request (which is what `SaveToken = true` was
-for), exchanges it at the identity provider, caches the result, and attaches it to the
-outgoing call.
-
 **Why not just forward the original token?** Because it was issued for *your* audience. The
 downstream service should reject it — and if it doesn't, any service holding a token for you
 can impersonate your users everywhere. The exchange produces a token scoped to exactly one
 downstream audience, so a compromised service can only reach what it was allowed to reach.
 
-Configuration lives under `OnBehalfOf` — token endpoint, client id, and either a client
-secret or a signed assertion (`PrivateKeyJwt`). Both are secrets; both come from the
-environment or a secret store, never from `appsettings.json`.
+That last sentence is also the reason this is configured **per downstream**. An API that calls
+three services needs three tokens, each minted for a different audience. One shared audience
+would mean two of the three being handed a token issued for the third — and rejecting it,
+correctly, with a 401 that arrives from the far end carrying no clue as to why.
+
+### The two halves of the configuration
+
+| Half | What it describes | Where it lives |
+|---|---|---|
+| **Credentials** | This API's *single* identity at the provider | The `OnBehalfOf` root |
+| **Target** | Who each exchanged token is *for* | `OnBehalfOf:Downstreams:{name}` |
+
+Your API has one client registration, so the credentials are shared. What differs per
+downstream is only the audience and scopes:
+
+```json
+"OnBehalfOf": {
+  "TokenEndpoint": "https://your-org.okta.com/oauth2/aus1a2b3c4d/v1/token",
+  "ClientId": "0oa4f8example",
+  "ClientAuthentication": "PrivateKeyJwt",
+  "Downstreams": {
+    "billing":   { "Audience": "api://billing",   "Scope": "invoices.read" },
+    "grading":   { "Audience": "api://grading",   "Scope": "grades.write" },
+    "timetable": { "Audience": "api://timetable", "Scope": "timetable.read" }
+  }
+}
+```
+
+`ClientSecret` and `SigningKeyPem` are **secrets** and never appear here — they come from the
+environment (`OnBehalfOf__ClientSecret`) or a secret store, overlaid on this section.
+
+### Wiring a downstream
+
+Register the machinery once, then one line per downstream:
+
+```csharp
+builder.Services.AddOnBehalfOf(builder.Configuration);       // once, in Program.cs
+
+builder.Services.AddHttpClient("billing", c => c.BaseAddress = billingUri).AddOnBehalfOf();
+builder.Services.AddHttpClient("grading", c => c.BaseAddress = gradingUri).AddOnBehalfOf();
+```
+
+**The configuration key is the client's own name.** `AddOnBehalfOf()` on the `"billing"` client
+binds `OnBehalfOf:Downstreams:billing`, so a client and its audience cannot drift apart as
+services are added. Pass a name — `AddOnBehalfOf("billing")` — only when two clients must share
+one downstream's audience.
+
+Then call it the ordinary way; the identity flows without the calling code knowing:
+
+```csharp
+var http = httpClientFactory.CreateClient("billing");
+var invoices = await http.GetFromJsonAsync<Invoice[]>("/invoices", ct);
+```
+
+The handler lifts the validated token off the request (which is what `SaveToken = true` was
+for), exchanges it at the identity provider, caches the result **per downstream**, and attaches
+it to the outgoing call.
+
+### What the provider side needs
+
+The exchange is the standard RFC 8693 grant, so this code is provider-neutral — but the
+provider has to be set up to allow it. Four things to confirm with whoever administers Okta,
+because three of the four fail as a flat `400` carrying a single word:
+
+| Check | Fails as |
+|---|---|
+| The authorization server behind `TokenEndpoint` permits the **token-exchange grant** — org and custom authorization servers differ here, so confirm which one to point at | `unsupported_grant_type`, or a `404` |
+| Your API's client is registered as **confidential** and allowed to use that grant | `invalid_client` |
+| Each downstream exists as an **audience** your client may exchange *for* | `invalid_target` |
+| Your client is **granted the scopes** each downstream's entry asks for | `invalid_scope` |
+
+Get the exact `Audience` string from whoever owns each downstream service rather than guessing:
+it must match what *that* service validates, character for character.
+
+### Not every downstream needs this
+
+On-Behalf-Of is for a downstream that does its **own per-user authorization** — one that will
+decide differently depending on which user is behind the call. A service that only needs to
+know *your API* asked should use a plain client with the client-credentials grant instead.
+Reaching for the exchange everywhere costs an identity-provider round-trip on every hop and
+buys no authorization, so expect a mix: some clients with `.AddOnBehalfOf()`, some without.
+
+### When it goes wrong
+
+Four places to look, in the order that answers the most questions fastest.
+
+**1. Startup says what this deployment will actually ask for.** Every configured downstream is
+logged once at boot — the quickest way to catch an environment whose variables were never set:
+
+```
+info: On-Behalf-Of ready: token endpoint https://…/v1/token, client 0oa4f8example
+      authenticating by PrivateKeyJwt, 3 downstream(s)
+info: On-Behalf-Of downstream 'billing' will request audience api://billing scope invoices.read
+info: On-Behalf-Of downstream 'grading' will request audience api://grading scope grades.write
+```
+
+A downstream registered in code but missing from configuration **fails the boot**, naming the
+section — rather than starting happily and failing on a user's request hours later.
+
+**2. A trace tells you whether the provider was even involved.** Each exchange is its own span,
+`OnBehalfOf.Exchange`, tagged `obo.downstream`, `obo.audience` and `obo.scope`. A downstream
+call with **no child exchange span** was served from the token cache — which is how you tell a
+slow identity provider apart from a slow downstream.
+
+**3. Debug logs give the per-call detail.** Turn them on for the authentication namespace:
+
+```json
+"Logging": { "LogLevel": { "CleanArch.Api.Authentication": "Debug" } }
+```
+
+```
+dbug: On-Behalf-Of exchanged a token for downstream 'billing' (audience api://billing),
+      valid 3600s — this was a cache miss
+dbug: On-Behalf-Of attached a token for downstream 'billing' (audience api://billing)
+      as user 'alice@university.edu' on GET /invoices
+```
+
+An **attach** line with no **exchange** line before it means the cache served that call. Errors
+from the provider are logged at `Error` with its `error` and `error_description` lifted out of
+the response, so `invalid_target` is visible without reading a raw JSON body.
+
+**4. The failure response names the downstream.** A failed exchange never becomes a 500. A
+rejected subject token is a `401`, an unreachable provider is a `502`, and both carry a
+`downstream` field in the problem details:
+
+```json
+{ "title": "Unauthorized", "status": 401, "downstream": "grading",
+  "detail": "Token exchange for downstream 'grading' failed with status 400." }
+```
+
+The one failure that is *not* ours to report: the exchange succeeds and the **downstream** then
+returns 401. That means the audience we requested is not the one that service validates —
+compare `obo.audience` on the span against what its owners expect.
+
+### Adding a downstream — the checklist
+
+- [ ] It genuinely authorizes per user (otherwise use client-credentials, not this)
+- [ ] Its audience and scopes confirmed with the team that owns it
+- [ ] Your client granted that audience and those scopes at the provider
+- [ ] `AddHttpClient("name", …).AddOnBehalfOf()`
+- [ ] `OnBehalfOf:Downstreams:name` set in **every** environment, not just your machine
+- [ ] Boot the app and read the startup line — it should name the audience you expect
+- [ ] One real call, and confirm the downstream saw the *user*, not your service
 
 ---
 
@@ -529,6 +659,11 @@ Verify:
 | Everything is `system` in the audit trail | The endpoints aren't authorized | `.RequireAuthorization()` |
 | Works on Windows, not on the build agent | AD APIs are Windows-only | The fake directory is the fallback — expected |
 | Dev keys work in production | The app is running in Development | Fix `ASPNETCORE_ENVIRONMENT` immediately |
+| Won't start: "must set Audience and/or Scope" | A downstream is registered in code but has no config section in this environment | Set `OnBehalfOf__Downstreams__<name>__Audience` |
+| Won't start: "token exchange is not configured" | A downstream is registered but the shared credentials are missing | Set `OnBehalfOf__TokenEndpoint`, `__ClientId` and the secret |
+| Downstream returns `401`, but our exchange succeeded | We asked for an audience that service does not validate | Compare `obo.audience` on the exchange span with what its owners expect |
+| Exchange fails `invalid_target` | This client may not mint tokens for that audience | Grant it at the provider — see [chapter 10](#10-calling-downstream-as-the-user) |
+| Two downstreams behave as one | Both bound to the same config key | `.AddOnBehalfOf()` keys off the `HttpClient` name; give them distinct names |
 
 ---
 
@@ -543,7 +678,10 @@ Verify:
 | `Okta__Audience` | Who tokens must be issued for |
 | `Okta__NameClaim` | Which claim becomes `Identity.Name`. Default `sub` |
 | `ActiveDirectory__Server` / `__Container` | Directory to bind and search against |
-| `OnBehalfOf__*` | Token exchange for downstream calls. **Secret** |
+| `OnBehalfOf__TokenEndpoint` / `__ClientId` | This API's identity at the provider, shared by every downstream |
+| `OnBehalfOf__ClientSecret` / `__SigningKeyPem` | How it proves that identity. **Secret** — env or secret store only |
+| `OnBehalfOf__Downstreams__<name>__Audience` | Who tokens for downstream `<name>` are minted for. One per downstream |
+| `OnBehalfOf__Downstreams__<name>__Scope` | Scopes requested for downstream `<name>`. Optional |
 
 ### Schemes
 
@@ -592,6 +730,8 @@ endpoint.RequireAuthorization(policy => policy.RequireRole("service"));
 | **CSPRNG** | Cryptographically secure random generator. What key material must come from |
 | **JWT** | JSON Web Token — the usual bearer token format |
 | **On-Behalf-Of** | Exchanging a caller's token for one scoped to a downstream service |
+| **Downstream** | Another API this one calls. Each has its own audience, so each needs its own token |
+| **Token exchange (RFC 8693)** | The OAuth2 grant that performs an On-Behalf-Of swap |
 | **OIDC** | OpenID Connect — the identity layer over OAuth2 |
 | **PKCE** | The proof key that lets public clients use Authorization Code safely |
 | **Policy scheme** | A scheme that selects another scheme per request |

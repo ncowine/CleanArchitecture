@@ -1,9 +1,14 @@
 namespace CleanArch.Api.Authentication;
 
 /// <summary>
-/// Configuration for the OAuth2 On-Behalf-Of (token exchange, RFC 8693) flow: the API swaps the
-/// caller's incoming access token for a NEW token that keeps the same subject (the original user) but
-/// is audience-scoped to a downstream API. Bound from the <c>OnBehalfOf</c> section.
+/// The SHARED half of the OAuth2 On-Behalf-Of (token exchange, RFC 8693) configuration: the API swaps
+/// the caller's incoming access token for a NEW token that keeps the same subject (the original user)
+/// but is audience-scoped to a downstream API. Bound from the <c>OnBehalfOf</c> section.
+/// <para>
+/// Everything here describes THIS API's single identity at the provider, so it is shared by every
+/// downstream. Who each exchanged token is FOR — audience and scope — is per-downstream and lives in
+/// <see cref="DownstreamTokenOptions"/> under <c>OnBehalfOf:Downstreams:{name}</c>.
+/// </para>
 /// </summary>
 internal sealed class OnBehalfOfOptions
 {
@@ -49,15 +54,6 @@ internal sealed class OnBehalfOfOptions
     public string? SigningKeyId { get; set; }
 
     /// <summary>
-    /// The downstream API the exchanged token is for — becomes the new token's <c>aud</c>. Optional;
-    /// some IdP setups infer the audience from the requested scopes instead.
-    /// </summary>
-    public string? Audience { get; set; }
-
-    /// <summary>Space-delimited scopes to request for the downstream call. Optional.</summary>
-    public string? Scope { get; set; }
-
-    /// <summary>
     /// How long before a cached downstream token's real expiry to stop serving it and re-exchange. Guards
     /// against a token that is valid when fetched from cache but expires in flight to the downstream.
     /// </summary>
@@ -76,4 +72,23 @@ internal sealed class OnBehalfOfOptions
         && (ClientAuthentication == ClientAuthenticationMethod.PrivateKeyJwt
             ? !string.IsNullOrWhiteSpace(SigningKeyPem)
             : !string.IsNullOrWhiteSpace(ClientSecret));
+
+    /// <summary>Which required value is missing, for a startup error that says what to set.</summary>
+    public string DescribeWhatIsMissing()
+    {
+        if (string.IsNullOrWhiteSpace(TokenEndpoint))
+        {
+            return $"{SectionName}:TokenEndpoint is not set";
+        }
+
+        if (string.IsNullOrWhiteSpace(ClientId))
+        {
+            return $"{SectionName}:ClientId is not set";
+        }
+
+        return ClientAuthentication == ClientAuthenticationMethod.PrivateKeyJwt
+            ? $"{SectionName}:SigningKeyPem is not set (required by ClientAuthentication=PrivateKeyJwt)"
+            : $"{SectionName}:ClientSecret is not set (supply it from OnBehalfOf__ClientSecret, a secret " +
+              "store, or user-secrets — never appsettings.json)";
+    }
 }
