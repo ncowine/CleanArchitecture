@@ -2,255 +2,4156 @@
   "id": null,
   "uid": "cleanarch-api",
   "title": "CleanArch.Api — Service Overview",
-  "tags": ["cleanarch", "otel", "red-method"],
+  "description": "Read top to bottom: verdict, traffic, which endpoint, why, dependencies, features, runtime. Every panel's ⓘ explains what good and bad look like. Full guide: tutorials/95-reading-your-telemetry.md",
+  "tags": [
+    "cleanarch",
+    "otel",
+    "red-method"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "10s",
-  "time": { "from": "now-30m", "to": "now" },
-  "templating": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "Explore (ad-hoc queries)",
+      "type": "link",
+      "icon": "external link",
+      "url": "/explore",
+      "targetBlank": true,
+      "tooltip": "Query Prometheus, Loki or Tempo freehand",
+      "tags": [],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "route",
+        "label": "Route",
+        "type": "query",
+        "description": "Narrow every metric panel to one or more endpoints.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "qryType": 1,
+          "query": "label_values(http_server_request_duration_seconds_count, http_route)",
+          "refId": "route"
+        },
+        "definition": "label_values(http_server_request_duration_seconds_count, http_route)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "slow",
+        "label": "Slow threshold",
+        "type": "custom",
+        "description": "Cut-off used by the 'Slow requests' trace search.",
+        "query": "100ms,250ms,500ms,1s,2s,5s",
+        "current": {
+          "selected": true,
+          "text": "500ms",
+          "value": "500ms"
+        },
+        "options": [
+          {
+            "selected": false,
+            "text": "100ms",
+            "value": "100ms"
+          },
+          {
+            "selected": false,
+            "text": "250ms",
+            "value": "250ms"
+          },
+          {
+            "selected": true,
+            "text": "500ms",
+            "value": "500ms"
+          },
+          {
+            "selected": false,
+            "text": "1s",
+            "value": "1s"
+          },
+          {
+            "selected": false,
+            "text": "2s",
+            "value": "2s"
+          },
+          {
+            "selected": false,
+            "text": "5s",
+            "value": "5s"
+          }
+        ],
+        "multi": false,
+        "includeAll": false,
+        "hide": 0
+      },
+      {
+        "name": "dbslow",
+        "label": "Slow query",
+        "type": "custom",
+        "description": "Cut-off used by the 'Slow database queries' panel.",
+        "query": "1ms,10ms,25ms,50ms,100ms,250ms,1s",
+        "current": {
+          "selected": true,
+          "text": "50ms",
+          "value": "50ms"
+        },
+        "options": [
+          {
+            "selected": false,
+            "text": "1ms",
+            "value": "1ms"
+          },
+          {
+            "selected": false,
+            "text": "10ms",
+            "value": "10ms"
+          },
+          {
+            "selected": false,
+            "text": "25ms",
+            "value": "25ms"
+          },
+          {
+            "selected": true,
+            "text": "50ms",
+            "value": "50ms"
+          },
+          {
+            "selected": false,
+            "text": "100ms",
+            "value": "100ms"
+          },
+          {
+            "selected": false,
+            "text": "250ms",
+            "value": "250ms"
+          },
+          {
+            "selected": false,
+            "text": "1s",
+            "value": "1s"
+          }
+        ],
+        "multi": false,
+        "includeAll": false,
+        "hide": 0
+      },
+      {
+        "name": "find",
+        "label": "Find request",
+        "type": "textbox",
+        "description": "A trace id or correlation id — used by section ⑧.",
+        "query": "",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
   "panels": [
-    { "type": "row", "id": 100, "title": "🚦 Golden signals (RED)", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
-
     {
-      "type": "stat", "id": 1, "title": "Request rate",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Total HTTP requests per second across all routes.",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
-      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2, "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
-      "options": { "graphMode": "area", "colorMode": "value", "textMode": "auto", "reduceOptions": { "calc": "lastNotNull", "fields": "", "values": false } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(http_server_request_duration_seconds_count[$__rate_interval]))" } ]
+      "type": "row",
+      "id": 1,
+      "title": "①  Is it healthy right now?  —  all green means stop looking",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
     },
     {
-      "type": "stat", "id": 2, "title": "Error rate (5xx)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Share of requests returning a 5xx server error. Green < 1%, red > 5%.",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
-      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2, "min": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] } }, "overrides": [] },
-      "options": { "graphMode": "area", "colorMode": "background", "textMode": "auto", "reduceOptions": { "calc": "lastNotNull", "fields": "", "values": false } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "(sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~\"5..\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(http_server_request_duration_seconds_count[$__rate_interval])), 0.001) * 100" } ]
-    },
-    {
-      "type": "stat", "id": 3, "title": "Latency p95",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "95% of requests complete faster than this. Green < 200ms, red > 1s.",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
-      "fieldConfig": { "defaults": { "unit": "s", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.2 }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
-      "options": { "graphMode": "area", "colorMode": "value", "textMode": "auto", "reduceOptions": { "calc": "lastNotNull", "fields": "", "values": false } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[$__rate_interval])))" } ]
-    },
-    {
-      "type": "stat", "id": 4, "title": "Latency p99",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "99% of requests complete faster than this — the tail. Green < 500ms, red > 2s.",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
-      "fieldConfig": { "defaults": { "unit": "s", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 2 } ] } }, "overrides": [] },
-      "options": { "graphMode": "area", "colorMode": "value", "textMode": "auto", "reduceOptions": { "calc": "lastNotNull", "fields": "", "values": false } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket[$__rate_interval])))" } ]
-    },
-    {
-      "type": "stat", "id": 5, "title": "In-flight requests",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Requests currently being processed. A rising trend under steady load = backpressure.",
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 100 } ] } }, "overrides": [] },
-      "options": { "graphMode": "area", "colorMode": "value", "textMode": "auto", "reduceOptions": { "calc": "lastNotNull", "fields": "", "values": false } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(http_server_active_requests)" } ]
-    },
-    {
-      "type": "stat", "id": 6, "title": "CPU usage",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Process CPU as a percentage of available cores. Green < 70%, red > 90%.",
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
-      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "min": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
-      "options": { "graphMode": "area", "colorMode": "value", "textMode": "auto", "reduceOptions": { "calc": "lastNotNull", "fields": "", "values": false } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(dotnet_process_cpu_time_seconds_total[$__rate_interval])) / max(dotnet_process_cpu_count) * 100" } ]
-    },
-
-    { "type": "row", "id": 101, "title": "📈 Traffic & Errors", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 } },
-
-    {
-      "type": "timeseries", "id": 10, "title": "Requests/sec by status code",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Throughput split by HTTP status. Watch for 4xx (client) and 5xx (server) creeping up.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
-      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 40, "stacking": { "mode": "normal", "group": "A" }, "lineWidth": 1 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count[$__rate_interval]))", "legendFormat": "{{http_response_status_code}}" } ]
-    },
-    {
-      "type": "timeseries", "id": 11, "title": "Requests/sec by route",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Which endpoints are getting hit.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
-      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count[$__rate_interval]))", "legendFormat": "{{http_route}}" } ]
-    },
-
-    { "type": "row", "id": 106, "title": "🏆 Top endpoints", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 } },
-
-    {
-      "type": "table", "id": 60, "title": "Top endpoints — traffic & response time",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Per-route request rate, AVERAGE and p95 response time, and error %. Sorted by busiest. Average = typical cost; p95 = the slow tail the average hides. Blank rows had no traffic in the window.",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 15 },
+      "type": "stat",
+      "id": 2,
+      "title": "Success rate",
+      "description": "Share of requests that did NOT return 5xx, for the selected routes.\n\nGREEN ≥ 99.9%  ·  YELLOW ≥ 99%  ·  RED below that.\n\nThis is the one number to look at first. If it is green, nothing is broken for callers — a slow request is still a served request. Note that 4xx does NOT count as failure here: a rejected bad request is the API working correctly. Watch the 4xx tile for that.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } },
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 99
+              },
+              {
+                "color": "green",
+                "value": 99.9
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "background",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * (1 - (sum(rate(http_server_request_duration_seconds_count{http_route=~\"$route\",http_response_status_code=~\"5..\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(http_server_request_duration_seconds_count{http_route=~\"$route\"}[$__rate_interval])), 0.0001))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 3,
+      "title": "Requests/sec",
+      "description": "Throughput for the selected routes.\n\nThere is no 'good' value — you are looking for CHANGE. A sudden drop to zero with the process still alive usually means something in front of the API (proxy, load balancer, DNS, firewall) stopped sending traffic, not that the API broke. A sudden spike explains latency and CPU tiles that went red at the same moment.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_route=~\"$route\"}[$__rate_interval]))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 4,
+      "title": "Latency p95",
+      "description": "95% of requests finished faster than this.\n\nGREEN < 200ms  ·  YELLOW < 1s  ·  RED above.\n\nUse p95 rather than the average: an average is dragged down by the many fast requests and will look fine while one caller in twenty waits five seconds. If p95 is red but p99 is similar, everything got slower together (a dependency, GC, CPU). If p99 is far worse than p95, only a subset is slow — look for one bad route or one large payload.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.2
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route=~\"$route\"}[$__rate_interval])))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 5,
+      "title": "Latency p99",
+      "description": "99% of requests finished faster than this — the tail.\n\nGREEN < 500ms  ·  YELLOW < 2s  ·  RED above.\n\nThe tail is what users complain about and what times out. A p99 that is 10× p95 is the classic signature of a cold cache, a lock, a GC pause, or one enormous record.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route=~\"$route\"}[$__rate_interval])))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 6,
+      "title": "In flight",
+      "description": "Requests being served right now (http.server.active_requests).\n\nThis is the saturation signal. Throughput can look normal while this climbs — that means requests are arriving as fast as ever but leaving more slowly, i.e. you are queueing. A number that keeps climbing and never returns to near zero means the app is stuck on something: a blocked thread, an unresponsive dependency, a deadlock.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(http_server_active_requests)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 7,
+      "title": "5xx / sec",
+      "description": "Server errors per second — requests the API itself failed to serve.\n\nAnything sustained above zero deserves a look. These are YOUR bugs: unhandled exceptions, failed dependencies, timeouts. Drill: '③ Which endpoint' tells you where, '④ What is failing' tells you why.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "background",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_route=~\"$route\",http_response_status_code=~\"5..\"}[$__rate_interval])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 8,
+      "title": "4xx / sec",
+      "description": "Client errors per second — the request was rejected.\n\nUsually NOT an outage: 400 (validation), 401/403 (auth), 404 (wrong id or wrong URL). But a step change matters — a wave of 401s after a deploy means a key or token config broke; a wave of 404s means someone is calling a route you removed, or scanning you. Split it by status in '② What is the traffic doing'.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_route=~\"$route\",http_response_status_code=~\"4..\"}[$__rate_interval])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 9,
+      "title": "Exceptions / sec",
+      "description": "CLR exceptions thrown per second (dotnet.exceptions), whether or not they reached the caller.\n\nExceptions WITHOUT matching 5xx are the interesting case — something is throwing and being swallowed, retried, or handled. In this app the usual cause is a background component: the audit shipper failing to reach Elasticsearch, or the OTLP exporters failing to reach Tempo/Loki. Check 'Outbound errors' before assuming it is your handler code.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 4,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(dotnet_exceptions_total[$__rate_interval])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 10,
+      "title": "Outbound failures / sec",
+      "description": "Outgoing HTTP calls that failed (http.client.request.duration with an error.type).\n\nCovers everything this process dials: real downstream APIs, the On-Behalf-Of token endpoint, AND the telemetry stack itself (Tempo :4317, Loki :3100, Elasticsearch :9200). A non-zero value here with a green success rate almost always means a telemetry store is down — your app is fine, your observability is not. See '⑤ Dependencies' for which host.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 8,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(http_client_request_duration_seconds_count{error_type!=\"\"}[$__rate_interval])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 11,
+      "title": "CPU",
+      "description": "Process CPU as a percentage of all available cores.\n\nGREEN < 70%  ·  YELLOW < 90%  ·  RED above. Sustained high CPU makes every latency number worse and is the usual reason a service degrades under a traffic spike rather than failing outright. Compare against 'Requests/sec': high CPU with flat traffic is a code problem (a hot loop, a runaway retry, GC thrash), not load.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 12,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(dotnet_process_cpu_time_seconds_total[$__rate_interval])) / max(dotnet_process_cpu_count) * 100"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 12,
+      "title": "Memory",
+      "description": "Process working set — physical memory the process holds.\n\nA single value means little; the SHAPE means everything. Open '⑦ Runtime health' and look at the trend: a sawtooth that returns to the same floor is healthy GC. A staircase that never comes back down is a leak, and it ends in an OutOfMemoryException or a recycle.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 16,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(dotnet_process_memory_working_set_bytes)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 13,
+      "title": "Thread-pool queue",
+      "description": "Work items waiting for a thread pool thread.\n\nShould sit at 0 and spike only briefly. A queue that stays above zero means the pool is starved — nearly always sync-over-async somewhere (.Result, .Wait(), .GetAwaiter().GetResult()) or a genuinely CPU-bound workload. Symptom: latency climbs on EVERY route at once, including trivial ones like /health.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 20,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(dotnet_thread_pool_queue_length_total)"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 14,
+      "title": "②  What is the traffic doing?",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 15,
+      "title": "Requests/sec by status class",
+      "description": "Traffic split into 2xx / 3xx / 4xx / 5xx, stacked so the total is the top of the band.\n\nRead the COLOURS, not the numbers. Green growing = more traffic. A red band appearing = an outage starting, and its left edge is the minute it started — set your time range there before you go anywhere else. A yellow band growing while green shrinks = callers are being rejected (auth, validation), not served.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "route" }, "properties": [ { "id": "custom.width", "value": 380 } ] },
-          { "matcher": { "id": "byName", "options": "req/s" }, "properties": [ { "id": "unit", "value": "reqps" }, { "id": "decimals", "value": 3 }, { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient" } } ] },
-          { "matcher": { "id": "byName", "options": "avg" }, "properties": [ { "id": "unit", "value": "s" }, { "id": "decimals", "value": 1 } ] },
-          { "matcher": { "id": "byName", "options": "p95" }, "properties": [ { "id": "unit", "value": "s" }, { "id": "decimals", "value": 1 } ] },
-          { "matcher": { "id": "byName", "options": "error %" }, "properties": [ { "id": "unit", "value": "percent" }, { "id": "decimals", "value": 2 }, { "id": "custom.cellOptions", "value": { "type": "color-background" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] } } ] }
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "2xx  ok"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "3xx  redirect"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "4xx  client error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5xx  server error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
         ]
       },
-      "options": { "showHeader": true, "sortBy": [ { "displayName": "req/s", "desc": true } ] },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count[$__rate_interval]))", "format": "table", "instant": true },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_sum[$__rate_interval])) / sum by (http_route) (rate(http_server_request_duration_seconds_count[$__rate_interval]))", "format": "table", "instant": true },
-        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket[$__rate_interval])))", "format": "table", "instant": true },
-        { "refId": "D", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{http_response_status_code=~\"5..\"}[$__rate_interval])) / sum by (http_route) (rate(http_server_request_duration_seconds_count[$__rate_interval])) * 100 or (sum by (http_route) (rate(http_server_request_duration_seconds_count[$__rate_interval])) * 0)", "format": "table", "instant": true }
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_route=~\"$route\",http_response_status_code=~\"2..\"}[$__rate_interval]))",
+          "legendFormat": "2xx  ok"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_route=~\"$route\",http_response_status_code=~\"3..\"}[$__rate_interval]))",
+          "legendFormat": "3xx  redirect"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_route=~\"$route\",http_response_status_code=~\"4..\"}[$__rate_interval]))",
+          "legendFormat": "4xx  client error"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_route=~\"$route\",http_response_status_code=~\"5..\"}[$__rate_interval]))",
+          "legendFormat": "5xx  server error"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 16,
+      "title": "Requests/sec by route",
+      "description": "Which endpoints the traffic is actually going to.\n\nRequests that matched no route (a typo'd URL, a scanner) carry no http_route label and appear as an empty series name — that is expected, and 'Unknown-path 404s' in '⑤ Dependencies' counts them properly.\n\nUse this to answer 'is this spike one endpoint or everything?'. One line rising alone is a caller behaving badly; every line rising together is real load.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route=~\"$route\"}[$__rate_interval]))",
+          "legendFormat": "{{http_route}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 17,
+      "title": "Latency percentiles",
+      "description": "p50 / p95 / p99 together, for the selected routes.\n\nThe GAP between the lines is the diagnosis:\n· all three rise together → a shared cause (CPU, GC, a slow dependency, the database)\n· p99 rises alone → a minority of requests are pathological (big payload, cold cache, lock)\n· p50 rises → everything got slower; usually saturation\n\nThese are computed from histogram buckets, so they are approximations bounded by the bucket edges (5ms, 10ms, 25ms, 50ms, 75ms, 100ms, 250ms, 500ms, 750ms, 1s, 2.5s, 5s, 7.5s, 10s). Treat 'p99 = 2.5s' as 'somewhere in the 1s–2.5s bucket', not as a stopwatch reading.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route=~\"$route\"}[$__rate_interval])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route=~\"$route\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route=~\"$route\"}[$__rate_interval])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "heatmap",
+      "id": 18,
+      "title": "Latency distribution",
+      "description": "Every request placed into its latency bucket; darker = more requests. Time runs left to right, latency bottom to top.\n\nThis is the panel percentiles cannot give you. A healthy service is ONE dark band low down. TWO bands means a bimodal service — e.g. cache hits at 5ms and cache misses at 300ms — and the p95 you were staring at is the average of two different behaviours, describing neither. A band drifting upward over hours is gradual degradation; a second band appearing suddenly is a code path that just started being taken.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "mode": "scheme",
+          "scheme": "Turbo",
+          "steps": 64,
+          "reverse": false,
+          "exponent": 0.5,
+          "fill": "dark-orange"
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-09
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "mode": "single",
+          "showColorScale": false,
+          "yHistogram": true
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false,
+          "unit": "s"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route=~\"$route\"}[$__rate_interval]))",
+          "legendFormat": "{{le}}",
+          "format": "heatmap"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 19,
+      "title": "③  Which endpoint is the problem?",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "id": 20,
+      "title": "Endpoints — traffic, errors, latency",
+      "description": "One row per route, sorted by error rate. This is the panel that turns 'the API is broken' into 'POST /students is broken'.\n\nHow to read it:\n· Error % coloured red → start here, then go to '④ What is failing'\n· p95 red but error % green → it works, it is just slow. Open a trace for that route in '④ Slow traces' and look at where the time went\n· p99 ≫ p95 on one row → that route is inconsistent, not uniformly slow\n· High Req/s + modest p95 → a busy but healthy endpoint; leave it alone\n\n'Avg' is here only to be compared with p95. When Avg is small and p95 is large, the average is lying to you, which is why no tile on this dashboard shows an average alone.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route=~\"$route\"}[$__rate_interval]))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route=~\"$route\",http_response_status_code=~\"5..\"}[$__rate_interval])) / sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route=~\"$route\"}[$__rate_interval])) * 100 or (sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route=~\"$route\"}[$__rate_interval])) * 0)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route=~\"$route\",http_response_status_code=~\"4..\"}[$__rate_interval])) / sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route=~\"$route\"}[$__rate_interval])) * 100 or (sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route=~\"$route\"}[$__rate_interval])) * 0)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_sum{http_route=~\"$route\"}[$__rate_interval])) / sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route=~\"$route\"}[$__rate_interval]))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{http_route=~\"$route\"}[$__rate_interval])))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{http_route=~\"$route\"}[$__rate_interval])))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
       ],
       "transformations": [
-        { "id": "joinByField", "options": { "byField": "http_route", "mode": "outer" } },
-        { "id": "organize", "options": { "excludeByName": { "Time": true, "Time 1": true, "Time 2": true, "Time 3": true, "Time 4": true }, "renameByName": { "http_route": "route", "Value #A": "req/s", "Value #B": "avg", "Value #C": "p95", "Value #D": "error %" } } }
-      ]
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "http_route",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "Time 6": true
+            },
+            "renameByName": {
+              "http_route": "Route",
+              "Value #A": "Req/s",
+              "Value #B": "5xx %",
+              "Value #C": "4xx %",
+              "Value #D": "Avg",
+              "Value #E": "p95",
+              "Value #F": "p99"
+            },
+            "indexByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "5xx %",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Req/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5xx %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "red",
+                      "value": 2
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "4xx %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 20
+                    },
+                    {
+                      "color": "orange",
+                      "value": 60
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avg"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.2
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "red",
+                      "value": 2
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
     },
-
-    { "type": "row", "id": 102, "title": "⏱️ Latency", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 } },
-
     {
-      "type": "timeseries", "id": 20, "title": "Latency percentiles (p50 / p95 / p99)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "The spread between p50 and p99 shows tail latency — a big gap means some requests are much slower than typical.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
-      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "type": "row",
+      "id": 21,
+      "title": "④  What is failing?  —  logs and traces",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "id": 22,
+      "title": "Warnings & errors (Loki)",
+      "description": "Every log line at warn/error/critical, newest first.\n\nExpand a line to see its fields. The ones that matter:\n· CorrelationId — the id echoed to the caller in the X-Correlation-ID response header\n· TraceID / trace_id — click it to jump straight to the trace in Tempo\n· Request — which feature was running (e.g. CreateStudent.Command)\n· scope_name — the class that logged it\n\nIgnore the noise floor first: 'AUDIT(unshipped)' warnings mean Elasticsearch is unreachable and audit records fell back to the log — a telemetry problem, not an app problem. Real application failures name a feature in Request.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_request_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "p50" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "p95" },
-        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "p99" }
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "range",
+          "expr": "{service_name=\"CleanArch.Api\"} | detected_level =~ \"warn|error|critical|fatal\""
+        }
       ]
     },
     {
-      "type": "timeseries", "id": 21, "title": "p95 latency by route",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Which endpoint is the slow one.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
-      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["max", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "{{http_route}}" } ]
-    },
-
-    { "type": "row", "id": 107, "title": "⚠️ Exceptions & Errors", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 } },
-
-    {
-      "type": "stat", "id": 70, "title": "CLR exceptions (window)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Total .NET exceptions THROWN in the selected time range — includes handled ones (normal control flow), so treat as a trend, not an alarm. For real problems see the error log and dead-letter tile.",
-      "gridPos": { "h": 8, "w": 4, "x": 0, "y": 34 },
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "purple" } }, "overrides": [] },
-      "options": { "graphMode": "area", "colorMode": "value", "textMode": "auto", "reduceOptions": { "calc": "lastNotNull", "fields": "", "values": false } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(dotnet_exceptions_total[$__range])) or vector(0)" } ]
-    },
-    {
-      "type": "timeseries", "id": 71, "title": "Exceptions/sec by type",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Rate of thrown exceptions grouped by .NET exception type. A new type appearing, or a spike, is worth a look in the logs below.",
-      "gridPos": { "h": 8, "w": 8, "x": 4, "y": 34 },
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "stacking": { "mode": "normal", "group": "A" } } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (error_type) (rate(dotnet_exceptions_total[$__rate_interval]))", "legendFormat": "{{error_type}}" } ]
-    },
-    {
-      "type": "logs", "id": 72, "title": "Error & warning logs",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "description": "The actionable exception feed — only warn/error/critical/fatal lines, newest first. Click a line to expand the stack trace and attributes.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 34 },
-      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" },
-      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{service_name=\"CleanArch.Api\"} | detected_level=~\"warn|error|critical|fatal\"" } ]
-    },
-
-    { "type": "row", "id": 103, "title": "🧠 .NET Runtime health", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 42 } },
-
-    {
-      "type": "timeseries", "id": 30, "title": "CPU (cores, by mode)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "CPU-seconds consumed per second = cores in use, split into user vs system time.",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 43 },
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 3, "custom": { "drawStyle": "line", "fillOpacity": 30, "stacking": { "mode": "normal", "group": "A" }, "lineWidth": 1 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (cpu_mode) (rate(dotnet_process_cpu_time_seconds_total[$__rate_interval]))", "legendFormat": "{{cpu_mode}}" } ]
-    },
-    {
-      "type": "timeseries", "id": 31, "title": "Memory (working set & GC heap)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Working set = total process memory. GC heap = managed objects. Steady growth in GC heap can signal a leak.",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 43 },
-      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "type": "table",
+      "id": 23,
+      "title": "Failed requests (Tempo)",
+      "description": "Traces whose HTTP status was 500 or worse. Click a row to open the trace.\n\nA trace shows where the time went and which span carried the error. Spans this service emits: the ASP.NET Core server span, a child span per database query (the SQL is on it as db.statement), one CLIENT span per outgoing HTTP call, and one span per On-Behalf-Of token exchange. Exception details ride on the span as exception.type / exception.message / exception.stacktrace.\n\nEmpty while 5xx tiles are red? Tempo did not receive the trace — check 'Outbound failures' for the Tempo endpoint, and remember Tempo has its own retention.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "dotnet_process_memory_working_set_bytes", "legendFormat": "working set" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(dotnet_gc_last_collection_heap_size_bytes)", "legendFormat": "GC heap (total)" }
-      ]
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "limit": 20,
+          "tableType": "traces",
+          "query": "{resource.service.name = \"CleanArch.Api\" && span.http.response.status_code >= 500}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
     },
     {
-      "type": "timeseries", "id": 32, "title": "GC collections/sec by generation",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "How often each GC generation collects. Frequent gen2 collections are expensive and worth investigating.",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 50 },
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (gc_heap_generation) (rate(dotnet_gc_collections_total[$__rate_interval]))", "legendFormat": "{{gc_heap_generation}}" } ]
-    },
-    {
-      "type": "timeseries", "id": 33, "title": "Thread pool (threads & queue)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Queue length climbing while threads are maxed = thread-pool starvation (often from sync-over-async).",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 50 },
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "type": "table",
+      "id": 24,
+      "title": "Slow requests (Tempo)",
+      "description": "Traces for the selected routes that took longer than $slow. Click one to see where the time went.\n\nThis is the answer to 'p95 is red — why?'. Change the $slow variable at the top to move the cut-off. Then read the waterfall: a long database span names the query that cost you; a long outgoing CLIENT span means you are waiting on somebody else; and time in the root that no child span accounts for is your own code.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "dotnet_thread_pool_thread_count_total", "legendFormat": "threads" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "dotnet_thread_pool_queue_length_total", "legendFormat": "queue length" }
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "limit": 20,
+          "tableType": "traces",
+          "query": "{resource.service.name = \"CleanArch.Api\" && span.http.route =~ \"${route:pipe}\" && duration > $slow}"
+        }
       ]
     },
-
-    { "type": "row", "id": 104, "title": "📮 Outbox (business signal)", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 57 } },
-
     {
-      "type": "timeseries", "id": 40, "title": "Outbox dispatch rate",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Domain events being published from the outbox. 'failed'/'dead-lettered' rising is a real problem.",
-      "gridPos": { "h": 7, "w": 16, "x": 0, "y": 58 },
-      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "type": "timeseries",
+      "id": 25,
+      "title": "Log volume by level",
+      "description": "How many lines per level are being written.\n\nUse it as a change detector, not an absolute. A step change in 'warn' with no change in traffic means something new started going wrong quietly. A sudden collapse of 'info' to zero while requests continue means logs stopped reaching Loki — a telemetry outage that makes every other log panel lie by omission.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 50,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "info"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "warn"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "debug"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(outbox_delivered_total[$__rate_interval])", "legendFormat": "delivered" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(outbox_failed_total[$__rate_interval])", "legendFormat": "failed" },
-        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(outbox_dead_lettered_total[$__rate_interval])", "legendFormat": "dead-lettered" }
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "range",
+          "expr": "sum by (detected_level) (count_over_time({service_name=\"CleanArch.Api\"}[$__auto]))",
+          "legendFormat": "{{detected_level}}"
+        }
       ]
     },
     {
-      "type": "stat", "id": 41, "title": "Dead-lettered (total)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Messages that exhausted retries and were parked. Should stay 0.",
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 58 },
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
-      "options": { "graphMode": "none", "colorMode": "background", "textMode": "auto", "reduceOptions": { "calc": "lastNotNull", "fields": "", "values": false } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(outbox_dead_lettered_total) or vector(0)" } ]
+      "type": "timeseries",
+      "id": 26,
+      "title": "Exceptions/sec by type",
+      "description": "Which .NET exception types are being thrown.\n\nThe type name usually is the diagnosis: SqliteException = database, HttpRequestException / SocketException = a host you dial is unreachable, TaskCanceledException = a timeout or a client that hung up, ValidationException = expected, and normal on a public API.\n\nCross-check against 5xx. Exceptions with no 5xx are being handled somewhere — often a background worker retrying, which will keep throwing forever until someone looks.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (error_type) (rate(dotnet_exceptions_total[$__rate_interval]))",
+          "legendFormat": "{{error_type}}"
+        }
+      ]
     },
-
-    { "type": "row", "id": 105, "title": "📜 All logs", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 65 } },
-
     {
-      "type": "logs", "id": 50, "title": "Application logs (Loki)",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "description": "Live logs from the API, all levels. Click a line to expand attributes; a trace_id links back into Tempo.",
-      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 66 },
-      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" },
-      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{service_name=\"CleanArch.Api\"}" } ]
+      "type": "row",
+      "id": 27,
+      "title": "⑤  Dependencies & the edge  —  is it us or them?",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 28,
+      "title": "Outbound calls/sec by target",
+      "description": "Every HTTP call this process makes, grouped by host:port.\n\nKnown targets in this stack: :4317 Tempo (traces), :3100 Loki (logs), :9200 Elasticsearch (audit), plus your identity provider and any downstream API registered with AddOnBehalfOf.\n\nRead it alongside the next panel: this one says how much you are calling, that one says how much of it is failing.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (server_address, server_port) (rate(http_client_request_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "{{server_address}}:{{server_port}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 29,
+      "title": "Outbound errors/sec by target & reason",
+      "description": "Failed outgoing calls, labelled with why.\n\n· connection_error → nothing is listening, or a firewall dropped it\n· 5xx / 4xx → it answered, and said no. 401 on the token endpoint = wrong client credentials; 403 on Elasticsearch = the audit-writer account lost its privilege\n· TaskCanceledException → it answered too slowly\n\nIf the only failing targets are 3100/4317/9200, your API is healthy and your telemetry pipeline is not. Fix it anyway — a dashboard you cannot trust is worse than none.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (server_address, server_port, error_type) (rate(http_client_request_duration_seconds_count{error_type!=\"\"}[$__rate_interval]))",
+          "legendFormat": "{{server_address}}:{{server_port}} — {{error_type}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 30,
+      "title": "Outbound p95 by target",
+      "description": "How slow each dependency is, from this process's point of view.\n\nThis is the panel that settles the 'it's not us, it's you' argument. When your own p95 rises at exactly the same moment as a dependency's p95, you have found the cause and it is not your code. When yours rises and every dependency stays flat, it is your code.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, server_address, server_port) (rate(http_client_request_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{server_address}}:{{server_port}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 31,
+      "title": "Kestrel connections",
+      "description": "TCP connections the web server is holding, and how many are waiting to be accepted.\n\nQueued connections should be 0. Anything sustained above zero means the server cannot accept as fast as clients arrive — check the thread-pool queue and CPU tiles. Active connections far above your request rate usually means keep-alive clients or SignalR hub connections, which is normal for this app.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 63
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "active"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "queued"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(kestrel_active_connections)",
+          "legendFormat": "active"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(kestrel_queued_connections)",
+          "legendFormat": "queued"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 32,
+      "title": "Rate limiting",
+      "description": "Outcomes from the rate limiter (aspnetcore.rate_limiting.requests).\n\n'acquired' is a served request. Anything else is a caller being throttled — they got a 429 and, from their side, that is an outage. If throttling appears without a traffic spike, the limit is set too low for normal use, or one client is misbehaving. /health and /metrics are deliberately exempt, so they never appear here.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 63
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "acquired"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (aspnetcore_rate_limiting_result) (rate(aspnetcore_rate_limiting_requests_total[$__rate_interval]))",
+          "legendFormat": "{{aspnetcore_rate_limiting_result}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 33,
+      "title": "Authentication outcomes",
+      "description": "Every authentication attempt, by scheme and result (aspnetcore.authentication.authenticate.duration).\n\n· 'none' — the request carried no credential. Normal for open endpoints\n· 'success' — a credential was accepted\n· 'failure' — a credential was presented and REJECTED. This is the one to watch\n\nA step change in failures after a deploy means a key, an audience, or an authority setting is wrong. A steady trickle from one scheme is usually a stale client. A flood is someone guessing — cross-check the 4xx tile and the audit trail's Security category.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 63
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (aspnetcore_authentication_scheme, aspnetcore_authentication_result) (rate(aspnetcore_authentication_authenticate_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "{{aspnetcore_authentication_scheme}} — {{aspnetcore_authentication_result}}"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "id": 34,
+      "title": "Slow database queries",
+      "description": "Every database query that took longer than $dbslow, newest first, with the SQL that ran and how long it took. Click a row to open the trace it came from.\n\nEMPTY IS THE HEALTHY STATE. When it is not empty, read the SQL column before anything else — the statement usually names its own problem:\n\n· the same statement repeated many times in one request is an N+1; the fix is in how the query is composed, not in the database\n· one statement that is occasionally slow and usually fast is a missing index meeting a table that has grown, or lock contention\n· a SELECT with no WHERE behind a list endpoint is a missing filter or an accidental materialisation\n\nOnly queries that ran inside a request appear here. Background work — the outbox poll every two seconds — is deliberately not traced, so it cannot drown this panel.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 70
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "limit": 30,
+          "tableType": "spans",
+          "query": "{span.db.system != nil && duration > $dbslow} | select(span.db.statement)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "db.statement"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "SQL"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto",
+                  "wrapText": true
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 900
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Duration"
+              },
+              {
+                "id": "unit",
+                "value": "ns"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 100000000
+                    },
+                    {
+                      "color": "red",
+                      "value": 1000000000
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "traceName"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Database"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "spanID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Span"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": []
+              }
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "traceService"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "name"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "traceIdHidden"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Duration",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "row",
+      "id": 35,
+      "title": "⑥  Features & background work  —  what the code is doing",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 78
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 36,
+      "title": "Feature throughput (from logs)",
+      "description": "How often each mediator feature ran, derived from the 'Handled {Request} in {ElapsedMs}ms' line that LoggingBehavior writes for every request.\n\nHTTP routes tell you what callers asked for; this tells you what the code actually did. They differ where one endpoint dispatches several commands, or where work runs off the request pipeline entirely (outbox handlers, background services).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 79
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "range",
+          "expr": "sum by (Request) (count_over_time({service_name=\"CleanArch.Api\"} |= `Handled` | Request != `` [$__auto]))",
+          "legendFormat": "{{Request}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 37,
+      "title": "Slowest features (from logs)",
+      "description": "The worst ElapsedMs recorded per feature, from the same log line.\n\nThis is handler time only — it excludes model binding, auth, and the response write, which is exactly what makes it useful: when this is fast but the route's p95 is slow, the time is being spent OUTSIDE your handler (middleware, serialization, the network), and no amount of optimising the handler will help.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 79
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "range",
+          "expr": "topk(10, max by (Request) (max_over_time({service_name=\"CleanArch.Api\"} |= `Handled` | Request != `` | unwrap ElapsedMs [$__auto])))",
+          "legendFormat": "{{Request}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 38,
+      "title": "Outbox dispatch",
+      "description": "The outbox: messages delivered, retried after failure, and given up on (dead-lettered).\n\nDelivered should track the rate of the commands that publish events. Failures that recover are normal — the whole point of an outbox is surviving a transient wobble. Failures that keep climbing without deliveries mean a handler is throwing every time, and every retry burns the budget until the message dead-letters.\n\nFlat at zero when writes are happening means the dispatcher is not running.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 16,
+        "x": 0,
+        "y": 87
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 3
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delivered"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "dead-lettered"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(outbox_delivered_total[$__rate_interval])) or vector(0)",
+          "legendFormat": "delivered"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(outbox_failed_total[$__rate_interval])) or vector(0)",
+          "legendFormat": "failed"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(outbox_dead_lettered_total[$__rate_interval])) or vector(0)",
+          "legendFormat": "dead-lettered"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 39,
+      "title": "Dead-lettered — total",
+      "description": "Messages the outbox gave up on, cumulatively since the process started.\n\nAny number above zero is unfinished business: a domain event that was raised and never acted on. Nothing retries it for you. Find them in the OutboxMessages table where DeadLetteredOnUtc is not null, read the Error column, fix the handler, and re-queue deliberately.\n\nThe counter resets on restart — this is 'since this process started', not 'ever'.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 87
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "background",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(outbox_dead_lettered_total) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 47,
+      "title": "⑦  Runtime health  —  open when the panels above point inward",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 94
+      },
+      "panels": [
+        {
+          "type": "timeseries",
+          "id": 40,
+          "title": "CPU by mode",
+          "description": "Process CPU time in cores, split into user (your code) and system (kernel: I/O, syscalls, networking).\n\n1.0 means one core fully busy. High SYSTEM time with modest user time points at I/O or network work, not computation — often chatty database access or an exporter retrying hard.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 95
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "fillOpacity": 40,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "pointSize": 5,
+                "spanNulls": false,
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisSoftMin": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (cpu_mode) (rate(dotnet_process_cpu_time_seconds_total[$__rate_interval]))",
+              "legendFormat": "{{cpu_mode}}"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "id": 41,
+          "title": "Memory — working set vs GC heap",
+          "description": "Working set is what the OS says the process holds. GC heap is what managed objects occupy after the last collection.\n\nRead the two together:\n· both sawtooth and return to the same floor → healthy\n· GC heap climbing steadily → a managed leak (something is holding references: a static collection, an un-disposed scope, an event handler never unsubscribed)\n· working set climbing while GC heap is flat → unmanaged memory (native handles, connections, memory-mapped files)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 95
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "fillOpacity": 20,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "pointSize": 5,
+                "spanNulls": false,
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisSoftMin": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max(dotnet_process_memory_working_set_bytes)",
+              "legendFormat": "working set"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(dotnet_gc_last_collection_heap_size_bytes)",
+              "legendFormat": "GC heap"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "id": 42,
+          "title": "GC collections/sec by generation",
+          "description": "How often each GC generation is collected.\n\nGen0 collections are cheap and constant — ignore them. Gen2 collections are expensive and should be RARE; a rising gen2 rate is the single best early warning of a memory problem, and it will show up as latency long before anything runs out of memory.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 102
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "pointSize": 5,
+                "spanNulls": false,
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisSoftMin": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (gc_heap_generation) (rate(dotnet_gc_collections_total[$__rate_interval]))",
+              "legendFormat": "{{gc_heap_generation}}"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "id": 43,
+          "title": "GC pause time",
+          "description": "Fraction of wall-clock time the process spent paused for garbage collection.\n\n0.05 means 5% of every second was spent frozen. Above a few percent, GC pauses are a material part of your p99 — and no amount of tuning your handler will fix a tail caused by pauses. Look at allocation rate next.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 102
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "pointSize": 5,
+                "spanNulls": false,
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisSoftMin": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(dotnet_gc_pause_time_seconds_total[$__rate_interval]))",
+              "legendFormat": "pause fraction"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "id": 44,
+          "title": "Allocation rate",
+          "description": "Bytes allocated on the managed heap per second.\n\nAllocation is what causes collection. A high rate with flat memory is not a leak, but it is churn — and churn is where GC pauses come from. Sudden growth with unchanged traffic means a code path started allocating: a new serialization step, a large buffer, a string-building loop, an accidental ToList() on a big query.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 102
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "pointSize": 5,
+                "spanNulls": false,
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisSoftMin": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(dotnet_gc_heap_total_allocated_bytes_total[$__rate_interval]))",
+              "legendFormat": "allocated/s"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "id": 45,
+          "title": "Thread pool",
+          "description": "Threads the pool holds, and work items queued waiting for one.\n\nA queue that will not drain is thread-pool starvation. The tell-tale is that EVERY endpoint slows down at once, including trivial ones — because the problem is not any endpoint, it is that nothing can get a thread. The cause is nearly always blocking on async code (.Result, .Wait(), .GetAwaiter().GetResult()) somewhere on a hot path.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 109
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "pointSize": 5,
+                "spanNulls": false,
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisSoftMin": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "threads"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "queued items"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max(dotnet_thread_pool_thread_count_total)",
+              "legendFormat": "threads"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max(dotnet_thread_pool_queue_length_total)",
+              "legendFormat": "queued items"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "id": 46,
+          "title": "Lock contention",
+          "description": "Times per second a thread had to wait for a lock.\n\nA low background rate is normal. A rate that scales with traffic means a shared lock is serialising your request handling — you will see throughput plateau no matter how much CPU is free. Usual suspects: a static Dictionary guarded by lock(), a shared HttpClient handler misuse, a singleton doing cache maintenance inline.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 109
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "pointSize": 5,
+                "spanNulls": false,
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisSoftMin": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(dotnet_monitor_lock_contentions_total[$__rate_interval]))",
+              "legendFormat": "contentions/s"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 51,
+      "title": "⑧  Investigate one request  —  paste a trace id or correlation id",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 95
+      },
+      "panels": [
+        {
+          "type": "text",
+          "id": 48,
+          "title": "How to use this section",
+          "gridPos": {
+            "h": 5,
+            "w": 24,
+            "x": 0,
+            "y": 96
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "**Paste an id into the `find` variable at the top of the dashboard, then widen the time range to cover when it happened.**\n\n| Where the id comes from | What it looks like | Which panel below answers |\n|---|---|---|\n| `X-Correlation-ID` response header (every response has one) | `a8faac35-f23e-…` | **Logs for one request** |\n| `traceId` inside an RFC 7807 error body — `00-<trace id>-<span id>-01` | paste **only the middle part** | both panels |\n| `TraceID` field on any log line in ④ | 32 hex characters | **The trace** |\n| `correlationId` on an audit record in Kibana | `a8faac35-f23e-…` | **Logs for one request** |\n\nThe logs panel matches either id. The trace panel needs a trace id and will error on a correlation id — that is expected, not a broken panel."
+          }
+        },
+        {
+          "type": "logs",
+          "id": 49,
+          "title": "Logs for one request",
+          "description": "Every line written while handling the request you pasted, in order — across middleware, the mediator pipeline, EF Core, and the audit sink. This is the full story of one request, and it is usually enough on its own.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "gridPos": {
+            "h": 12,
+            "w": 24,
+            "x": 0,
+            "y": 101
+          },
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "dedupStrategy": "none",
+            "sortOrder": "Ascending"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "queryType": "range",
+              "expr": "{service_name=\"CleanArch.Api\"} | CorrelationId =~ `$find` or trace_id =~ `$find`"
+            }
+          ]
+        },
+        {
+          "type": "traces",
+          "id": 50,
+          "title": "The trace",
+          "description": "The waterfall for that trace id: which span took the time, and which one failed.\n\nRead it outside-in. The root span is the whole request; a child span is time spent somewhere specific — a database query (named after the database, with the SQL on it as db.statement) or an outgoing HTTP call. Time inside the root that no child accounts for is time in your own code. An OnBehalfOf.Exchange span means a token was fetched from the identity provider — its absence on a downstream call means it came from cache.\n\nQueries that run OUTSIDE a request (the outbox poller) are deliberately not recorded.",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "gridPos": {
+            "h": 14,
+            "w": 24,
+            "x": 0,
+            "y": 113
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "queryType": "traceql",
+              "query": "$find"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

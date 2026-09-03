@@ -54,6 +54,9 @@
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+    <!-- A span per database query, so a slow handler shows WHICH query was slow and how many ran.
+         Versioned on its own -beta line, independent of the 1.17.0 core above. -->
+    <PackageVersion Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" Version="1.18.0-beta.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.17.0" />
     <!-- Ships traces -> Tempo and logs -> Loki over OTLP. -->
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />

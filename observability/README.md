@@ -16,6 +16,9 @@ exactly two examples to choose from:
 
 Concepts (metrics vs traces vs logs, push vs pull) are in
 [`../docs/observability-tutorial.md`](../docs/observability-tutorial.md).
+Once it is running, **[`../tutorials/95-reading-your-telemetry.md`](../tutorials/95-reading-your-telemetry.md)**
+is how to read it: what every dashboard panel means, the query languages, and
+eighteen worked incident scenarios.
 The application side of a production deploy — environment, databases, firewall —
 is in [`../docs/deploy-iis.md`](../docs/deploy-iis.md).
 
@@ -45,7 +48,24 @@ observability/
   dev/     docker-compose.yml  .env.example  tempo.yaml  loki.yaml  prometheus.yml
   prod/    docker-compose.yml  .env.example  tempo.yaml  loki.yaml  prometheus.yml  backup.sh
   grafana/ dashboard-cleanarch-api.json      provisioning/   ← shared by both
+             provisioning/datasources/   where Grafana looks for data
+             provisioning/dashboards/    auto-import the dashboard
+             provisioning/alerting/      four alert rules — see below
 ```
+
+## Alerts
+
+[`grafana/provisioning/alerting/cleanarch-api.yaml`](grafana/provisioning/alerting/cleanarch-api.yaml)
+defines four rules: high error rate, high latency, service down, and outbox
+dead-lettering. Both compose files already mount `../grafana/provisioning`, so
+Docker picks them up with nothing to do. Running Grafana natively, copy the file
+to `<grafana>/conf/provisioning/alerting/` and restart — provisioning is read at
+startup only.
+
+They evaluate immediately but notify nobody until a contact point is configured;
+an example is commented out at the bottom of the file. The reasoning behind the
+rules, and why they are Grafana rules rather than Prometheus ones, is in
+[`../tutorials/95-reading-your-telemetry.md`](../tutorials/95-reading-your-telemetry.md#13-the-four-alerts-worth-having).
 
 ---
 
@@ -181,6 +201,11 @@ Recycle the app pool, then generate a little traffic.
 | Logs arriving | Grafana → Explore → Loki → `{service_name="CleanArch.Api"}` |
 | Audit arriving | Kibana → Discover, data view `cleanarch-audit-*` (log in as `elastic`) |
 | Dashboard | Grafana → "CleanArch.Api — Service Overview" |
+
+The dashboard reads top to bottom: ① a verdict, ② traffic, ③ which endpoint,
+④ why, ⑤ dependencies, ⑥ features and background work, ⑦ runtime, ⑧ one request
+by id. Every panel's ⓘ tooltip says what good and bad look like; the long form is
+[`../tutorials/95-reading-your-telemetry.md`](../tutorials/95-reading-your-telemetry.md).
 
 If traces and logs are missing but metrics are fine, the app cannot reach the
 host — check the Docker-host firewall and that `Observability__*` really took
