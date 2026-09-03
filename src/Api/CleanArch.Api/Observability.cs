@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using BuildingBlocks.Outbox;
 using CleanArch.Api.Authentication;
 using Library.Infrastructure.Persistence;
@@ -17,7 +18,7 @@ internal static class ObservabilityExtensions
     /// <summary>
     /// Health checks (both databases) plus OpenTelemetry for all three signals, wired to a local
     /// Grafana stack:
-    ///   • traces  -> Tempo over OTLP/gRPC   (the app PUSHES)
+    ///   • traces  -> Tempo over OTLP/gRPC   (the app PUSHES) — HTTP in, HTTP out, and every EF query
     ///   • logs    -> Loki  over OTLP/HTTP   (the app PUSHES)
     ///   • metrics -> a /metrics page that Prometheus PULLS (mapped in Program.cs)
     /// Endpoints default to the local dev binaries; override via the "Observability" config section.
@@ -61,6 +62,30 @@ internal static class ObservabilityExtensions
                 // Token exchanges for On-Behalf-Of downstream calls. Without this the IdP round-trip is
                 // invisible and reads as unexplained latency on the downstream span.
                 .AddSource(OnBehalfOfDiagnostics.ActivitySourceName)
+                // A child span per database query. Without it a slow handler is one opaque block: you can
+                // see the request took four seconds but not that 3.9 of them were a single SELECT — or
+                // that it was forty small queries in a loop, which is a different bug with a different fix.
+                .AddEntityFrameworkCoreInstrumentation(ef =>
+                {
+                    // Record a query only when it belongs to a trace that already exists.
+                    //
+                    // Without this, every poll of the outbox dispatcher — a SELECT every two seconds,
+                    // forever — becomes a ROOT span, and therefore a whole trace of its own. Measured on
+                    // an idle instance: ~38,000 traces a day, each one a single SELECT that answers no
+                    // question anybody asked. They crowd out the traces that matter and they are the bulk
+                    // of what Tempo would be paid to store.
+                    //
+                    // Note the PARENT. This callback runs after the instrumentation has already started
+                    // its own span and made it current, so Activity.Current is never null here — it is the
+                    // query's own span. What distinguishes a request from background work is whether that
+                    // span has a parent: inside a request it is the ASP.NET Core server span, and for a
+                    // background poll there is nothing above it at all.
+                    //
+                    // If a background operation is later given a span of its own (see OnBehalfOfDiagnostics
+                    // for the shape), its queries acquire a parent and start being recorded again
+                    // automatically — which is the behaviour you want.
+                    ef.Filter = (_, _) => Activity.Current?.Parent is not null;
+                })
                 // Traces -> Tempo (OTLP/gRPC, :4317). gRPC uses no URL path, so the endpoint is used as-is.
                 .AddOtlpExporter(otlp =>
                 {

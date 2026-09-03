@@ -1,0 +1,237 @@
+# Grafana alert rules for CleanArch.Api — created automatically at startup ("provisioning").
+# Shared by ../../../dev and ../../../prod; both mount ../../provisioning read-only.
+#
+# WHY GRAFANA AND NOT PROMETHEUS RULES
+# Prometheus can evaluate alerting rules, but it cannot notify anyone — that needs a separate
+# Alertmanager process, its own config file and its own receivers. Grafana is already running,
+# already has Prometheus as a data source, and already has contact points and notification
+# policies. One component instead of two, for the same four alerts.
+#
+# WHAT FIRES, AND WHAT DOES NOT
+# These alert on SYMPTOMS a caller would notice, never on causes. "5% of requests are failing"
+# is worth waking someone for. "CPU above 80%" is not — it is often perfectly fine, and when it
+# is not, HighErrorRate or HighLatency fires anyway. Cause-based alerts are how teams end up
+# ignoring their pager.
+#
+# THE `for:` FIELD IS NOT OPTIONAL
+# Without it a single bad scrape pages someone. Five seconds of failure is a garbage collection;
+# five minutes of failure is an incident. Every rule below waits before it fires.
+#
+# WHERE THESE SHOW UP
+#   Grafana -> Alerting -> Alert rules      the rules and their current state
+#   Grafana -> Alerting -> Contact points   where a firing alert is sent
+# Until a contact point is configured (see the bottom of this file), alerts still evaluate and
+# still show as Firing in the UI — they just do not reach anybody.
+#
+# NOTE ON `job="cleanarch-api"`: that is the job_name from prometheus.yml. If you renamed the
+# scrape job, rename it in ServiceDown too, or the alert silently never fires.
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: cleanarch-api
+    folder: CleanArch
+    # How often every rule in this group is evaluated. Keep it at or below the shortest `for:`.
+    interval: 1m
+    rules:
+
+      # ── 1. It is failing ──────────────────────────────────────────────────────
+      - uid: cleanarch-high-error-rate
+        title: High error rate
+        condition: THRESHOLD
+        for: 5m
+        # No data means no traffic, which is not a failure. Do not page for a quiet service.
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: CleanArch.Api
+        annotations:
+          summary: Over 5% of requests to CleanArch.Api are returning 5xx
+          description: >-
+            Current 5xx share: {{ $values.THRESHOLD.Value }}%. Open the service dashboard,
+            section (3), to see which route — then section (4) for the exception behind it.
+          runbook_url: https://github.com/your-org/CleanArchitecture/blob/main/tutorials/95-reading-your-telemetry.md#2-the-sixty-second-triage
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: |-
+                100 * (sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m])) or vector(0))
+                / clamp_min(sum(rate(http_server_request_duration_seconds_count[5m])), 0.001)
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+
+      # ── 2. It is slow ─────────────────────────────────────────────────────────
+      - uid: cleanarch-high-latency
+        title: High latency
+        condition: THRESHOLD
+        # Longer than the error alert on purpose: a slow service is still a working service,
+        # and ten minutes of it is the difference between a blip and a problem.
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: CleanArch.Api
+        annotations:
+          summary: CleanArch.Api p95 latency is above 1s
+          description: >-
+            Current p95: {{ $values.THRESHOLD.Value }}s. Check the latency heatmap first — one
+            band means everything got slower, two means only a subset is affected.
+          runbook_url: https://github.com/your-org/CleanArchitecture/blob/main/tutorials/95-reading-your-telemetry.md#2-the-sixty-second-triage
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+
+      # ── 3. It is gone ─────────────────────────────────────────────────────────
+      - uid: cleanarch-service-down
+        title: Service down
+        condition: THRESHOLD
+        for: 2m
+        # The ONLY rule here where no data must page. `up` is written by Prometheus itself on
+        # every scrape, so its absence means Prometheus is not scraping — the app is gone, the
+        # host is gone, or the scrape config broke. All three are incidents.
+        noDataState: Alerting
+        execErrState: Alerting
+        labels:
+          severity: critical
+          service: CleanArch.Api
+        annotations:
+          summary: CleanArch.Api is not being scraped
+          description: >-
+            Prometheus cannot reach /metrics. The process is down, the host is unreachable, or
+            a firewall rule changed. Check Prometheus -> Status -> Targets first.
+          runbook_url: https://github.com/your-org/CleanArchitecture/blob/main/tutorials/95-reading-your-telemetry.md#11-when-the-telemetry-is-the-problem
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: up{job="cleanarch-api"}
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # ── 4. Work was silently dropped ──────────────────────────────────────────
+      - uid: cleanarch-outbox-dead-lettered
+        title: Outbox message dead-lettered
+        condition: THRESHOLD
+        # Fires almost immediately: this is not a threshold being crossed, it is a discrete
+        # event that already happened and will not un-happen.
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: CleanArch.Api
+        annotations:
+          summary: An outbox message was given up on — a domain event never happened
+          description: >-
+            Nothing retries a dead-lettered message. Find it with
+            "SELECT * FROM OutboxMessages WHERE DeadLetteredOnUtc IS NOT NULL", read the Error
+            column, fix the handler, then re-queue it deliberately.
+          runbook_url: https://github.com/your-org/CleanArchitecture/blob/main/tutorials/95-reading-your-telemetry.md#10-eighteen-real-scenarios
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: sum(increase(outbox_dead_lettered_total[1h])) or vector(0)
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+# ── Sending them somewhere ───────────────────────────────────────────────────
+# Until you configure this, the rules above evaluate and show as Firing in the Alerting UI but
+# notify nobody. Uncomment ONE contact point and the policy, then restart Grafana.
+#
+# Be aware that a provisioned `policies:` block REPLACES Grafana's entire notification policy
+# tree, including the default route. That is why it is commented out rather than shipped: it is
+# a decision about where your alerts go, and it should not be made by a file you inherited.
+#
+# contactPoints:
+#   - orgId: 1
+#     name: cleanarch-oncall
+#     receivers:
+#       # Slack — create an Incoming Webhook in your workspace first.
+#       - uid: cleanarch-slack
+#         type: slack
+#         settings:
+#           url: https://hooks.slack.com/services/CHANGE/ME    # SECRET: prefer $__file{} or an env var
+#           title: '{{ template "slack.default.title" . }}'
+#       # Email — needs [smtp] enabled in grafana.ini; it is off by default.
+#       # - uid: cleanarch-email
+#       #   type: email
+#       #   settings:
+#       #     addresses: oncall@example.com
+#       # Anything else — a webhook into your own handler, PagerDuty, Teams, Opsgenie.
+#       # - uid: cleanarch-webhook
+#       #   type: webhook
+#       #   settings:
+#       #     url: https://example.internal/alerts
+#
+# policies:
+#   - orgId: 1
+#     receiver: cleanarch-oncall
+#     group_by: [alertname, service]
+#     # Wait a little before the first notification so a burst arrives as one message.
+#     group_wait: 30s
+#     group_interval: 5m
+#     # How long before an alert that is STILL firing is repeated. Too short and people mute it.
+#     repeat_interval: 4h
+#     routes:
+#       # Route by the severity label the rules above set, so warnings do not wake anyone.
+#       - receiver: cleanarch-oncall
+#         matchers:
+#           - severity = critical
+#         repeat_interval: 1h

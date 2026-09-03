@@ -26,6 +26,7 @@ Come back for the rest when you hit the problem it solves.
 | 70 | [Authentication and the audit actor](70-authentication.md) | You need to know who is calling, and they don't all authenticate the same way |
 | 80 | [Testing](80-testing.md) | You want tests that catch bugs and survive refactoring |
 | 90 | [Observability server on Ubuntu](90-observability-server-ubuntu.md) | You're building the box that collects telemetry, from a blank Ubuntu install |
+| 95 | [Reading your telemetry](95-reading-your-telemetry.md) | The stack is up, something is wrong, and you need to find out what |
 
 ### By task
 
@@ -44,6 +45,11 @@ Come back for the rest when you hit the problem it solves.
 | Protect an endpoint | [70 §8](70-authentication.md#8-step-4--protect-an-endpoint) |
 | Test a rule, or a handler | [80](80-testing.md) |
 | Stand up Grafana, Loki, Tempo, Prometheus, Elasticsearch, Kibana | [90](90-observability-server-ubuntu.md) |
+| Triage an incident from the dashboard | [95 §2](95-reading-your-telemetry.md#2-the-sixty-second-triage) |
+| Work out whether it's us or a dependency | [95 §10](95-reading-your-telemetry.md#10-eighteen-real-scenarios) |
+| Follow one request through logs, traces and the audit trail | [95 §9](95-reading-your-telemetry.md#9-the-golden-thread--one-request-across-all-four) |
+| Write a PromQL / LogQL / TraceQL query | [95 §§5–7](95-reading-your-telemetry.md#16-cheat-sheet) |
+| Get alerted instead of watching a dashboard | [95 §13](95-reading-your-telemetry.md#13-the-four-alerts-worth-having) |
 
 ### Threads that run through several guides
 
@@ -55,8 +61,13 @@ than one place:
   as trustworthy as the authentication behind it.
 - **Idempotency** appears in [60](60-talking-across-modules.md) as a design requirement and
   in [80](80-testing.md) as a test you must write.
-- **Correlation ids** are set up in [50](50-instrumenting-an-application.md) and are what
-  makes a [60](60-talking-across-modules.md) saga traceable across its async hop.
+- **Correlation ids** are set up in [50](50-instrumenting-an-application.md), are what
+  makes a [60](60-talking-across-modules.md) saga traceable across its async hop, and are
+  the thread you actually pull on in [95](95-reading-your-telemetry.md).
+- **Telemetry** is emitted in [50](50-instrumenting-an-application.md), stored by
+  [90](90-observability-server-ubuntu.md) and *read* in
+  [95](95-reading-your-telemetry.md). The last of the three is the one that pays for the
+  other two.
 - **The transition rule** — publish on the *change*, not the state — is stated in
   [60](60-talking-across-modules.md) and tested in [80](80-testing.md).
 
