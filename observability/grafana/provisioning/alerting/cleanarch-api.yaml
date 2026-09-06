@@ -17,6 +17,20 @@
 # Without it a single bad scrape pages someone. Five seconds of failure is a garbage collection;
 # five minutes of failure is an incident. Every rule below waits before it fires.
 #
+# WHY EVERY RULE HAS `execErrState: OK`
+# An exec error is not a failing service — it is Grafana being unable to ASK. Prometheus is
+# booting, replaying its write-ahead log (503 for the whole replay), restarting, or unreachable.
+# With `Alerting` or `Error` here, every restart of the stack raised a DatasourceError against
+# all four rules and told on-call the service was down while it was serving traffic normally.
+#
+# The honest cost: while Prometheus is unreachable, none of these rules can fire, so a
+# permanently dead Prometheus produces silence rather than a page. No rule that queries
+# Prometheus can cover that — a monitoring system cannot alert on its own absence. The failure
+# is still visible in Grafana (the data source health check, and the `up{job="prometheus"}`
+# self-scrape once it returns), and if you need it to page, the answer is an external
+# dead-man's-switch — something outside this host that expects a regular heartbeat and
+# complains when it stops — not a fifth rule in this file.
+#
 # WHERE THESE SHOW UP
 #   Grafana -> Alerting -> Alert rules      the rules and their current state
 #   Grafana -> Alerting -> Contact points   where a firing alert is sent
@@ -43,7 +57,7 @@ groups:
         for: 5m
         # No data means no traffic, which is not a failure. Do not page for a quiet service.
         noDataState: OK
-        execErrState: Error
+        execErrState: OK
         labels:
           severity: critical
           service: CleanArch.Api
@@ -83,7 +97,7 @@ groups:
         # and ten minutes of it is the difference between a blip and a problem.
         for: 10m
         noDataState: OK
-        execErrState: Error
+        execErrState: OK
         labels:
           severity: warning
           service: CleanArch.Api
@@ -117,12 +131,27 @@ groups:
       - uid: cleanarch-service-down
         title: Service down
         condition: THRESHOLD
-        for: 2m
+        # Five minutes, not two: a stack restart takes Prometheus about a minute to come back
+        # and start scraping again, and nobody should be paged for that.
+        for: 5m
         # The ONLY rule here where no data must page. `up` is written by Prometheus itself on
         # every scrape, so its absence means Prometheus is not scraping — the app is gone, the
         # host is gone, or the scrape config broke. All three are incidents.
         noDataState: Alerting
-        execErrState: Alerting
+        # OK, NOT Alerting — this is the difference between "the API is down" and "I could not
+        # find out whether the API is down", and they need different responses.
+        #
+        # An exec error means Grafana could not query PROMETHEUS: it is starting, replaying its
+        # WAL (it answers 503 the whole time), being restarted, or unreachable. With Alerting
+        # here, every single restart of the stack fired this rule and told whoever was on call
+        # that the API was down — while the API was serving traffic perfectly well. Alerts that
+        # cry wolf on a schedule are how a team learns to ignore the pager.
+        #
+        # Nothing is silently lost. Grafana surfaces the failure as a DatasourceError under
+        # Alerting -> Alert rules regardless of this setting, and a Prometheus that is genuinely
+        # gone stops answering the data source health check too. What changes is that a
+        # telemetry hiccup no longer impersonates a production incident.
+        execErrState: OK
         labels:
           severity: critical
           service: CleanArch.Api
@@ -160,7 +189,7 @@ groups:
         # event that already happened and will not un-happen.
         for: 1m
         noDataState: OK
-        execErrState: Error
+        execErrState: OK
         labels:
           severity: warning
           service: CleanArch.Api
@@ -199,21 +228,36 @@ groups:
 # tree, including the default route. That is why it is commented out rather than shipped: it is
 # a decision about where your alerts go, and it should not be made by a file you inherited.
 #
+# EMAIL NEEDS TWO HALVES, AND ONE OF THEM IS NOT IN THIS FILE.
+# The contact point below says who to mail. What actually opens a connection to a mail server is
+# Grafana's own SMTP client, which is disabled by default and is configured through environment
+# variables on the Grafana container — GF_SMTP_ENABLED and friends, already wired up in both
+# compose files and driven by SMTP_* in .env. Set those first:
+#
+#     observability/dev/.env    SMTP_ENABLED=true, SMTP_HOST=host.docker.internal:1025
+#                               (Mailpit or MailHog — nothing leaves your machine)
+#     observability/prod/.env   SMTP_ENABLED=true and the rest of the SMTP_* block
+#
+# then uncomment `cleanarch-email` and the policy below and restart Grafana. Verify from the UI
+# with Alerting -> Contact points -> Test, which reports the SMTP error verbatim; the two that
+# account for most failures are a SMTP_HOST missing its ":587" and a relay refusing a From:
+# address on a domain it is not authoritative for.
+#
 # contactPoints:
 #   - orgId: 1
 #     name: cleanarch-oncall
 #     receivers:
-#       # Slack — create an Incoming Webhook in your workspace first.
-#       - uid: cleanarch-slack
-#         type: slack
+#       # Email — needs the SMTP_* variables above; without them this silently sends nothing.
+#       - uid: cleanarch-email
+#         type: email
 #         settings:
-#           url: https://hooks.slack.com/services/CHANGE/ME    # SECRET: prefer $__file{} or an env var
-#           title: '{{ template "slack.default.title" . }}'
-#       # Email — needs [smtp] enabled in grafana.ini; it is off by default.
-#       # - uid: cleanarch-email
-#       #   type: email
+#           addresses: oncall@example.com      # semicolon-separated for several recipients
+#       # Slack — create an Incoming Webhook in your workspace first.
+#       # - uid: cleanarch-slack
+#       #   type: slack
 #       #   settings:
-#       #     addresses: oncall@example.com
+#       #     url: https://hooks.slack.com/services/CHANGE/ME  # SECRET: prefer $__file{} or an env var
+#       #     title: '{{ template "slack.default.title" . }}'
 #       # Anything else — a webhook into your own handler, PagerDuty, Teams, Opsgenie.
 #       # - uid: cleanarch-webhook
 #       #   type: webhook

@@ -86,27 +86,27 @@ broken an hour ago", the dashboard is showing you a healthy service and you will
 nothing is wrong. **Always set the range to the reported time, plus twenty minutes either
 side.** More incidents are misdiagnosed by the time picker than by any query.
 
-**10–20s — Read section ①.** Twelve tiles. If they are all green, nothing is broken *right
-now*, and the question becomes "was it, and when?" — go to section ② and look for the moment
+**10–20s — Read the health tiles.** Twelve tiles. If they are all green, nothing is broken *right
+now*, and the question becomes "was it, and when?" — go to **Traffic** and look for the moment
 the colours changed.
 
 **20–30s — Which tile is red?** Each one sends you somewhere specific:
 
 | Red tile | It means | Go to |
 |---|---|---|
-| Success rate / 5xx per sec | Requests are failing | ③ then ④ |
-| Latency p95 / p99 | Requests are slow | ② heatmap, then ③, then ④ slow traces |
-| In flight | Requests are piling up — saturation | ⑦ thread pool, then ⑤ dependencies |
-| 4xx per sec | Callers are being rejected | ② status split, then ⑤ auth / rate limiting |
-| Exceptions per sec | Something is throwing | ④ exceptions by type |
-| Outbound failures | A dependency or a telemetry store is unreachable | ⑤ dependencies |
-| CPU / Memory / Thread-pool queue | The host or the runtime is struggling | ⑦ runtime health |
+| Success rate / 5xx per sec | Requests are failing | **Which endpoint**, then **What is failing** |
+| Latency p95 / p99 | Requests are slow | **Traffic** heatmap, then **Which endpoint**, then **What is failing** slow traces |
+| In flight | Requests are piling up — saturation | **Runtime health** thread pool, then **Dependencies** |
+| 4xx per sec | Callers are being rejected | **Traffic** status split, then **Dependencies** auth / rate limiting |
+| Exceptions per sec | Something is throwing | **What is failing** exceptions by type |
+| Outbound failures | A dependency or a telemetry store is unreachable | **Dependencies** |
+| CPU / Memory / Thread-pool queue | The host or the runtime is struggling | **Runtime health** |
 
-**30–45s — Narrow it to one endpoint.** Section ③ is a table of every route sorted by error
+**30–45s — Narrow it to one endpoint.** **Which endpoint** is a table of every route sorted by error
 rate. "The API is broken" becomes "`POST /students` is broken", which is a completely
 different and much smaller problem.
 
-**45–60s — Find out why.** Section ④: the errors and warnings log on the left, the failed
+**45–60s — Find out why.** **What is failing**: the errors and warnings log on the left, the failed
 traces on the right. Open one failed trace, read the exception on the span, then read the log
 lines for that trace id.
 
@@ -129,9 +129,9 @@ Three controls sit at the top of the dashboard:
 | **Route** | Narrows every metric panel to one or more endpoints. Set it once and the whole dashboard is about that route |
 | **Slow threshold** | The cut-off used by the "Slow requests" trace search (100ms … 5s) |
 | **Slow query** | The cut-off used by the "Slow database queries" panel (1ms … 1s) |
-| **Find request** | Paste a trace id or correlation id here, then open section ⑧ |
+| **Find request** | Paste a trace id or correlation id here, then open **Investigate one request** |
 
-### ① Is it healthy right now?
+### Is it healthy right now?
 
 Twelve tiles. The design rule is that **all green means stop looking** — if you cannot walk
 away when they are green, the thresholds are wrong and you should change them.
@@ -148,10 +148,10 @@ away when they are green, the thresholds are wrong and you should change them.
 | **Exceptions/sec** | near 0 | Thrown, whether or not the caller saw it. Exceptions **without** 5xx are the interesting case — see scenario 10 |
 | **Outbound failures/sec** | 0 | Something this process dials is unreachable. Often a telemetry store, not a real dependency |
 | **CPU** | < 70% | Sustained high CPU makes every latency number worse |
-| **Memory** | *(shape, not value)* | One value means nothing. Open ⑦ and read the trend |
+| **Memory** | *(shape, not value)* | One value means nothing. Open **Runtime health** and read the trend |
 | **Thread-pool queue** | 0 | Above zero and staying there is thread-pool starvation. Every endpoint slows at once, including `/health` |
 
-### ② What is the traffic doing?
+### What is the traffic doing?
 
 **Requests/sec by status class** — stacked and colour-coded. Read the colours, not the
 numbers. A red band appearing is the outage, and *its left edge is the minute it started*.
@@ -161,7 +161,7 @@ fact on the dashboard.
 **Requests/sec by route** — is the spike one endpoint or all of them? One line rising alone
 is a caller behaving badly; every line rising together is real load. Requests that matched no
 route carry no `http_route` label and appear as an unnamed series — that is expected, and
-"Rate limiting"/"unknown paths" in ⑤ counts them properly.
+"Rate limiting"/"unknown paths" in **Dependencies** counts them properly.
 
 **Latency percentiles** — p50, p95 and p99 on one axis. The **gap** between the lines is the
 diagnosis:
@@ -190,14 +190,14 @@ cache hits at 5ms and cache misses at 300ms — and the p95 you were staring at 
 of two different behaviours, describing neither. A band drifting up over hours is gradual
 degradation; a second band appearing suddenly is a code path that just started being taken.
 
-### ③ Which endpoint is the problem?
+### Which endpoint is the problem?
 
 One row per route, sorted by error rate. This is the panel that turns *"the API is broken"*
 into *"`POST /students` is broken"*.
 
 | What you see | What it means |
 |---|---|
-| **5xx %** red | Start here, then go to ④ |
+| **5xx %** red | Start here, then go to **What is failing** |
 | **p95** red, 5xx % green | It works, it is just slow. Open a slow trace for that route |
 | **p99 ≫ p95** on one row | That route is *inconsistent*, not uniformly slow |
 | High **Req/s**, modest p95 | A busy, healthy endpoint. Leave it alone |
@@ -206,7 +206,7 @@ into *"`POST /students` is broken"*.
 large, the average is lying to you — which is why no tile on this dashboard shows an average
 on its own.
 
-### ④ What is failing?
+### What is failing: logs and traces
 
 **Warnings & errors (Loki)** — every line at warn or above, newest first. Expand a line to
 see its fields; `CorrelationId`, `TraceID`, `Request` and `scope_name` are the ones that
@@ -237,7 +237,7 @@ panel lie by omission.
 | `ValidationException` | Expected, and normal on a public API |
 | `InvalidOperationException` | Usually a DI or lifetime mistake, or a disposed context |
 
-### ⑤ Dependencies & the edge — is it us or them?
+### Dependencies and the edge: is it us or them?
 
 **Outbound calls/sec by target**, **Outbound errors by target & reason**, and **Outbound p95
 by target**. Known targets in this stack:
@@ -283,6 +283,38 @@ A step change in failures after a deploy means a key, an audience or an authorit
 wrong. A steady trickle from one scheme is a stale client. A flood is someone guessing —
 cross-check the audit trail's `Security` category.
 
+**Authorization outcomes** — the panel next to it, and a different failure. Authentication fails
+when the credential is missing, expired or malformed. Authorization fails when the credential was
+accepted but the caller did not hold the policy, role or scope the endpoint asked for. Both arrive
+as 4xx on the tiles, and they need different fixes: one is a token problem, the other is a
+permissions problem.
+
+| What you see | What it usually is |
+|---|---|
+| `failure` with `authenticated=false` | An anonymous caller hitting a protected endpoint. Normal background noise |
+| `failure` with `authenticated=true` | A real 403. A valid token without the required scope — usually a policy change, or a token issued by the wrong client |
+| A step change in the second row after a deploy | Someone tightened a policy, or a scope stopped being requested |
+
+**Outbound queue wait p95** — how long an outbound call sat waiting for a free connection from the
+HTTP client pool, before it was even sent. This is the panel that stops you blaming a downstream
+for your own pool.
+
+Read it against **Outbound p95 by target**, which *includes* this wait:
+
+| Queue wait | Outbound p95 | What it means |
+|---|---|---|
+| ~0 | high | The downstream really is slow. Not your problem to fix, but it is your problem to handle |
+| high | high | Your connection pool is the bottleneck. The downstream may be perfectly healthy |
+| high | ~0 | Rare. Brief pool contention that resolved |
+
+When the queue wait is the cause, the fixes are raising `MaxConnectionsPerServer`, or finding the
+requests whose responses are never disposed and are therefore never returning their connection.
+
+**Outbound connection pool** — connections held per target, split into `active` and `idle`. Use it
+to confirm what the queue wait panel implies. Active flat at a ceiling while queue wait climbs is
+an exhausted pool for that host. Idle connections growing while traffic does not usually means
+`HttpClient` instances are being created per call instead of resolved through `IHttpClientFactory`.
+
 **Slow database queries** — one row per query that took longer than `$dbslow`, with the SQL and
 the duration. Click a row to open the trace it came from. The database is a dependency like any
 other, which is why it lives in this section.
@@ -301,7 +333,7 @@ Only queries that ran **inside a request** appear here. Background work — the 
 two seconds — is deliberately not traced, so it cannot drown the panel. That filter lives in
 `Observability.cs`; see [§7](#7-traces--reading-a-waterfall).
 
-### ⑥ Features & background work
+### Features and background work
 
 HTTP routes tell you what callers *asked for*. This section tells you what the code *did*,
 derived from the log line `LoggingBehavior` writes for every mediator request:
@@ -327,9 +359,9 @@ running.
 **Dead-lettered — total** — any number above zero is unfinished business: a domain event
 raised and never acted on. Nothing retries it for you. See scenario 11.
 
-### ⑦ Runtime health (collapsed)
+### Runtime health (collapsed)
 
-Open it when section ① points inward — CPU, memory or thread-pool queue red.
+Open it when **Is it healthy** points inward — CPU, memory or thread-pool queue red.
 
 | Panel | Healthy | Unhealthy |
 |---|---|---|
@@ -341,7 +373,7 @@ Open it when section ① points inward — CPU, memory or thread-pool queue red.
 | **Thread pool** | queue 0 | A queue that will not drain is starvation. Cause is nearly always blocking on async code on a hot path |
 | **Lock contention** | low, flat | Scaling with traffic means a shared lock is serialising request handling — throughput plateaus with CPU to spare |
 
-### ⑧ Investigate one request (collapsed)
+### Investigate one request (collapsed)
 
 Paste an id into the **Find request** box, widen the time range, and open this section.
 
@@ -349,7 +381,7 @@ Paste an id into the **Find request** box, widen the time range, and open this s
 |---|---|
 | `X-Correlation-ID` response header — on every response | `a8faac35-f23e-43b2-a42a-df4e9ae09b03` |
 | `traceId` in an RFC 7807 error body: `00-<trace id>-<span id>-01` | paste **only the middle part** |
-| `TraceID` field on any log line in ④ | 32 hex characters |
+| `TraceID` field on any log line in **What is failing** | 32 hex characters |
 | `correlationId` on an audit record in Kibana | a GUID |
 
 The logs panel matches either id. The trace panel needs a trace id and will error on a
@@ -481,7 +513,7 @@ There is **no database metric** — no query count, no query duration, no connec
 so you cannot chart or alert on the database. You can still *see* it: every query gets a span,
 so the answer lives in Tempo ([§7](#7-traces--reading-a-waterfall)) rather than on a graph.
 
-And there is **no per-feature metric**; feature-level timing comes from logs (section ⑥).
+And there is **no per-feature metric**; feature-level timing comes from logs (**Features**).
 [§12](#12-what-this-tells-you--and-what-it-does-not) has the fix.
 
 ---
@@ -573,7 +605,7 @@ templates: `"Handled {Request} in {ElapsedMs}ms"` is searchable, and
 {service_name="CleanArch.Api"} | RequestPath =~ "/students/.*/transcript"
 ```
 
-Turning logs into a graph — this is how section ⑥ is built:
+Turning logs into a graph — this is how **Features** is built:
 
 ```logql
 # Lines per level over time
@@ -798,7 +830,7 @@ Split it: `00` is the version, **`e77822417fb42c34f750fbe386b1968c` is the trace
 `X-Correlation-ID`. Callers who log their outbound calls will have this even when they did not
 keep the body.
 
-**3. Paste it into the dashboard.** Section ⑧, the **Find request** box. Both panels populate.
+**3. Paste it into the dashboard.** **Investigate one request**, the **Find request** box. Both panels populate.
 
 **4. Or go store by store:**
 
@@ -839,9 +871,9 @@ the failures you will actually meet.
 | | |
 |---|---|
 | **Symptom** | Success rate red, 5xx/sec red, started at a specific minute |
-| **See it** | ② status-class chart — the red band's left edge is the start time |
-| **Confirm** | ③ table: which route. Usually one, sometimes all |
-| **Diagnose** | ④ failed traces → open one → the failing span's `exception.type` and stack trace |
+| **See it** | **Traffic** status-class chart — the red band's left edge is the start time |
+| **Confirm** | **Which endpoint** table: which route. Usually one, sometimes all |
+| **Diagnose** | **What is failing** — failed traces → open one → the failing span's `exception.type` and stack trace |
 
 ```logql
 {service_name="CleanArch.Api"} | detected_level = "error" | Request = "CreateStudent.Command"
@@ -856,8 +888,8 @@ diagnose second. The trace and the logs are still there afterwards.
 | | |
 |---|---|
 | **Symptom** | p95 red, success rate green |
-| **See it** | ② percentiles: do all three lines rise together? |
-| **Confirm** | ⑤ outbound p95 — did a dependency's latency rise at the same moment? |
+| **See it** | **Traffic** percentiles: do all three lines rise together? |
+| **Confirm** | **Dependencies** outbound p95 — did a dependency's latency rise at the same moment? |
 
 **What it means.** All percentiles rising together plus one dependency rising = you are
 waiting on them. All rising with flat dependencies = you, or the host. **What to do.** If it
@@ -869,11 +901,11 @@ on somebody else's outage is how one service's problem becomes three services' p
 | | |
 |---|---|
 | **Symptom** | p99 far above p95, p50 normal. Complaints from a minority |
-| **See it** | ② heatmap: **two bands** |
+| **See it** | **Traffic** heatmap: **two bands** |
 
 **What it means.** Two populations. A cache with hits and misses, a query that sometimes hits
 an index and sometimes scans, a list endpoint where one tenant has 100,000 rows. **What to
-do.** Find what distinguishes them — open slow traces (④) and compare `url.path` against a
+do.** Find what distinguishes them — open slow traces (**What is failing**) and compare `url.path` against a
 fast one. The distinguishing feature is usually visible in the URL.
 
 ### 4. Everything is slow, including `/health`
@@ -881,8 +913,8 @@ fast one. The distinguishing feature is usually visible in the URL.
 | | |
 |---|---|
 | **Symptom** | Every route's p95 up together, even trivial ones |
-| **See it** | ① thread-pool queue above zero and staying there |
-| **Confirm** | ⑦ thread pool: queue climbing, thread count climbing slowly behind it |
+| **See it** | **Is it healthy** thread-pool queue above zero and staying there |
+| **Confirm** | **Runtime health** thread pool: queue climbing, thread count climbing slowly behind it |
 
 **What it means.** Thread-pool starvation. `/health` does nothing and cannot be slow for its
 own reasons — when it is slow, nothing can get a thread. **What to do.** Find blocking calls
@@ -894,7 +926,7 @@ grows one thread per second or so, which is why the recovery is always slower th
 | | |
 |---|---|
 | **Symptom** | Restarts every few days; latency degrades before each one |
-| **See it** | ⑦ memory over **7 days**, not 30 minutes |
+| **See it** | **Runtime health** memory over **7 days**, not 30 minutes |
 
 **What it means.** A staircase that never returns to its floor is a leak. GC heap climbing =
 managed (a static collection, an un-disposed scope, an event handler never unsubscribed).
@@ -907,11 +939,11 @@ rate — it rises first, and is the earliest signal you get.
 | | |
 |---|---|
 | **Symptom** | CPU red, request rate unchanged |
-| **See it** | ⑦ CPU by mode, and GC pause time on the same range |
+| **See it** | **Runtime health** CPU by mode, and GC pause time on the same range |
 
 **What it means.** High GC pause with high CPU is allocation churn, not load. High *system*
 CPU is I/O or syscalls. High *user* CPU with low GC is a hot loop or a runaway retry.
-**What to do.** Check ⑤ outbound calls first: a retry loop against a dead dependency looks
+**What to do.** Check **Dependencies** outbound calls first: a retry loop against a dead dependency looks
 exactly like a hot loop, and is far more common.
 
 ### 7. A wave of 401s after a deploy
@@ -919,7 +951,7 @@ exactly like a hot loop, and is far more common.
 | | |
 |---|---|
 | **Symptom** | 4xx tile up, success rate still green |
-| **See it** | ② status split: yellow band growing. ⑤ authentication outcomes: `failure` appears |
+| **See it** | **Traffic** status split: yellow band growing. **Dependencies** authentication outcomes: `failure` appears |
 
 **What it means.** Credentials stopped being accepted. Which scheme fails tells you where:
 `ApiKey` = a key was rotated or the store was reseeded; `Bearer` = wrong authority, wrong
@@ -932,7 +964,7 @@ audit trail's `Security` category for who is being rejected.
 | | |
 |---|---|
 | **Symptom** | 4xx up, mostly 404 |
-| **See it** | ⑤ unknown paths — `aspnetcore_routing_match_attempts_total{...match_status="failure"}` |
+| **See it** | **Dependencies** unknown paths — `aspnetcore_routing_match_attempts_total{...match_status="failure"}` |
 
 ```promql
 sum(rate(aspnetcore_routing_match_attempts_total{aspnetcore_routing_match_status="failure"}[$__rate_interval]))
@@ -954,7 +986,7 @@ A named route means "record not found". A blank one means "no such URL".
 | | |
 |---|---|
 | **Symptom** | Complaints of intermittent failure; your 5xx is clean |
-| **See it** | ⑤ rate limiting: anything other than `acquired` |
+| **See it** | **Dependencies** rate limiting: anything other than `acquired` |
 
 **What it means.** They got a 429. From their side that is an outage. **What to do.** If it
 appears without a traffic spike, the limit is too low for normal use
@@ -966,7 +998,7 @@ conversation to have — not a limit change.
 | | |
 |---|---|
 | **Symptom** | Exceptions/sec red, success rate green |
-| **See it** | ④ exceptions by type, then ⑤ outbound errors |
+| **See it** | **What is failing** exceptions by type, then **Dependencies** outbound errors |
 
 **What it means.** Something in the background is throwing and nobody notices. In this app the
 usual suspects, in order: the audit shipper cannot reach Elasticsearch, the OTLP exporters
@@ -986,7 +1018,7 @@ backfill if the trail matters.
 | | |
 |---|---|
 | **Symptom** | Dead-lettered tile above zero. Something downstream "never happened" |
-| **See it** | ⑥ outbox dispatch: failures climbing with no matching deliveries |
+| **See it** | **Features** outbox dispatch: failures climbing with no matching deliveries |
 
 **What it means.** A handler threw on every attempt until the retry budget ran out. The
 message is now sitting in the database doing nothing, and **nothing will retry it for you**.
@@ -1030,7 +1062,7 @@ subject-access request arrives, not after.
 | | |
 |---|---|
 | **Symptom** | Your API returns 502 with `"downstream": "billing"` in the body |
-| **See it** | ⑤ outbound errors — the IdP's token endpoint, or the downstream itself |
+| **See it** | **Dependencies** outbound errors — the IdP's token endpoint, or the downstream itself |
 | **Confirm** | Tempo: `{name = "OnBehalfOf.Exchange"}` — did the exchange happen, and did it fail? |
 
 **What it means.** By design this app never turns an upstream identity-provider failure into a
@@ -1061,7 +1093,7 @@ Each step eliminates one hop. See [§11](#11-when-the-telemetry-is-the-problem).
 | | |
 |---|---|
 | **Symptom** | Request rate → 0. Success rate reads 100% (nothing failed, because nothing happened) |
-| **See it** | ① requests/sec at zero while ⑦ shows the process running normally |
+| **See it** | **Is it healthy** requests/sec at zero while **Runtime health** shows the process running normally |
 
 **What it means.** Nothing is reaching you. A load balancer health check started failing, DNS
 changed, a firewall rule was applied, a certificate expired at the edge, or the deploy took
@@ -1076,11 +1108,11 @@ scraped proves the process is up and that the problem is between the caller and 
 | | |
 |---|---|
 | **Symptom** | A latency spike at the same time every day |
-| **See it** | ② percentiles over **7 days**; the shape repeats |
+| **See it** | **Traffic** percentiles over **7 days**; the shape repeats |
 
 **What it means.** Cold start (a recycled app pool, a scale-in overnight), a cold cache, or a
-scheduled job competing for the database. **What to do.** Check ⑦ allocation and GC at the
-spike — a cold start shows a JIT and allocation burst. Check ⑥ feature throughput for a
+scheduled job competing for the database. **What to do.** Check **Runtime health** allocation and GC at the
+spike — a cold start shows a JIT and allocation burst. Check **Features** feature throughput for a
 feature that only runs at that hour.
 
 ### 18. Intermittent timeouts against one dependency
@@ -1088,7 +1120,7 @@ feature that only runs at that hour.
 | | |
 |---|---|
 | **Symptom** | Occasional 5xx or 502; most calls fine |
-| **See it** | ⑤ outbound p95 spiky for one target; `TaskCanceledException` in ④ |
+| **See it** | **Dependencies** outbound p95 spiky for one target; `TaskCanceledException` in **What is failing** |
 | **Confirm** | `http_client_request_time_in_queue_seconds` — connection-pool starvation, not a slow server |
 
 ```promql
@@ -1111,7 +1143,7 @@ signatures — the cost of paging someone at 3am for a dead Loki is paid in trus
 | Dashboard blank, Explore works | The dashboard's data source uid, or metric-name escaping — [§15](#15-troubleshooting) |
 | Metrics fine, logs and traces missing | The app cannot reach Loki/Tempo. Push versus pull: metrics are **pulled**, so they survive an outbound network problem that kills the other two |
 | Logs and traces fine, metrics missing | The opposite direction — Prometheus cannot reach the app. A Windows Firewall inbound rule, or the wrong port |
-| Exceptions climbing, success rate green | Exporters retrying. Check ⑤ for `:3100`, `:4317`, `:9200` |
+| Exceptions climbing, success rate green | Exporters retrying. Check **Dependencies** for `:3100`, `:4317`, `:9200` |
 | `AUDIT(unshipped)` warnings | Elasticsearch is unreachable; audit fell back to logs |
 | A 4s span whose only child is a POST to `:9200` | The audit shipper's connect timeout, showing up in your own traces |
 | Everything stops at the same instant | A store's disk filled, or retention deleted more than you expected |
@@ -1155,7 +1187,7 @@ and a trace store has none of the redaction, access control or retention rules t
 
 ### No span per feature
 
-`LoggingBehavior` writes a log line per mediator request, which is why section ⑥ is built from
+`LoggingBehavior` writes a log line per mediator request, which is why **Features** is built from
 logs. A *span* per handler would place it in the waterfall instead.
 
 **Fix.** A pipeline behaviour that starts an `Activity`, the same shape as
@@ -1200,7 +1232,7 @@ Add more only when a real incident proves you needed one.
 |---|---|---|---|
 | **High error rate** | over 5% of requests return 5xx | 5m | critical |
 | **High latency** | p95 above 1s | 10m | warning |
-| **Service down** | Prometheus cannot scrape `/metrics` | 2m | critical |
+| **Service down** | Prometheus cannot scrape `/metrics` | 5m | critical |
 | **Outbox message dead-lettered** | any message was given up on in the last hour | 1m | warning |
 
 ### Why Grafana and not Prometheus rules
@@ -1242,6 +1274,25 @@ Prometheus itself on every scrape, so its *absence* is not silence — it means 
 scraping at all. The app is gone, the host is gone, or the scrape config broke. Getting this
 backwards is how an outage produces no alert.
 
+**`execErrState` is a different question, and the answer is the opposite one.** No data means
+Prometheus answered and had nothing; an *exec error* means Prometheus did not answer at all —
+it is booting, replaying its write-ahead log (503 for the whole replay), restarting, or
+unreachable. All four rules, **Service down** included, use `execErrState: OK`, because "I could
+not find out whether the API is up" is not the same claim as "the API is down" and must not
+produce the same page. Left as `Alerting` or `Error`, every restart of the stack raises a
+`DatasourceError` against all four rules — always spuriously, and a team learns within a week to
+ignore it. The compose files close the same gap from the other side: Grafana waits on
+Prometheus's health check before starting, so it never evaluates against a data source that is
+still coming up.
+
+That choice has an honest cost, and it is worth stating rather than discovering: while
+Prometheus is unreachable, none of these rules can fire, so a *permanently* dead Prometheus
+produces silence instead of a page. No rule in this file can fix that, because every one of them
+asks Prometheus — a monitoring system cannot alert on its own absence. It stays visible in the
+UI (the data source health check, and the `up{job="prometheus"}` self-scrape once it returns),
+and if it has to page, the mechanism is an external dead-man's-switch — something off this host
+that expects a heartbeat and complains when it stops.
+
 ### They evaluate; they do not yet notify
 
 Out of the box the rules show their state in the Alerting UI and reach nobody. Notification
@@ -1261,12 +1312,12 @@ you, not for a file you inherited.
 During a real incident, in order:
 
 - [ ] **Set the time range** to when it was reported, ±20 minutes. Do this first, always
-- [ ] Section ① — which tiles are red?
-- [ ] Section ② — **when** did the colour change? That minute is your anchor
+- [ ] **Is it healthy** — which tiles are red?
+- [ ] **Traffic** — **when** did the colour change? That minute is your anchor
 - [ ] Was there a deploy, a config change or a restart at that minute?
-- [ ] Section ③ — which route? Now the problem has a name
-- [ ] Section ④ — open a failed trace; read the exception type and the failing span
-- [ ] Section ⑤ — is a dependency failing or slow at the same moment? Us, or them?
+- [ ] **Which endpoint** — which route? Now the problem has a name
+- [ ] **What is failing** — open a failed trace; read the exception type and the failing span
+- [ ] **Dependencies** — is a dependency failing or slow at the same moment? Us, or them?
 - [ ] Filter logs by `CorrelationId` or `trace_id` and read the whole request
 - [ ] If data changed and someone is accountable: Kibana, by `resource` or `correlationId`
 - [ ] Before closing: is the fix visible in the same panels that showed the problem?
@@ -1282,19 +1333,23 @@ During a real incident, in order:
 | Metric panels blank, Explore works | `metric_name_escaping_scheme: underscores` missing from `prometheus.yml` | Add it, then `curl -X POST http://localhost:9090/-/reload` |
 | LogQL returns nothing and no error | A field was put inside `{ }`. Only `service_name` and `service_instance_id` are labels | Move it after the `\|` |
 | Loki 400s on push | `allow_structured_metadata: true` missing | Add it to `limits_config` in `loki.yaml` |
-| Traces missing, logs fine | Tempo unreachable (OTLP/gRPC :4317) or its retention expired | ⑤ outbound errors for `:4317` |
-| Logs missing, traces fine | Loki unreachable (OTLP/HTTP :3100) | ⑤ outbound errors for `:3100` |
+| Traces missing, logs fine | Tempo unreachable (OTLP/gRPC :4317) or its retention expired | **Dependencies** outbound errors for `:4317` |
+| Logs missing, traces fine | Loki unreachable (OTLP/HTTP :3100) | **Dependencies** outbound errors for `:3100` |
 | Prometheus target DOWN | Firewall, wrong port, or the app is not running | `http://localhost:9090/targets` names the error |
+| **Every** metric panel empty, and Grafana calls the data source unreachable | Prometheus is not running at all — usually a config key its version does not know. It rejects unknown keys and exits, and `restart: unless-stopped` turns that into a crash loop, so `docker compose ps` still lists it | `docker compose logs prometheus`; a line like `field ... not found in type config.plain` names the offending key. `metric_name_escaping_scheme` needs Prometheus ≥ 3.4 |
+| Alerts fire on every restart of the stack | A rule with `execErrState: Alerting` treats "could not query Prometheus" as "the service is down" | The four shipped rules use `execErrState: OK`, and Grafana waits for a healthy Prometheus before starting — see [§13](#13-the-four-alerts-worth-having) |
 | Kibana Discover empty | Time picker (defaults to 15m), or field casing | Widen the range; `actor` not `Actor`, `"Read"` not `"read"` |
 | `histogram_quantile` returns `NaN` | No requests in the window — nothing to take a percentile of | Expected on an idle service |
 | A percentile pinned to a bucket edge for hours | Bucket granularity, not a real plateau | Read it as "in this bucket" |
 | Panel shows "No data" instead of 0 | The series does not exist yet | Append `or vector(0)` |
 | Route variable empty | No traffic yet, so no `http_route` label values exist | Generate a request |
-| Section ⑧ trace panel errors | A correlation id was pasted where a trace id is needed | Expected — use the logs panel |
+| **Investigate one request** trace panel errors | A correlation id was pasted where a trace id is needed | Expected — use the logs panel |
 | Dashboard changes vanish | The JSON is re-imported from the repo | Edit `observability/grafana/dashboard-cleanarch-api.json` and re-import |
+| A `CleanArch` folder that says "No items", with the dashboard sitting outside it | Not empty — it holds the four alert rules, and the Dashboards browser lists only dashboards. It appears whenever the alerting file names a folder the dashboard provider does not | Both now say `CleanArch`; on an install that predates that, the dashboard moves on the provider's next poll (`updateIntervalSeconds: 30`) once the JSON file itself changes — a `git pull` is enough, since the provisioner ignores a file it has already imported unchanged |
 | No alert rules in Grafana | The provisioning file was not picked up | It must sit in `<grafana>/conf/provisioning/alerting/`, and Grafana reads provisioning only at **startup** — restart it |
 | "Service down" never fires though the app is off | The scrape job is not called `cleanarch-api` | Match the rule's `job=` to `job_name` in `prometheus.yml` |
 | Alerts fire but nobody is told | No contact point or notification policy | Both are commented out in the rules file by default — see [§13](#13-the-four-alerts-worth-having) |
+| Email contact point configured, still no mail | Grafana's SMTP client is off by default; the contact point alone does nothing | Set the `SMTP_*` block in `.env` (`SMTP_HOST` must include the port), restart Grafana, then use **Alerting → Contact points → Test** |
 | No database spans in a trace | The query ran outside a request | Background queries are filtered out on purpose — see [§7](#7-traces--reading-a-waterfall) |
 
 ---
@@ -1314,7 +1369,7 @@ During a real incident, in order:
 ### The triage order
 
 ```
-time range → ① tiles → ② when did it change → ③ which route → ④ why → ⑤ us or them
+time range → **Is it healthy** tiles → **Traffic** when did it change → **Which endpoint** which route → **What is failing** why → **Dependencies** us or them
 ```
 
 ### PromQL
@@ -1383,7 +1438,7 @@ Fields camelCase · category values PascalCase · time field `occurredOnUtc` · 
 | **Cardinality** | The number of distinct label combinations. High cardinality is how you take down Prometheus |
 | **Correlation id** | This app's per-request id. Caller-supplied or generated; reaches logs, audit and the outbox |
 | **Exemplar** | A trace id attached to a metric sample, letting you jump from a graph to an example. Not enabled here |
-| **Golden signals** | Rate, Errors, Duration, Saturation — what section ① shows |
+| **Golden signals** | Rate, Errors, Duration, Saturation — what **Is it healthy** shows |
 | **Histogram** | A metric that counts observations into buckets, so percentiles can be estimated |
 | **Label** | A dimension on a metric or a Loki stream. In Loki, only `service_name` and `service_instance_id` |
 | **Percentile (p95)** | The value below which that share of requests fell |

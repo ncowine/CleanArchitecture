@@ -67,6 +67,25 @@ an example is commented out at the bottom of the file. The reasoning behind the
 rules, and why they are Grafana rules rather than Prometheus ones, is in
 [`../tutorials/95-reading-your-telemetry.md`](../tutorials/95-reading-your-telemetry.md#13-the-four-alerts-worth-having).
 
+### Getting an alert to actually email you
+
+Two separate things, and configuring only one of them looks like a silent failure:
+
+1. **The SMTP client**, which is off in Grafana by default. Both compose files
+   pass `GF_SMTP_*` through from the `SMTP_*` block in `.env`, so this is just
+   `SMTP_ENABLED=true` plus a host, a From: address and (usually) credentials.
+   `SMTP_HOST` **must carry the port** — `smtp.example.com:587`, not
+   `smtp.example.com`. In dev, point it at a local catcher such as Mailpit
+   (`docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit`, then
+   `SMTP_HOST=host.docker.internal:1025`) so test alerts never leave the machine.
+2. **A contact point and a notification policy**, in
+   [`grafana/provisioning/alerting/cleanarch-api.yaml`](grafana/provisioning/alerting/cleanarch-api.yaml).
+   Uncomment the `cleanarch-email` receiver and the `policies:` block, then
+   restart Grafana — provisioning is read at startup only.
+
+Check it with **Alerting → Contact points → Test**, which reports the SMTP error
+verbatim rather than failing quietly.
+
 ---
 
 ## Development
@@ -196,15 +215,16 @@ Recycle the app pool, then generate a little traffic.
 
 | Check | Where |
 |---|---|
+| Prometheus itself started | `docker compose ps prometheus` says **Up**, not *Restarting* |
 | Metrics arriving | Prometheus `/targets` → `cleanarch-api` is **UP** |
 | Traces arriving | Grafana → Explore → Tempo → Search → last 15 minutes |
 | Logs arriving | Grafana → Explore → Loki → `{service_name="CleanArch.Api"}` |
 | Audit arriving | Kibana → Discover, data view `cleanarch-audit-*` (log in as `elastic`) |
 | Dashboard | Grafana → "CleanArch.Api — Service Overview" |
 
-The dashboard reads top to bottom: ① a verdict, ② traffic, ③ which endpoint,
-④ why, ⑤ dependencies, ⑥ features and background work, ⑦ runtime, ⑧ one request
-by id. Every panel's ⓘ tooltip says what good and bad look like; the long form is
+The dashboard reads top to bottom: a verdict, traffic, which endpoint, why,
+dependencies, features and background work, runtime, and one request by id.
+Every panel's ⓘ tooltip says what good and bad look like; the long form is
 [`../tutorials/95-reading-your-telemetry.md`](../tutorials/95-reading-your-telemetry.md).
 
 If traces and logs are missing but metrics are fine, the app cannot reach the

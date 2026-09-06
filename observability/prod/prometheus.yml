@@ -14,6 +14,15 @@ global:
   evaluation_interval: 15s
   # Classic underscore metric names (http_server_request_duration_seconds), which
   # the dashboard expects, instead of Prometheus 3.x UTF-8 dotted names.
+  #
+  # REQUIRES PROMETHEUS >= 3.4. The option did not exist before that, and
+  # Prometheus rejects unknown config keys outright rather than warning:
+  #     field metric_name_escaping_scheme not found in type config.plain
+  # It then exits, and `restart: unless-stopped` turns that into a crash loop —
+  # the container is listed by `docker compose ps` but never serves a query, so
+  # every dashboard panel is empty and Grafana reports the data source as down.
+  # PROMETHEUS_VERSION in .env.example is pinned accordingly; if you lower it
+  # below 3.4, delete this line as well.
   metric_name_escaping_scheme: underscores
 
 scrape_configs:
