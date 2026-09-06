@@ -362,6 +362,18 @@ global:
   metric_name_escaping_scheme: underscores
 ```
 
+**This option needs Prometheus 3.4 or newer.** On an older build it is not ignored: Prometheus
+rejects unknown configuration keys outright and exits with
+
+```
+field metric_name_escaping_scheme not found in type config.plain
+```
+
+and under `restart: unless-stopped` that becomes a restart loop. The container keeps appearing in
+`docker compose ps` while answering no queries, so the symptom is not "Prometheus is down" but
+"every panel is empty and Grafana says the data source is unreachable". `docker compose logs
+prometheus` names the offending key straight away.
+
 (Note: trying `metric_name_validation_scheme: legacy` alone fails to load with *"utf8 metric names
 requested but validation scheme is not set to UTF8"* — use the escaping-scheme line above instead.)
 

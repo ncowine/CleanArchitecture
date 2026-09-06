@@ -82,16 +82,38 @@ services:
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Links in alert notifications are absolute, so Grafana has to be told its
+      # own address; without this they point at localhost:3000 inside the container.
+      GF_SERVER_ROOT_URL: "http://${BIND_ADDR}:3000"
+      # ── Alert email ──────────────────────────────────────────────────────────
+      # Off unless SMTP_ENABLED=true in .env, so an unconfigured stack still starts.
+      # See .env.example for what each of these wants; the email contact point that
+      # consumes them is at the bottom of ../grafana/provisioning/alerting/.
+      GF_SMTP_ENABLED: "${SMTP_ENABLED:-false}"
+      GF_SMTP_HOST: "${SMTP_HOST:-}"
+      GF_SMTP_USER: "${SMTP_USER:-}"
+      GF_SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      GF_SMTP_FROM_ADDRESS: "${SMTP_FROM_ADDRESS:-}"
+      GF_SMTP_FROM_NAME: "${SMTP_FROM_NAME:-CleanArch Dev}"
+      GF_SMTP_STARTTLS_POLICY: "${SMTP_STARTTLS_POLICY:-OpportunisticStartTLS}"
+      GF_SMTP_SKIP_VERIFY: "${SMTP_SKIP_VERIFY:-false}"
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana/dashboard-cleanarch-api.json:/var/lib/grafana/dashboards/cleanarch-api.json:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "${BIND_ADDR}:3000:3000"
+    # service_healthy, not the bare list form. Plain `depends_on` waits only for the
+    # container to be CREATED, so Grafana used to start evaluating alert rules while
+    # Prometheus was still booting, fail to query it, and report the API as down on
+    # every single `up -d`. Waiting for the health check removes that false alarm.
     depends_on:
-      - prometheus
-      - tempo
-      - loki
+      prometheus:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── Audit trail (optional) ─────────────────────────────────────────────────

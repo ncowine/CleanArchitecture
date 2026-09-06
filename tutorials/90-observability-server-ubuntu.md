@@ -28,7 +28,7 @@ whoever owns that machine.
 | 6 | [Step 1 — Prepare the Ubuntu server](#6-step-1--prepare-the-ubuntu-server) | Log in, update, set a kernel value |
 | 7 | [Step 2 — Install Docker](#7-step-2--install-docker) | Command by command |
 | 8 | [Step 3 — Create the folders](#8-step-3--create-the-folders) | The exact directory layout |
-| 9 | [Step 4 — Create the configuration files](#9-step-4--create-the-configuration-files) | Seven files, typed out in full |
+| 9 | [Step 4 — Create the configuration files](#9-step-4--create-the-configuration-files) | Eight files, typed out in full |
 | 10 | [Step 5 — The docker-compose.yml, line by line](#10-step-5--the-docker-composeyml-line-by-line) | The big one, fully explained |
 | 11 | [Step 6 — The firewall](#11-step-6--the-firewall) | Who is allowed to reach what |
 | 12 | [Step 7 — Start the stack](#12-step-7--start-the-stack) | First run, and what "healthy" looks like |
@@ -567,6 +567,7 @@ skip it.
 sudo mkdir -p /opt/cleanarch/observability/prod
 sudo mkdir -p /opt/cleanarch/observability/grafana/provisioning/datasources
 sudo mkdir -p /opt/cleanarch/observability/grafana/provisioning/dashboards
+sudo mkdir -p /opt/cleanarch/observability/grafana/provisioning/alerting
 sudo mkdir -p /opt/cleanarch/observability/grafana/dashboards
 sudo chown -R $USER:$USER /opt/cleanarch
 ```
@@ -591,8 +592,10 @@ sudo chown -R $USER:$USER /opt/cleanarch
     ├── provisioning/
     │   ├── datasources/
     │   │   └── datasources.yaml  tells Grafana where the three stores are
-    │   └── dashboards/
-    │       └── dashboards.yaml   tells Grafana to auto-import the folder below
+    │   ├── dashboards/
+    │   │   └── dashboards.yaml   tells Grafana to auto-import the folder below
+    │   └── alerting/
+    │       └── cleanarch-api.yaml the four alert rules
     └── dashboards/
         └── cleanarch-api.json    the dashboard itself
 ```
@@ -677,7 +680,9 @@ cat > .env <<'EOF'
 # could swap in a new major version overnight and break the stack while you sleep.
 TEMPO_VERSION=2.7.1
 LOKI_VERSION=3.4.2
-PROMETHEUS_VERSION=v3.1.0
+# Do not lower this below 3.4. prometheus.yml sets metric_name_escaping_scheme,
+# which older builds reject as an unknown key and then refuse to start.
+PROMETHEUS_VERSION=v3.5.5
 GRAFANA_VERSION=11.5.1
 # Must match the Elasticsearch client version the application was built against (9.x).
 ELASTIC_VERSION=9.4.4
@@ -720,6 +725,38 @@ AUDIT_PASSWORD=CHANGE-ME
 # How much memory Elasticsearch reserves for itself up front. Rule of thumb:
 # half of what you are willing to give it, and never above 31g.
 ES_HEAP=1g
+
+# ── Alert email ──────────────────────────────────────────────────────────────
+# Grafana cannot send anything until SMTP_ENABLED is true. Leave it false and the
+# alert rules still evaluate and still show as Firing in the UI, they just reach
+# nobody. Turning it on is only half the job: you also need a contact point and a
+# notification policy, which are sketched at the bottom of the alert rules file.
+SMTP_ENABLED=false
+
+# HOST MUST INCLUDE THE PORT. The setting is host:port as a whole and defaults to
+# localhost:25, so a bare "smtp.example.com" is not "port 25 assumed" — it fails
+# with an opaque dial error. 587 is submission with STARTTLS, 465 is implicit TLS
+# (use SMTP_STARTTLS_POLICY=NoStartTLS for that one), 25 is an internal relay that
+# does not authenticate.
+SMTP_HOST=smtp.example.com:587
+
+# Leave both blank for a relay that authorises by source IP instead.
+SMTP_USER=alerts@example.com
+SMTP_PASSWORD=CHANGE-ME
+
+# The From: header. Most relays reject a domain they are not authoritative for,
+# so this usually has to be a real mailbox on your own domain.
+SMTP_FROM_ADDRESS=alerts@example.com
+SMTP_FROM_NAME=CleanArch Alerts
+
+# MandatoryStartTLS refuses to send unencrypted. OpportunisticStartTLS silently
+# continues in the clear if the server does not offer TLS. NoStartTLS is for
+# port 465 or a trusted internal relay.
+SMTP_STARTTLS_POLICY=MandatoryStartTLS
+
+# Only true for a relay with a self-signed certificate. It turns certificate
+# verification off entirely, so it is a downgrade rather than a convenience.
+SMTP_SKIP_VERIFY=false
 
 # ── Retention ────────────────────────────────────────────────────────────────
 # Prometheus deletes old data when it hits whichever limit comes first.
@@ -924,6 +961,14 @@ global:
   # (http_server_request_duration_seconds). This line keeps the old form.
   # Remove it and your dashboard panels go blank while Explore still works —
   # a genuinely confusing failure.
+  #
+  # This option needs Prometheus 3.4 or newer. Older builds do not merely ignore
+  # an unknown key, they refuse to start:
+  #     field metric_name_escaping_scheme not found in type config.plain
+  # With "restart: unless-stopped" that turns into a restart loop, so the
+  # container still appears in "docker compose ps" while serving nothing, and
+  # every dashboard panel is empty. PROMETHEUS_VERSION in .env is pinned above
+  # that floor; if you lower it, delete this line too.
   metric_name_escaping_scheme: underscores
 
 scrape_configs:
@@ -1057,7 +1102,11 @@ apiVersion: 1
 providers:
   - name: CleanArch
     orgId: 1
-    folder: ''                  # put them in Grafana's top-level "General" folder
+    folder: 'CleanArch'         # same folder the alert rules use, so the dashboard
+                                # and the rules sit together. Leave it blank and the
+                                # dashboard goes to the top level while alerting still
+                                # creates "CleanArch" for its rules, which then looks
+                                # like an empty folder in the Dashboards list.
     type: file
     disableDeletion: false
     allowUiUpdates: true        # you may tweak panels in the UI...
@@ -1220,6 +1269,277 @@ And the queries themselves:
 - `{service_name="CleanArch.Api"}` — LogQL. Every Loki query starts with a label
   selector in braces, and this one means "log lines from this application".
 
+
+---
+
+### 9.8 `cleanarch-api.yaml` — the alert rules
+
+Everything so far tells you what is happening **while you are looking**. Nobody
+looks at 3am. This file is the part that looks for you.
+
+Grafana can evaluate alert rules on its own. Prometheus can do that too, but
+Prometheus cannot *notify* anyone — that needs a second program called
+Alertmanager, with its own configuration and its own delivery settings. Grafana
+is already running, already knows where Prometheus is, and already knows how to
+send email. One program instead of two, for the same four alerts.
+
+```bash
+mkdir -p ../grafana/provisioning/alerting
+
+cat > ../grafana/provisioning/alerting/cleanarch-api.yaml <<'EOF'
+# Alert rules, created automatically when Grafana starts.
+#
+# WHAT THESE ALERT ON
+# Symptoms a caller would notice, never causes. "5% of requests are failing" is
+# worth waking somebody for. "CPU is above 80%" is not: it is often perfectly
+# normal, and when it genuinely is a problem the error-rate or latency rule
+# fires anyway. Alerting on causes is how a team learns to ignore its pager.
+#
+# THE `for:` FIELD IS NOT OPTIONAL
+# Without it, one bad scrape wakes somebody. Five seconds of failure is a garbage
+# collection. Five minutes of failure is an incident. Every rule below waits.
+#
+# WHY EVERY RULE SETS execErrState: OK
+# An "exec error" means Grafana could not ASK Prometheus: it is starting up,
+# replaying its write-ahead log, restarting, or unreachable. That is not the same
+# claim as "the application is down", and it must not raise the same alarm. Left
+# as Alerting, every restart of this server would page somebody, always wrongly.
+# The honest cost of OK: while Prometheus is unreachable none of these rules can
+# fire, so a permanently dead Prometheus is silent. No rule that queries
+# Prometheus can cover that, because a monitoring system cannot alert on its own
+# absence. If you need that covered, use an external heartbeat service.
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: cleanarch-api
+    folder: CleanArch
+    # How often every rule in this group is evaluated.
+    interval: 1m
+    rules:
+
+      # 1. It is failing.
+      - uid: cleanarch-high-error-rate
+        title: High error rate
+        condition: THRESHOLD
+        for: 5m
+        # No data means no traffic, not failure. Do not page for a quiet service.
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: critical
+          service: CleanArch.Api
+        annotations:
+          summary: More than 5% of requests to CleanArch.Api are returning 5xx
+          description: >-
+            Current 5xx share: {{ $values.THRESHOLD.Value }}%. Open Grafana, then
+            the CleanArch dashboard, and find which route is failing.
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: |-
+                100 * (sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m])) or vector(0))
+                / clamp_min(sum(rate(http_server_request_duration_seconds_count[5m])), 0.001)
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+
+      # 2. It is slow.
+      - uid: cleanarch-high-latency
+        title: High latency
+        condition: THRESHOLD
+        # Longer than the error rule on purpose: a slow service is still a
+        # working service, and ten minutes separates a blip from a problem.
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: warning
+          service: CleanArch.Api
+        annotations:
+          summary: CleanArch.Api p95 latency is above 1 second
+          description: >-
+            Current p95: {{ $values.THRESHOLD.Value }}s.
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+
+      # 3. It is gone.
+      - uid: cleanarch-service-down
+        title: Service down
+        condition: THRESHOLD
+        # Five minutes, not two: restarting this server takes Prometheus about a
+        # minute to come back and start scraping again.
+        for: 5m
+        # The one rule here where NO DATA must alert. Prometheus writes `up` on
+        # every scrape, so its absence means Prometheus is not scraping at all:
+        # the application is stopped, the Windows server is unreachable, or the
+        # scrape configuration broke. All three are incidents.
+        noDataState: Alerting
+        execErrState: OK
+        labels:
+          severity: critical
+          service: CleanArch.Api
+        annotations:
+          summary: CleanArch.Api is not being scraped
+          description: >-
+            Prometheus cannot reach the application's /metrics page. The site is
+            stopped, the Windows server is unreachable, or a firewall rule
+            changed. Check Prometheus, Status, Targets first.
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: up{job="cleanarch-api"}
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # 4. Work was silently thrown away.
+      - uid: cleanarch-outbox-dead-lettered
+        title: Outbox message dead-lettered
+        condition: THRESHOLD
+        # Fires almost at once: this is not a threshold being crossed, it is an
+        # event that already happened and will not un-happen.
+        for: 1m
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: warning
+          service: CleanArch.Api
+        annotations:
+          summary: An outbox message was given up on, so something never happened
+          description: >-
+            Nothing retries a dead-lettered message. Find it with
+            "SELECT * FROM OutboxMessages WHERE DeadLetteredOnUtc IS NOT NULL",
+            read the Error column, fix the cause, then re-queue it deliberately.
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: sum(increase(outbox_dead_lettered_total[1h])) or vector(0)
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+# ── Where a firing alert is sent ─────────────────────────────────────────────
+# Until you uncomment the two blocks below, these rules evaluate and show as
+# Firing on Grafana's Alerting page, and reach nobody.
+#
+# Two separate things must be true before an email arrives:
+#   1. SMTP_ENABLED=true and the rest of the SMTP_* block in .env (Chapter 9.1).
+#      That is what actually connects to a mail server.
+#   2. A contact point and a notification policy, below.
+# Doing only one of them looks exactly like a silent failure.
+#
+# Note that a provisioned policies: block REPLACES Grafana's entire notification
+# policy tree, including its default route. That is a decision about where your
+# alerts go, which is why it is commented out rather than chosen for you.
+#
+# contactPoints:
+#   - orgId: 1
+#     name: cleanarch-oncall
+#     receivers:
+#       - uid: cleanarch-email
+#         type: email
+#         settings:
+#           addresses: oncall@example.com   # semicolons between several people
+#
+# policies:
+#   - orgId: 1
+#     receiver: cleanarch-oncall
+#     group_by: [alertname, service]
+#     group_wait: 30s
+#     group_interval: 5m
+#     # How long before an alert that is STILL firing is repeated. Too short and
+#     # people mute it.
+#     repeat_interval: 4h
+#     routes:
+#       - receiver: cleanarch-oncall
+#         matchers:
+#           - severity = critical
+#         repeat_interval: 1h
+EOF
+```
+
+#### What each rule asks
+
+| Rule | The question it puts to Prometheus | Waits | Severity |
+|---|---|---|---|
+| High error rate | What share of requests returned 5xx over the last 5 minutes? | 5m | critical |
+| High latency | What is the p95 response time? | 10m | warning |
+| Service down | Is `up` for the `cleanarch-api` job still 1? | 5m | critical |
+| Outbox message dead-lettered | Was any message given up on in the last hour? | 1m | warning |
+
+`up` is worth understanding, because the third rule rests entirely on it.
+Prometheus writes that metric itself on every single scrape: `1` if the target
+answered, `0` if it did not. So `up` dropping to zero means the scrape failed,
+and `up` vanishing altogether means Prometheus is not even trying — a broken
+scrape configuration, or a renamed job. If you ever rename `cleanarch-api` in
+`prometheus.yml`, rename it in this rule too, or it will quietly never fire.
+
+#### Where to see them
+
+Once the stack is running (Chapter 12), open Grafana and go to **Alerting →
+Alert rules**. You should find four rules in a folder called `CleanArch` — the
+same folder the dashboard is in — all showing **Normal** on a healthy service.
+
+**Alerting → Contact points → Test** is the quickest way to prove email works.
+It reports the SMTP error verbatim instead of failing quietly. The two mistakes
+that account for most failures are a `SMTP_HOST` missing its `:587`, and a relay
+refusing a `From:` address on a domain it is not responsible for.
+
 ---
 ## 10. Step 5 — The `docker-compose.yml`, line by line
 
@@ -1339,16 +1659,34 @@ services:
       GF_SERVER_ROOT_URL: "http://${BIND_ADDR}:3000"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Alert email. Grafana's SMTP client is off until SMTP_ENABLED is true, so
+      # leaving these blank is safe — the stack starts either way and the alert
+      # rules simply reach nobody. SMTP_HOST must carry the port.
+      GF_SMTP_ENABLED: "${SMTP_ENABLED:-false}"
+      GF_SMTP_HOST: "${SMTP_HOST:-}"
+      GF_SMTP_USER: "${SMTP_USER:-}"
+      GF_SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      GF_SMTP_FROM_ADDRESS: "${SMTP_FROM_ADDRESS:-}"
+      GF_SMTP_FROM_NAME: "${SMTP_FROM_NAME:-CleanArch Alerts}"
+      GF_SMTP_STARTTLS_POLICY: "${SMTP_STARTTLS_POLICY:-MandatoryStartTLS}"
+      GF_SMTP_SKIP_VERIFY: "${SMTP_SKIP_VERIFY:-false}"
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "${BIND_ADDR}:3000:3000"
+    # service_healthy, not the plain list. The list waits only for the container
+    # to exist, so Grafana would start evaluating alert rules against a Prometheus
+    # that is still replaying its write-ahead log, fail the query, and report the
+    # API as down on every restart of this host.
     depends_on:
-      - prometheus
-      - tempo
-      - loki
+      prometheus:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
     mem_limit: 512m
 
   # ── AUDIT TRAIL: storage ───────────────────────────────────────────────────
@@ -2645,7 +2983,8 @@ ls -lh /var/backups/cleanarch         # what has been kept
 └── grafana/
     ├── provisioning/
     │   ├── datasources/datasources.yaml       Chapter 9.5
-    │   └── dashboards/dashboards.yaml         Chapter 9.6
+    │   ├── dashboards/dashboards.yaml         Chapter 9.6
+    │   └── alerting/cleanarch-api.yaml        Chapter 9.8
     └── dashboards/cleanarch-api.json          Chapter 9.7
 ```
 

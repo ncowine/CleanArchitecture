@@ -105,19 +105,40 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Also the base for links in alert emails, so it has to be an address the
+      # recipient can actually reach — not localhost.
       GF_SERVER_ROOT_URL: "http://${BIND_ADDR}:3000"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # ── Alert email ──────────────────────────────────────────────────────────
+      # Grafana cannot send anything without these; they are what the commented-out
+      # email contact point in ../grafana/provisioning/alerting/ depends on. Values
+      # and the trade-offs behind each one are in .env.example.
+      GF_SMTP_ENABLED: "${SMTP_ENABLED:-false}"
+      GF_SMTP_HOST: "${SMTP_HOST:-}"
+      GF_SMTP_USER: "${SMTP_USER:-}"
+      GF_SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      GF_SMTP_FROM_ADDRESS: "${SMTP_FROM_ADDRESS:-}"
+      GF_SMTP_FROM_NAME: "${SMTP_FROM_NAME:-CleanArch Alerts}"
+      GF_SMTP_STARTTLS_POLICY: "${SMTP_STARTTLS_POLICY:-MandatoryStartTLS}"
+      GF_SMTP_SKIP_VERIFY: "${SMTP_SKIP_VERIFY:-false}"
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana/dashboard-cleanarch-api.json:/var/lib/grafana/dashboards/cleanarch-api.json:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "${BIND_ADDR}:3000:3000"
+    # service_healthy, not the bare list form: the list only waits for the container
+    # to be created. Grafana would otherwise begin evaluating alert rules against a
+    # Prometheus that is still replaying its WAL, fail the query, and notify on-call
+    # that the API is down — on every restart of the host.
     depends_on:
-      - prometheus
-      - tempo
-      - loki
+      prometheus:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
     mem_limit: 512m
 
   # ── Audit trail ────────────────────────────────────────────────────────────

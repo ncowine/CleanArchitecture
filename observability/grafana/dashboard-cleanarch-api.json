@@ -10,7 +10,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 7,
   "refresh": "10s",
   "editable": true,
   "graphTooltip": 1,
@@ -169,7 +169,7 @@
         "name": "find",
         "label": "Find request",
         "type": "textbox",
-        "description": "A trace id or correlation id — used by section ⑧.",
+        "description": "A trace id or correlation id — used by the 'Investigate one request' section.",
         "query": "",
         "current": {
           "selected": false,
@@ -201,7 +201,7 @@
     {
       "type": "row",
       "id": 1,
-      "title": "①  Is it healthy right now?  —  all green means stop looking",
+      "title": "Is it healthy right now?",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -531,7 +531,7 @@
       "type": "stat",
       "id": 7,
       "title": "5xx / sec",
-      "description": "Server errors per second — requests the API itself failed to serve.\n\nAnything sustained above zero deserves a look. These are YOUR bugs: unhandled exceptions, failed dependencies, timeouts. Drill: '③ Which endpoint' tells you where, '④ What is failing' tells you why.",
+      "description": "Server errors per second — requests the API itself failed to serve.\n\nAnything sustained above zero deserves a look. These are YOUR bugs: unhandled exceptions, failed dependencies, timeouts. Drill: 'Which endpoint is the problem' tells you where, 'What is failing' tells you why.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -596,7 +596,7 @@
       "type": "stat",
       "id": 8,
       "title": "4xx / sec",
-      "description": "Client errors per second — the request was rejected.\n\nUsually NOT an outage: 400 (validation), 401/403 (auth), 404 (wrong id or wrong URL). But a step change matters — a wave of 401s after a deploy means a key or token config broke; a wave of 404s means someone is calling a route you removed, or scanning you. Split it by status in '② What is the traffic doing'.",
+      "description": "Client errors per second — the request was rejected.\n\nUsually NOT an outage: 400 (validation), 401/403 (auth), 404 (wrong id or wrong URL). But a step change matters — a wave of 401s after a deploy means a key or token config broke; a wave of 404s means someone is calling a route you removed, or scanning you. Split it by status in 'What is the traffic doing'.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -726,7 +726,7 @@
       "type": "stat",
       "id": 10,
       "title": "Outbound failures / sec",
-      "description": "Outgoing HTTP calls that failed (http.client.request.duration with an error.type).\n\nCovers everything this process dials: real downstream APIs, the On-Behalf-Of token endpoint, AND the telemetry stack itself (Tempo :4317, Loki :3100, Elasticsearch :9200). A non-zero value here with a green success rate almost always means a telemetry store is down — your app is fine, your observability is not. See '⑤ Dependencies' for which host.",
+      "description": "Outgoing HTTP calls that failed (http.client.request.duration with an error.type).\n\nCovers everything this process dials: real downstream APIs, the On-Behalf-Of token endpoint, AND the telemetry stack itself (Tempo :4317, Loki :3100, Elasticsearch :9200). A non-zero value here with a green success rate almost always means a telemetry store is down — your app is fine, your observability is not. See 'Dependencies and the edge' for which host.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -856,7 +856,7 @@
       "type": "stat",
       "id": 12,
       "title": "Memory",
-      "description": "Process working set — physical memory the process holds.\n\nA single value means little; the SHAPE means everything. Open '⑦ Runtime health' and look at the trend: a sawtooth that returns to the same floor is healthy GC. A staircase that never comes back down is a leak, and it ends in an OutOfMemoryException or a recycle.",
+      "description": "Process working set — physical memory the process holds.\n\nA single value means little; the SHAPE means everything. Open 'Runtime health' and look at the trend: a sawtooth that returns to the same floor is healthy GC. A staircase that never comes back down is a leak, and it ends in an OutOfMemoryException or a recycle.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -975,7 +975,7 @@
     {
       "type": "row",
       "id": 14,
-      "title": "②  What is the traffic doing?",
+      "title": "What is the traffic doing?",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1165,7 +1165,7 @@
       "type": "timeseries",
       "id": 16,
       "title": "Requests/sec by route",
-      "description": "Which endpoints the traffic is actually going to.\n\nRequests that matched no route (a typo'd URL, a scanner) carry no http_route label and appear as an empty series name — that is expected, and 'Unknown-path 404s' in '⑤ Dependencies' counts them properly.\n\nUse this to answer 'is this spike one endpoint or everything?'. One line rising alone is a caller behaving badly; every line rising together is real load.",
+      "description": "Which endpoints the traffic is actually going to.\n\nRequests that matched no route (a typo'd URL, a scanner) carry no http_route label and appear as an empty series name — that is expected, and 'Unknown-path 404s' in 'Dependencies and the edge' counts them properly.\n\nUse this to answer 'is this spike one endpoint or everything?'. One line rising alone is a caller behaving badly; every line rising together is real load.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1481,7 +1481,7 @@
     {
       "type": "row",
       "id": 19,
-      "title": "③  Which endpoint is the problem?",
+      "title": "Which endpoint is the problem?",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1495,7 +1495,7 @@
       "type": "table",
       "id": 20,
       "title": "Endpoints — traffic, errors, latency",
-      "description": "One row per route, sorted by error rate. This is the panel that turns 'the API is broken' into 'POST /students is broken'.\n\nHow to read it:\n· Error % coloured red → start here, then go to '④ What is failing'\n· p95 red but error % green → it works, it is just slow. Open a trace for that route in '④ Slow traces' and look at where the time went\n· p99 ≫ p95 on one row → that route is inconsistent, not uniformly slow\n· High Req/s + modest p95 → a busy but healthy endpoint; leave it alone\n\n'Avg' is here only to be compared with p95. When Avg is small and p95 is large, the average is lying to you, which is why no tile on this dashboard shows an average alone.",
+      "description": "One row per route, sorted by error rate. This is the panel that turns 'the API is broken' into 'POST /students is broken'.\n\nHow to read it:\n· Error % coloured red → start here, then go to 'What is failing'\n· p95 red but error % green → it works, it is just slow. Open a trace for that route in 'Slow requests (Tempo)' and look at where the time went\n· p99 ≫ p95 on one row → that route is inconsistent, not uniformly slow\n· High Req/s + modest p95 → a busy but healthy endpoint; leave it alone\n\n'Avg' is here only to be compared with p95. When Avg is small and p95 is large, the average is lying to you, which is why no tile on this dashboard shows an average alone.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1864,7 +1864,7 @@
     {
       "type": "row",
       "id": 21,
-      "title": "④  What is failing?  —  logs and traces",
+      "title": "What is failing: logs and traces",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2236,7 +2236,7 @@
     {
       "type": "row",
       "id": 27,
-      "title": "⑤  Dependencies & the edge  —  is it us or them?",
+      "title": "Dependencies and the edge: is it us or them?",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2813,6 +2813,261 @@
       ]
     },
     {
+      "type": "timeseries",
+      "id": 52,
+      "title": "Outbound queue wait p95",
+      "description": "How long outbound HTTP requests sat waiting for a free connection from the client pool, before the call was even sent.\n\nRead this next to 'Outbound p95 by target'. Outbound p95 includes this wait, so the two panels together tell you who is at fault. Both high means your own pool is the bottleneck and the downstream is probably fine; raise MaxConnectionsPerServer or find the requests that are not being disposed. This one flat and outbound p95 high means the downstream really is slow.\n\nNormally sits at or near zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 70
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, server_address, server_port) (rate(http_client_request_time_in_queue_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{server_address}}:{{server_port}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 53,
+      "title": "Outbound connection pool",
+      "description": "Connections the HTTP client currently holds for each target, split into active and idle.\n\nUse it with the queue wait panel. Active connections flat at a ceiling while queue wait climbs means the pool is exhausted for that host. Idle connections growing while traffic does not usually means HttpClient instances are being created per call instead of reused through IHttpClientFactory.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 70
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (server_address, http_connection_state) (http_client_open_connections)",
+          "legendFormat": "{{server_address}} {{http_connection_state}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 54,
+      "title": "Authorization outcomes",
+      "description": "Authorization decisions per second, split by result and by whether the caller was authenticated at all.\n\nThis is a different failure from the panel beside it. Authentication fails when the token is missing, expired or malformed. Authorization fails when the token was accepted but the caller did not hold the policy, role or scope the endpoint asked for. Both arrive as 4xx elsewhere on this dashboard and they need different fixes.\n\nFailures where the user IS authenticated normally follow a policy or scope change, or a token issued by the wrong client.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 70
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "pointSize": 5,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (aspnetcore_authorization_result, aspnetcore_user_is_authenticated) (rate(aspnetcore_authorization_attempts_total[$__rate_interval]))",
+          "legendFormat": "{{aspnetcore_authorization_result}} (authenticated={{aspnetcore_user_is_authenticated}})"
+        }
+      ]
+    },
+    {
       "type": "table",
       "id": 34,
       "title": "Slow database queries",
@@ -2825,7 +3080,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 70
+        "y": 77
       },
       "targets": [
         {
@@ -3010,13 +3265,13 @@
     {
       "type": "row",
       "id": 35,
-      "title": "⑥  Features & background work  —  what the code is doing",
+      "title": "Features and background work",
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 85
       },
       "panels": []
     },
@@ -3033,7 +3288,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 79
+        "y": 86
       },
       "fieldConfig": {
         "defaults": {
@@ -3119,7 +3374,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 79
+        "y": 86
       },
       "fieldConfig": {
         "defaults": {
@@ -3205,7 +3460,7 @@
         "h": 7,
         "w": 16,
         "x": 0,
-        "y": 87
+        "y": 94
       },
       "fieldConfig": {
         "defaults": {
@@ -3355,7 +3610,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 87
+        "y": 94
       },
       "fieldConfig": {
         "defaults": {
@@ -3405,13 +3660,13 @@
     {
       "type": "row",
       "id": 47,
-      "title": "⑦  Runtime health  —  open when the panels above point inward",
+      "title": "Runtime health",
       "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 94
+        "y": 101
       },
       "panels": [
         {
@@ -3427,7 +3682,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 95
+            "y": 102
           },
           "fieldConfig": {
             "defaults": {
@@ -3512,7 +3767,7 @@
             "h": 7,
             "w": 12,
             "x": 12,
-            "y": 95
+            "y": 102
           },
           "fieldConfig": {
             "defaults": {
@@ -3606,7 +3861,7 @@
             "h": 7,
             "w": 8,
             "x": 0,
-            "y": 102
+            "y": 109
           },
           "fieldConfig": {
             "defaults": {
@@ -3691,7 +3946,7 @@
             "h": 7,
             "w": 8,
             "x": 8,
-            "y": 102
+            "y": 109
           },
           "fieldConfig": {
             "defaults": {
@@ -3776,7 +4031,7 @@
             "h": 7,
             "w": 8,
             "x": 16,
-            "y": 102
+            "y": 109
           },
           "fieldConfig": {
             "defaults": {
@@ -3861,7 +4116,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 109
+            "y": 116
           },
           "fieldConfig": {
             "defaults": {
@@ -3986,7 +4241,7 @@
             "h": 7,
             "w": 12,
             "x": 12,
-            "y": 109
+            "y": 116
           },
           "fieldConfig": {
             "defaults": {
@@ -4063,13 +4318,13 @@
     {
       "type": "row",
       "id": 51,
-      "title": "⑧  Investigate one request  —  paste a trace id or correlation id",
+      "title": "Investigate one request: paste a trace id or correlation id",
       "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 95
+        "y": 102
       },
       "panels": [
         {
@@ -4080,11 +4335,11 @@
             "h": 5,
             "w": 24,
             "x": 0,
-            "y": 96
+            "y": 103
           },
           "options": {
             "mode": "markdown",
-            "content": "**Paste an id into the `find` variable at the top of the dashboard, then widen the time range to cover when it happened.**\n\n| Where the id comes from | What it looks like | Which panel below answers |\n|---|---|---|\n| `X-Correlation-ID` response header (every response has one) | `a8faac35-f23e-…` | **Logs for one request** |\n| `traceId` inside an RFC 7807 error body — `00-<trace id>-<span id>-01` | paste **only the middle part** | both panels |\n| `TraceID` field on any log line in ④ | 32 hex characters | **The trace** |\n| `correlationId` on an audit record in Kibana | `a8faac35-f23e-…` | **Logs for one request** |\n\nThe logs panel matches either id. The trace panel needs a trace id and will error on a correlation id — that is expected, not a broken panel."
+            "content": "**Paste an id into the `find` variable at the top of the dashboard, then widen the time range to cover when it happened.**\n\n| Where the id comes from | What it looks like | Which panel below answers |\n|---|---|---|\n| `X-Correlation-ID` response header (every response has one) | `a8faac35-f23e-…` | **Logs for one request** |\n| `traceId` inside an RFC 7807 error body — `00-<trace id>-<span id>-01` | paste **only the middle part** | both panels |\n| `TraceID` field on any log line in **What is failing** | 32 hex characters | **The trace** |\n| `correlationId` on an audit record in Kibana | `a8faac35-f23e-…` | **Logs for one request** |\n\nThe logs panel matches either id. The trace panel needs a trace id and will error on a correlation id, which is expected rather than a broken panel.\n\nA red error triangle on **The trace** usually means the id is not in Tempo at all: Tempo answers 404 and Grafana shows that as an error, not as \"No data\". Check you copied all 32 characters, and remember Tempo has its own retention — an id from yesterday may simply be gone."
           }
         },
         {
@@ -4100,7 +4355,7 @@
             "h": 12,
             "w": 24,
             "x": 0,
-            "y": 101
+            "y": 108
           },
           "options": {
             "showTime": true,
@@ -4137,7 +4392,7 @@
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 113
+            "y": 120
           },
           "targets": [
             {

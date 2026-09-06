@@ -7,7 +7,13 @@ apiVersion: 1
 providers:
   - name: CleanArch
     orgId: 1
-    folder: ''                 # top-level "General" folder
+    # Must match the `folder:` in ../alerting/cleanarch-api.yaml. Grafana resolves a
+    # provisioned folder by title, so naming the same one here puts the dashboard and
+    # the four alert rules together. Left blank, the dashboard lands at the top level
+    # while alerting still creates "CleanArch" for its rules — and because the
+    # Dashboards browser lists only dashboards, that folder then reads "No items"
+    # despite holding all four rules.
+    folder: 'CleanArch'
     type: file
     disableDeletion: false
     allowUiUpdates: true       # UI tweaks allowed; they are not written back to the file
