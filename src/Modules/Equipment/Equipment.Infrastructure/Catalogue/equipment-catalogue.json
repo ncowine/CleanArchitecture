@@ -1,0 +1,9 @@
+[
+  { "model": "Dell Latitude 5450", "category": "Laptop", "estimatedCost": 1350.00, "description": "Standard-issue laptop for new hires." },
+  { "model": "Apple MacBook Pro 14\"", "category": "Laptop", "estimatedCost": 2400.00, "description": "Engineering-tier laptop." },
+  { "model": "Dell UltraSharp U2724D", "category": "Monitor", "estimatedCost": 380.00, "description": "27\" QHD monitor, standard issue." },
+  { "model": "LG 34WN80C-B", "category": "Monitor", "estimatedCost": 520.00, "description": "34\" ultrawide, for dual-monitor exception requests." },
+  { "model": "iPhone SE", "category": "Phone", "estimatedCost": 429.00, "description": "Standard-issue company phone." },
+  { "model": "Logitech MX Master 3S", "category": "Other", "estimatedCost": 100.00, "description": "Wireless mouse, on request." },
+  { "model": "Jabra Evolve2 65", "category": "Other", "estimatedCost": 220.00, "description": "Noise-cancelling headset for call-heavy roles." }
+]

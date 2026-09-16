@@ -6,22 +6,13 @@ using BuildingBlocks.RealTime;
 using CleanArch.Api;
 using CleanArch.Api.Authentication;
 using CleanArch.Api.Realtime;
-using Library.Infrastructure;
-using Library.Presentation;
+using Equipment.Infrastructure;
+using Equipment.Presentation;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Students.Infrastructure;
-using Students.Presentation;
-using TestPlans.Infrastructure;
-using TestPlans.Presentation;
-using TesterGuide.Infrastructure;
-using TesterGuide.Presentation;
+using Onboarding.Infrastructure;
+using Onboarding.Presentation;
 
 var builder = WebApplication.CreateBuilder(args);
-
-var studentsConnectionString = RequireConnectionString("Students");
-var libraryConnectionString = RequireConnectionString("Library");
-var testPlansConnectionString = RequireConnectionString("TestPlans");
-var testerGuideConnectionString = RequireConnectionString("TesterGuide");
 
 string RequireConnectionString(string name) =>
     builder.Configuration.GetConnectionString(name) is { } value && !string.IsNullOrWhiteSpace(value)
@@ -29,6 +20,9 @@ string RequireConnectionString(string name) =>
         : throw new InvalidOperationException(
             $"ConnectionStrings:{name} is not configured. Set it via ConnectionStrings__{name} " +
             "(env var / IIS app pool), user-secrets, or appsettings.");
+
+var equipmentConnectionString = RequireConnectionString("Equipment");
+var onboardingConnectionString = RequireConnectionString("Onboarding");
 
 builder.Services
     .AddApiServices()
@@ -45,10 +39,8 @@ builder.Services
     // Registered after the mediator and before the modules, so the post-commit realtime dispatch behavior
     // sits outside each module's transaction behavior (its flush runs after the commit).
     .AddRealtimeDispatch()
-    .AddStudentsModule(studentsConnectionString)
-    .AddLibraryModule(libraryConnectionString)
-    .AddTestPlansModule(testPlansConnectionString)
-    .AddTesterGuideModule(testerGuideConnectionString);
+    .AddEquipmentModule(equipmentConnectionString)
+    .AddOnboardingModule(onboardingConnectionString);
 
 // Real-time transport (SignalR) — overrides the kit's no-op notifier and hosts the presence hub.
 builder.Services.AddSignalR();
@@ -127,18 +119,14 @@ if (app.Configuration.GetValue<bool>("Observability:Metrics:RequireAuthenticatio
     metricsEndpoint.RequireAuthorization();
 }
 
-// One version set (v1) shared by both modules. Each module attaches it to its endpoint groups.
+// One version set (v1) shared by every module. Each module attaches it to its endpoint groups.
 ApiVersionSet versionSet = app.NewApiVersionSet()
     .HasApiVersion(new ApiVersion(1, 0))
     .ReportApiVersions()
     .Build();
 
-app.MapStudentEndpoints(versionSet);
-app.MapAcademicEndpoints(versionSet);
-app.MapBillingEndpoints(versionSet);
-app.MapLibraryEndpoints(versionSet);
-app.MapTestPlanEndpoints(versionSet);
-app.MapTesterGuideEndpoints(versionSet);
+app.MapEquipmentEndpoints(versionSet);
+app.MapOnboardingEndpoints(versionSet);
 
 // Real-time presence + notifications hub (live view + "someone actioned this"). Exempt from the rate
 // limiter — connections are long-lived and share a source.

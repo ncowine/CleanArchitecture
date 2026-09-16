@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Onboarding.Domain\Onboarding.Domain.csproj" />
+    <ProjectReference Include="..\..\Equipment\Equipment.Contracts\Equipment.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

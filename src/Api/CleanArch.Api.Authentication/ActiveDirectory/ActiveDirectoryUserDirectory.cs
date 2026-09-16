@@ -80,8 +80,9 @@ internal sealed partial class ActiveDirectoryUserDirectory : IUserDirectory
 }
 
 /// <summary>
-/// Caching decorator over an <see cref="IUserDirectory"/>. Mirrors the Students module's
-/// <c>CachingStudentDirectory</c>: <see cref="HybridCache.GetOrCreateAsync"/> collapses concurrent misses
+/// Caching decorator over an <see cref="IUserDirectory"/>. Mirrors the same inner + decorator shape used
+/// for module read models (e.g. a module's <c>CachingEquipmentDirectory</c>):
+/// <see cref="HybridCache.GetOrCreateAsync"/> collapses concurrent misses
 /// for the same user into one lookup (stampede protection) and uses the configured short TTL. In-memory
 /// today; Redis-ready with no change here.
 /// </summary>

@@ -3,16 +3,14 @@ using Microsoft.EntityFrameworkCore;
 namespace CleanArch.Api.Authentication;
 
 /// <summary>
-/// Host-owned persistence for API keys. It targets the SAME physical database as the Students module
-/// (students.db), but it is a SEPARATE context with its own migrations-history table
-/// (<see cref="MigrationsHistoryTable"/>), so this auth schema versions independently of the Students
-/// domain model. That keeps an authentication concern out of the Students bounded context while still
-/// honouring students.db as the primary database.
+/// Host-owned persistence for API keys. It has its own database (see <c>ConnectionStrings:ApiKeys</c>),
+/// isolated from every business module, with its own migrations-history table
+/// (<see cref="MigrationsHistoryTable"/>) so this auth schema versions entirely independently.
 /// </summary>
 internal sealed class ApiKeyDbContext : DbContext
 {
-    /// <summary>Distinct history table so this context's migrations never collide with the Students
-    /// context's default <c>__EFMigrationsHistory</c> in the shared database file.</summary>
+    /// <summary>Distinct history table so this context's migrations are self-contained even if it ever
+    /// shares a physical database file with another context.</summary>
     public const string MigrationsHistoryTable = "__AuthMigrationsHistory";
 
     public ApiKeyDbContext(DbContextOptions<ApiKeyDbContext> options) : base(options)

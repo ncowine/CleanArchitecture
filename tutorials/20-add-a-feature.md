@@ -41,9 +41,9 @@ it.
 One feature is **one file**: a static class holding everything that feature needs.
 
 ```csharp
-public static class CreateStudent
+public static class CreateEquipment
 {
-    public sealed record Command(...) : IRequest<Guid>, IStudentsCommand, IAuditableRequest;
+    public sealed record Command(...) : IRequest<Guid>, IEquipmentCommand, IAuditableRequest;
 
     public sealed class Validator : AbstractValidator<Command> { ... }
 
@@ -51,22 +51,22 @@ public static class CreateStudent
 }
 ```
 
-That is a **vertical slice**. Everything about "create a student" is in
-`CreateStudent.cs` — the request shape, its validation rules, and the code that runs. Not
+That is a **vertical slice**. Everything about "create a piece of equipment" is in
+`CreateEquipment.cs` — the request shape, its validation rules, and the code that runs. Not
 spread across a `Models/` folder, a `Services/` folder and a `Validators/` folder where you
 have to open three files to understand one operation.
 
-The nesting is doing real work, too: the type is `CreateStudent.Command`, so the name is
+The nesting is doing real work, too: the type is `CreateEquipment.Command`, so the name is
 unambiguous at every call site, and there is no need to invent globally-unique names like
-`CreateStudentCommandRequestDto`.
+`CreateEquipmentCommandRequestDto`.
 
 **Where the file goes:** `<Module>.Application/<Area>/<FeatureName>.cs` — for example
-`Students.Application/Students/CreateStudent.cs`, or
-`TesterGuide.Application/Focuses/CreateFocus.cs`.
+`Equipment.Application/Inventory/CreateEquipment.cs`, or
+`Onboarding.Application/Requests/CreateOnboardingRequest.cs`.
 
-> **Name the class after the action**, in the imperative: `CreateStudent`, `WithdrawStudent`,
-> `AssessFine`. That name is also what appears in the audit trail as the action — see
-> [guide 40](40-auditing.md) — so it should read as something a person did.
+> **Name the class after the action**, in the imperative: `CreateEquipment`, `DeleteEquipment`,
+> `ApproveOnboardingStandard`. That name is also what appears in the audit trail as the
+> action — see [guide 40](40-auditing.md) — so it should read as something a person did.
 
 ---
 
@@ -104,20 +104,26 @@ Ask: *is there anything that must always be true after this operation?* If yes, 
 in the domain object — as a factory, or as a method on the aggregate.
 
 ```csharp
-// src/Modules/Students/Students.Domain/Student.cs
-public void Withdraw()
+// src/Modules/Equipment/Equipment.Domain/EquipmentAsset.cs
+
+// Idempotent: releasing an already-available asset is a no-op, not an error — a redelivered
+// compensation message must be safe to apply twice.
+public void Release()
 {
-    Status = StudentStatus.Withdrawn;
+    Status = EquipmentStatus.Available;
+    ReservedForOnboardingRequestId = null;
 }
 ```
 
-Sometimes it really is that small. Note the comment on it in the real file — *"Idempotent"* —
-which is a rule in itself: withdrawing twice is not an error.
+Sometimes it really is that small. Note the comment on it in the real file — the *idempotent*
+guarantee is a rule in itself, and it's the reason the Standard saga's compensation
+([guide 60](60-talking-across-modules.md)) can safely redeliver this call.
 
-Where a rule spans an aggregate's own children, it goes on the aggregate.
-`Students.Domain/CourseSection.cs` runs the waitlist: enrolling into a full section
-waitlists you, and dropping a seated student promotes the next in line. Both facts live in
-the object that owns the roster, because only it can see both.
+Where a rule spans an aggregate's own state, it goes on the aggregate, not on whoever calls
+it. `OnboardingRequest.Approve()` throws if the request has already been decided;
+`MarkReady()` throws unless the saga is actually in progress. Both checks live inside the
+object being changed, because only it can see its own current state without a caller loading
+it first and hoping nothing raced.
 
 **Two tests for whether something is a domain rule:**
 
@@ -138,11 +144,12 @@ Your handler will need to load or save something. Declare that as an interface *
 Application layer**, in domain terms:
 
 ```csharp
-// src/Modules/Students/Students.Application/Abstractions/IStudentRepository.cs
-public interface IStudentRepository
+// src/Modules/Equipment/Equipment.Application/Abstractions/IEquipmentRepository.cs
+public interface IEquipmentRepository
 {
-    Task AddAsync(Student student, CancellationToken cancellationToken);
-    Task<Student?> GetAsync(Guid studentId, CancellationToken cancellationToken);
+    Task AddAsync(EquipmentAsset asset, CancellationToken cancellationToken);
+    Task<EquipmentAsset?> GetAsync(Guid equipmentId, CancellationToken cancellationToken);
+    void Remove(EquipmentAsset asset);
 }
 ```
 
@@ -150,27 +157,23 @@ Add the method you need to an existing interface, or create a new one for a new 
 
 Rules for this interface, and each one prevents a specific leak:
 
-- **It returns domain objects.** `Student`, not `StudentEntity`, not a DTO.
+- **It returns domain objects.** `EquipmentAsset`, not `EquipmentAssetEntity`, not a DTO.
 - **It never exposes `IQueryable`.** That would hand EF's semantics — deferred execution,
   change tracking, lazy loading — to a layer that must not know EF exists.
-- **It describes intent, not SQL.** `GetFineTotalAsync(studentId)` beats
-  `Query(Expression<Func<Loan, bool>>)`. The second is a database in a trench coat.
+- **It describes intent, not SQL.** `IEquipmentReadService.SearchAsync(page, pageSize, category, status, ct)`
+  beats `Query(Expression<Func<EquipmentAsset, bool>>)`. The second is a database in a trench coat.
 
 ---
 
 ## 5. Step 3 — Write the slice
 
-Now the file. Three parts.
+Now the file. Three parts — this is the real `CreateEquipment.cs`.
 
 ### The request
 
 ```csharp
-public sealed record Command(
-    string FirstName,
-    string LastName,
-    string Email,
-    DateOnly DateOfBirth,
-    DateOnly EnrolledOn) : IRequest<Guid>, IStudentsCommand, IAuditableRequest;
+public sealed record Command(string Name, EquipmentCategory Category, string AssetTag)
+    : IRequest<Guid>, IEquipmentCommand, IAuditableRequest;
 ```
 
 A `record`, because a request is a value. Then the markers — the whole cross-cutting story
@@ -186,7 +189,7 @@ Return the smallest useful thing — an id for a create, a small `Result` record
 caller genuinely needs more:
 
 ```csharp
-public sealed record Result(decimal TotalFines, bool HoldRequested);
+public sealed record Result(bool Ready, string? FailureReason);
 ```
 
 ### The validator
@@ -199,11 +202,9 @@ public sealed class Validator : AbstractValidator<Command>
 {
     public Validator()
     {
-        RuleFor(command => command.FirstName).NotEmpty().MaximumLength(100);
-        RuleFor(command => command.Email).NotEmpty().EmailAddress().MaximumLength(256);
-        RuleFor(command => command.DateOfBirth)
-            .LessThan(command => command.EnrolledOn)
-            .WithMessage("Date of birth must be before the enrollment date.");
+        RuleFor(command => command.Name).NotEmpty().MaximumLength(200);
+        RuleFor(command => command.Category).IsInEnum();
+        RuleFor(command => command.AssetTag).NotEmpty().MaximumLength(50);
     }
 }
 ```
@@ -214,41 +215,53 @@ problem at once. The domain guarantees the rule holds no matter which code path 
 can only have one, have the domain one.
 
 Skip the validator entirely when the domain already covers it and there is no message worth
-improving. `AssessFine` has no validator, and says so in a comment: the positive-amount rule
-is a domain guard and an unknown loan is a not-found.
+improving. `DeleteEquipment` has no validator — there's nothing to validate beyond "does this
+id exist", which is a not-found, not a validation error.
 
 ### The handler
 
 ```csharp
 public sealed class Handler : IRequestHandler<Command, Guid>
 {
-    private readonly IStudentRepository _repository;
+    private readonly IEquipmentRepository _equipment;
+    private readonly IRealtimeDispatch _realtime;
 
-    public Handler(IStudentRepository repository) => _repository = repository;
+    public Handler(IEquipmentRepository equipment, IRealtimeDispatch realtime)
+    {
+        _equipment = equipment;
+        _realtime = realtime;
+    }
 
     public async Task<Guid> Handle(Command command, CancellationToken cancellationToken)
     {
-        var student = Student.Create(
-            firstName: command.FirstName,
-            lastName: command.LastName,
-            email: command.Email,
-            dateOfBirth: command.DateOfBirth,
-            enrolledOn: command.EnrolledOn);
+        var asset = EquipmentAsset.Create(command.Name, command.Category, command.AssetTag);
+        await _equipment.AddAsync(asset, cancellationToken);
 
-        await _repository.AddAsync(student, cancellationToken);
-        return student.Id;
+        _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentCreated", new
+        {
+            id = asset.Id,
+            name = asset.Name,
+            category = asset.Category.ToString(),
+            assetTag = asset.AssetTag,
+            status = asset.Status.ToString(),
+        }));
+
+        return asset.Id;
     }
 }
 ```
 
-Three things it does **not** do, all of them deliberate:
+Four things it does **not** do, all of them deliberate:
 
 - **No `SaveChanges`.** `AddAsync` stages; the transaction behaviour commits at the end of
   the request. That is what makes a handler touching three aggregates still one atomic write.
-- **No business decisions.** `Student.Create` decides what is valid. The handler moves
+- **No business decisions.** `EquipmentAsset.Create` decides what is valid. The handler moves
   things around.
 - **No try/catch.** A `DomainException` becomes a `400` via the host's global handler; a
   `ValidationException` likewise. Catching them here would only make the response worse.
+- **No delivery logic for the realtime event.** `Publish` just buffers it. Whether it reaches
+  a connected client, and only *after* this transaction actually commits, is the pipeline's
+  job — [chapter 12](#12-what-happens-around-your-handler).
 
 You do not register the handler. `AddHandlersFromAssembly` in the module's DI scans for
 `IRequestHandler<,>` and picks it up.
@@ -260,35 +273,39 @@ You do not register the handler. `AddHandlersFromAssembly` in the module's DI sc
 In Infrastructure, where EF is allowed:
 
 ```csharp
-public async Task AddAsync(Student student, CancellationToken cancellationToken) =>
-    await _db.Students.AddAsync(student, cancellationToken);
+public async Task AddAsync(EquipmentAsset asset, CancellationToken cancellationToken) =>
+    await _db.Equipment.AddAsync(asset, cancellationToken);
 ```
 
 Stage only — no `SaveChanges`, same reason as the handler.
 
 If you added a new entity, it also needs an `IEntityTypeConfiguration` in
 `Persistence/EntityConfigurations/` and a `DbSet` on the context. The configuration is where
-column lengths, owned value objects, enum-to-string conversions and child tables get
-declared — keeping all of that out of the domain class:
+column lengths, enum-to-string conversions and indexes get declared — keeping all of that out
+of the domain class:
 
 ```csharp
-internal sealed class StudentConfiguration : IEntityTypeConfiguration<Student>
+internal sealed class EquipmentAssetConfiguration : IEntityTypeConfiguration<EquipmentAsset>
 {
-    public void Configure(EntityTypeBuilder<Student> builder)
+    public void Configure(EntityTypeBuilder<EquipmentAsset> builder)
     {
-        builder.ToTable("Students");
-        builder.HasKey(student => student.Id);
-        builder.Property(student => student.Email).IsRequired().HasMaxLength(256);
-        builder.Property(student => student.Status).HasConversion<string>();
-        builder.OwnsOne(student => student.Address);
+        builder.ToTable("EquipmentAssets");
+        builder.HasKey(asset => asset.Id);
+        builder.Property(asset => asset.Name).IsRequired().HasMaxLength(200);
+        builder.Property(asset => asset.Category).IsRequired().HasConversion<string>().HasMaxLength(20);
+        builder.Property(asset => asset.AssetTag).IsRequired().HasMaxLength(50);
+        builder.HasIndex(asset => asset.AssetTag).IsUnique();
     }
 }
 ```
 
+(An entity with an owned value object would add `builder.OwnsOne(thing => thing.SomeValueObject)`
+here — neither module in this codebase currently has one to show.)
+
 New interface? Register it in the module's `DependencyInjection.cs`:
 
 ```csharp
-services.AddScoped<IStudentRepository, EfStudentRepository>();
+services.AddScoped<IEquipmentRepository, EfEquipmentRepository>();
 ```
 
 ---
@@ -296,14 +313,16 @@ services.AddScoped<IStudentRepository, EfStudentRepository>();
 ## 7. Step 5 — Expose it
 
 ```csharp
-group.MapPost("/students", async (
-    CreateStudent.Command command, ISender sender, CancellationToken cancellationToken) =>
+equipment.MapPost("/equipment", async (
+    CreateEquipment.Command command,
+    ISender sender,
+    CancellationToken cancellationToken) =>
 {
     var id = await sender.Send(command, cancellationToken);
-    return Results.Created($"/students/{id}", new { id });
+    return Results.Created($"/equipment/{id}", new { id });
 })
-.WithName("CreateStudent")
-.WithSummary("Enroll a new student.")
+.WithName("CreateEquipment")
+.WithSummary("Add a piece of hardware to inventory. Pushes an EquipmentCreated event to connected clients.")
 .RequireAuthorization();
 ```
 
@@ -315,13 +334,21 @@ one only when the wire shape genuinely differs from the command, which usually h
 part of the command comes from the route:
 
 ```csharp
-focuses.MapPut("/focuses/{focusId:guid}", async (
-    Guid focusId, FocusRequest request, ISender sender, CancellationToken cancellationToken) =>
+equipment.MapPut("/equipment/{equipmentId:guid}", async (
+    Guid equipmentId,
+    UpdateEquipmentRequest request,
+    ISender sender,
+    CancellationToken cancellationToken) =>
 {
-    await sender.Send(new UpdateFocus.Command(focusId, request.Name, request.Description), cancellationToken);
-    return Results.Ok(new { id = focusId });
+    var updated = await sender.Send(
+        new UpdateEquipment.Command(equipmentId, request.Name, request.Category, request.AssetTag),
+        cancellationToken);
+    return updated ? Results.Ok() : Results.NotFound();
 });
 ```
+
+`equipmentId` comes from the route; `request` supplies the rest. `UpdateEquipmentRequest` is
+a tiny record that exists only because the id can't come from the body twice.
 
 Conventions to match:
 
@@ -339,14 +366,15 @@ Conventions to match:
 Only if you changed the EF model — a new entity, a new property, a changed constraint.
 
 ```bash
-dotnet ef migrations add AddStudentPhoneNumber \
-  --project src/Modules/Students/Students.Infrastructure \
+dotnet ef migrations add AddEquipmentAssetSerialNumber \
+  --project src/Modules/Equipment/Equipment.Infrastructure \
   --startup-project src/Api/CleanArch.Api \
-  --context StudentsDbContext \
+  --context EquipmentDbContext \
   --output-dir Persistence/Migrations
 ```
 
-`--context` is required — the host references four `DbContext`s and EF will not guess.
+`--context` is required — the host references more than one `DbContext` (Equipment,
+Onboarding, and the API-key store) and EF will not guess.
 
 **Read the generated migration before you run it.** EF is good but not clairvoyant: a
 rename often generates as a drop-and-add, which is data loss wearing a helpful face. Check
@@ -364,34 +392,33 @@ Two tests, neither needing a database.
 
 ```csharp
 [Fact]
-public void Create_rejects_an_email_without_an_at_sign() =>
+public void Create_with_invalid_input_throws() =>
     Assert.Throws<DomainException>(() =>
-        Student.Create("Ada", "Lovelace", "ada-at-uni.edu",
-                       new DateOnly(1990, 12, 10), new DateOnly(2024, 9, 1)));
+        EquipmentAsset.Create("", EquipmentCategory.Laptop, "LAP-001"));
 ```
 
 **The use case**, with a fake instead of a repository:
 
 ```csharp
 [Fact]
-public async Task CreateStudent_stores_the_student()
+public async Task Creates_the_asset_and_publishes_an_EquipmentCreated_event()
 {
-    var repository = new FakeStudentRepository();
-    var handler = new CreateStudent.Handler(repository);
+    var repository = new FakeEquipmentRepository();
+    var realtime = new FakeRealtimeDispatch();
+    var handler = new CreateEquipment.Handler(repository, realtime);
 
     var id = await handler.Handle(
-        new CreateStudent.Command("Ada", "Lovelace", "ada@uni.edu",
-                                  new DateOnly(1990, 12, 10), new DateOnly(2024, 9, 1)),
-        CancellationToken.None);
+        new CreateEquipment.Command("ThinkPad X1", EquipmentCategory.Laptop, "LAP-001"), default);
 
-    Assert.NotNull(await repository.GetAsync(id, CancellationToken.None));
+    var added = Assert.Single(repository.Added);
+    Assert.Equal(id, added.Id);
 }
 ```
 
-The fakes live in `tests/CleanArch.UnitTests/Fakes.cs` and are simple in-memory
-dictionaries, not mocking-framework setups. That is a deliberate choice: a fake you can read
-tells you what the test assumes; six lines of mock configuration tell you what the mocking
-library's API looks like.
+The fakes live in `tests/CleanArch.UnitTests/EquipmentFakes.cs` and `OnboardingFakes.cs` —
+simple in-memory dictionaries, not mocking-framework setups. That is a deliberate choice: a
+fake you can read tells you what the test assumes; six lines of mock configuration tell you
+what the mocking library's API looks like.
 
 Run them:
 
@@ -401,58 +428,76 @@ dotnet test tests/CleanArch.UnitTests/CleanArch.UnitTests.csproj
 
 There is also `tests/CleanArch.Api.IntegrationTests/` for things you genuinely cannot check
 in isolation — the wiring, the auth pipeline, an end-to-end round trip. Use it for those,
-not as your default.
+not as your default. [Guide 80](80-testing.md) covers the split in full.
 
 ---
 
 ## 10. Read features — the shortcut
 
 No aggregate, no repository, no transaction. A `Query`, a response record, and a handler
-that delegates to a read service.
+that delegates to a read service. This is the real `GetOnboardingRequest`:
 
 ```csharp
-public static class GetStudentDetail
+public static class GetOnboardingRequest
 {
-    public sealed record Query(Guid StudentId) : IRequest<Response?>;
+    public sealed record Query(Guid OnboardingRequestId) : IRequest<Response?>;
 
     public sealed record Response(
-        Guid Id, string FirstName, string LastName, string Email, string Status,
-        AddressDto? Address,
-        IReadOnlyList<EmergencyContactDto> EmergencyContacts,
-        IReadOnlyList<EnrollmentDto> Enrollments,
-        int ActiveEnrollments);
-
-    public sealed record AddressDto(string Line1, string? Line2, string City,
-                                    string State, string PostalCode, string Country);
-    public sealed record EmergencyContactDto(string Name, string Relationship, string PhoneNumber);
+        Guid Id,
+        string EmployeeName,
+        DateOnly StartDate,
+        string RequiredEquipmentCategory,
+        string RequiredLicenceType,
+        string RequiredAccessLevel,
+        string Status,
+        string? FailureReason,
+        string EquipmentStepStatus,
+        Guid? EquipmentId,
+        string LicenceStepStatus,
+        Guid? LicenceId,
+        string AccessStepStatus,
+        Guid? AccessId);
 
     public sealed class Handler : IRequestHandler<Query, Response?>
     {
-        private readonly IStudentReadService _reads;
-        public Handler(IStudentReadService reads) => _reads = reads;
+        private readonly IOnboardingReadService _reads;
+        public Handler(IOnboardingReadService reads) => _reads = reads;
 
         public Task<Response?> Handle(Query query, CancellationToken cancellationToken) =>
-            _reads.GetDetailAsync(query.StudentId, cancellationToken);
+            _reads.GetAsync(query.OnboardingRequestId, cancellationToken);
     }
 }
 ```
 
 Note the `Query` carries **no markers** beyond `IRequest<>` — no command marker, no audit
 marker. So it skips the transaction and the audit trail automatically, by simply not opting
-in.
+in. (`GetOnboardingSummary`'s query *does* carry `IAuditableRead` — it exposes one employee's
+onboarding status, which is exactly the sensitive-read case [guide 40](40-auditing.md#6-step-2--audit-a-read)
+describes.)
 
 The implementation, in `Infrastructure/Reads/`, projects rather than loads:
 
 ```csharp
-public Task<GetStudentDetail.Response?> GetDetailAsync(Guid studentId, CancellationToken ct) =>
-    _db.Students
-       .AsNoTracking()
-       .Where(student => student.Id == studentId)
-       .Select(student => new GetStudentDetail.Response(
-           student.Id, student.FirstName, student.LastName, student.Email,
-           student.Status.ToString(),
-           /* ... nested projections ... */))
-       .FirstOrDefaultAsync(ct);
+public Task<GetOnboardingRequest.Response?> GetAsync(Guid onboardingRequestId, CancellationToken cancellationToken) =>
+    _db.Requests
+        .AsNoTracking()
+        .Where(request => request.Id == onboardingRequestId)
+        .Select(request => new GetOnboardingRequest.Response(
+            request.Id,
+            request.EmployeeName,
+            request.StartDate,
+            request.RequiredEquipmentCategory,
+            request.RequiredLicenceType,
+            request.RequiredAccessLevel,
+            request.Status.ToString(),
+            request.FailureReason,
+            request.EquipmentStepStatus.ToString(),
+            request.EquipmentId,
+            request.LicenceStepStatus.ToString(),
+            request.LicenceId,
+            request.AccessStepStatus.ToString(),
+            request.AccessId))
+        .FirstOrDefaultAsync(cancellationToken);
 ```
 
 `AsNoTracking()` because nothing will be modified; `.Select(...)` so the SQL fetches only
@@ -460,15 +505,20 @@ these columns.
 
 ### One response record per endpoint
 
-This is the convention worth defending. `GetStudent` and `GetStudentDetail` read the same
-entity and have **separate** response records — a light summary and a rich one.
+This is the convention worth defending. `GetOnboardingRequest` and `GetOnboardingSummary`
+read the very same row and have **completely separate** response records — one raw, one
+derived. `GetOnboardingSummary.Response` carries fields — `ReadinessPercentage`,
+`MissingRequirements`, `EstimatedCost` — that don't exist as columns anywhere; they're
+computed on the way out (that derivation is worth its own read, in the summary endpoint's own
+code).
 
-The alternative — one `StudentDto` with every field, most of them null on any given call —
-couples every endpoint to every other. Add a field for one consumer and you have changed the
-contract for all of them; remove one and you don't know who breaks.
+The alternative — one `OnboardingRequestDto` with every field either module could ever want,
+most of them null on any given call — couples every endpoint to every other. Add a field for
+one consumer and you have changed the contract for all of them; remove one and you don't know
+who breaks.
 
-Nested DTOs like `AddressDto` are still reusable building blocks. What is not reusable is
-the top-level shape.
+Nested DTOs remain reusable building blocks when a response genuinely has them; a response
+that's all scalars, like these two, simply doesn't need any.
 
 ---
 
@@ -479,10 +529,13 @@ returning `PagedResult<T>`. A POST for a read looks odd for about a day, and the
 the URLs stayed clean instead of accumulating a dozen query-string parameters.
 
 ```csharp
-public static class SearchStudents
+public static class SearchEquipment
 {
-    public sealed record Query(int Page = 1, int PageSize = 20, string? Status = null)
-        : PagedRequest(Page, PageSize), IRequest<PagedResult<GetStudent.Response>>;
+    public sealed record Query(int Page = 1, int PageSize = 20, string? Category = null, string? Status = null)
+        : PagedRequest(Page, PageSize), IRequest<PagedResult<EquipmentListItem>>;
+
+    public sealed record EquipmentListItem(
+        Guid Id, string Name, string Category, string AssetTag, string Status);
 
     public sealed class Validator : AbstractValidator<Query>
     {
@@ -502,8 +555,9 @@ Three things to copy:
 - **Derive from `PagedRequest`** for `Page`/`PageSize` defaults.
 - **Cap `PageSize`.** An uncapped page size is a denial-of-service endpoint with good
   intentions.
-- **Reuse the summary response** — `PagedResult<GetStudent.Response>`, not a third shape
-  invented for lists.
+- **Give the list its own item shape** — `EquipmentListItem`, not `GetEquipment.Response`
+  reused wholesale. A list view rarely needs every field a detail view does; forcing reuse
+  just means the detail response grows nullable fields nobody asked for.
 
 `PagedResult<T>` carries `Items`, `Page`, `PageSize`, `TotalCount` and computes
 `TotalPages`, so the client can navigate without guessing.
@@ -540,6 +594,12 @@ a second one.
 `where TRequest : IAuditableRequest`, so a request without the marker never enters it — not
 "enters and returns early", genuinely never resolved. That is why queries cost nothing.
 
+**Realtime dispatch sits outside the transaction**, not shown above because it's registered
+at the host level rather than per-module — see `RealtimeDispatchBehavior` in
+`BuildingBlocks.RealTime`. It flushes whatever your handler `Publish`ed only *after* the
+transaction commits, which is why a realtime event is never sent for a write that then rolled
+back.
+
 The dispatcher itself is in `src/BuildingBlocks/Messaging/Sender.cs` — about forty lines. It
 resolves the handler for the request's runtime type, folds the registered behaviours around
 it, and invokes the chain. Worth reading once; it demystifies the whole thing.
@@ -565,7 +625,7 @@ For a **write** feature:
 
 For a **read** feature:
 
-- [ ] `Query` carries `IRequest<T>` and **nothing else**
+- [ ] `Query` carries `IRequest<T>` and **nothing else** (or `IAuditableRead` if the data is sensitive)
 - [ ] Its own response record — not a shared DTO
 - [ ] Read-service method projecting with `AsNoTracking()` and `.Select(...)`
 - [ ] List endpoints: `POST /…/search`, derive from `PagedRequest`, **cap the page size**
@@ -586,6 +646,7 @@ For a **read** feature:
 | `More than one DbContext was found` | `dotnet ef` can't guess | Add `--context <Module>DbContext` |
 | Migration wants to drop a column you renamed | EF sees drop + add | Edit the migration to a rename before running it |
 | Feature audited but `changes` is empty | The module's `DbContext` has no audit interceptor | [Guide 40, chapter 8](40-auditing.md#8-step-4--capture-before-and-after) |
+| Realtime event never arrives at a client | Published before the transaction rolled back, or nobody joined the group | Confirm the write actually committed; a client must call `JoinGroup("equipment")` on the hub first |
 
 ---
 
@@ -669,7 +730,7 @@ dotnet ef migrations add <Name> \
 
 | Term | Meaning |
 |---|---|
-| **Aggregate** | A domain object owning its data and children, guarding the rules spanning them |
+| **Aggregate** | A domain object owning its data, guarding the rules spanning its own state |
 | **Command** | A request that changes state. Carries the module's command marker |
 | **CQRS-lite** | Writes through aggregates and repositories; reads projected straight to the response |
 | **Fake** | A hand-written in-memory stand-in for an interface, used in tests |
@@ -677,7 +738,7 @@ dotnet ef migrations add <Name> \
 | **Marker interface** | An empty interface used as a switch — audit, transaction |
 | **Pipeline behaviour** | Cross-cutting code wrapped around every matching request |
 | **Projection** | Building a response shape directly in the query, rather than loading and mapping |
-| **Query** | A request that only reads. Carries no command or audit marker |
+| **Query** | A request that only reads. Carries no command marker (may carry `IAuditableRead`) |
 | **Read service** | The read-side counterpart to a repository; returns response shapes, not aggregates |
 | **Repository** | An interface describing the persistence a use case needs, in domain terms |
 | **Response record** | The shape one endpoint returns. One per endpoint |

@@ -58,7 +58,7 @@ do not know about HTTP, JSON, EF Core, or ASP.NET. Those things know about *them
 ```
 
 You can verify the rule holds in this repository without reading a line of C#. Open
-`src/Modules/Students/Students.Domain/Students.Domain.csproj`:
+`src/Modules/Equipment/Equipment.Domain/Equipment.Domain.csproj`:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -75,10 +75,10 @@ nothing at all.
 
 Four things, and they are worth stating concretely rather than as slogans.
 
-**Your rules are testable without infrastructure.** A test for "a student's email must
-contain an `@`" needs no database, no web server, no mocking framework — it constructs a
-`Student` and asserts. That test runs in microseconds, which means you write more of them,
-which means the rules are actually verified.
+**Your rules are testable without infrastructure.** A test for "a piece of equipment must
+have a name and an asset tag" needs no database, no web server, no mocking framework — it
+constructs an `EquipmentAsset` and asserts. That test runs in microseconds, which means you
+write more of them, which means the rules are actually verified.
 
 **Replaceable edges.** SQLite here, SQL Server later, with no change to the Domain or
 Application layers. That claim is only true *because* those layers cannot name an EF type;
@@ -88,13 +88,16 @@ if they could, the swap would be a rewrite.
 change often and for reasons that have nothing to do with your business. Keeping them at
 the edges means their churn doesn't reach the middle.
 
-**You can find things.** "Where is the rule about waitlists?" has one answer: the domain.
-Not "in a service, or a controller, or a stored procedure, or all three."
+**You can find things.** "Where is the rule about compensating a failed onboarding step?"
+has one answer: the domain. Not "in a service, or a controller, or a stored procedure, or
+all three."
 
 > **The honest counter-case.** For a genuinely small application — a form, a table, a
 > report — this is more structure than the problem deserves. Clean architecture pays off
 > when the business rules are the complicated part. If your rules are "save what the user
-> typed", use something simpler and don't feel bad about it.
+> typed", use something simpler and don't feel bad about it. (The equipment catalogue
+> endpoint in this repo is the small end of that spectrum — it reads a file and returns it,
+> no layers earned.)
 
 ---
 
@@ -113,28 +116,31 @@ Objects that cannot exist in an invalid state. The pattern: private constructor,
 factory that validates, private setters, behaviour as methods.
 
 ```csharp
-public static Student Create(string firstName, string lastName, string email,
-                             DateOnly dateOfBirth, DateOnly enrolledOn)
+public static EquipmentAsset Create(string name, EquipmentCategory category, string assetTag)
 {
-    if (string.IsNullOrWhiteSpace(firstName)) throw new DomainException("First name is required.");
-    if (!email.Contains('@'))                 throw new DomainException("Email is not a valid address.");
-    if (dateOfBirth >= enrolledOn)            throw new DomainException("Date of birth must be before the enrollment date.");
+    if (string.IsNullOrWhiteSpace(name))
+        throw new DomainException("Name is required.");
+    if (string.IsNullOrWhiteSpace(assetTag))
+        throw new DomainException("Asset tag is required.");
 
-    return new Student(Guid.NewGuid(), firstName.Trim(), lastName.Trim(),
-                       email.Trim().ToLowerInvariant(), dateOfBirth, enrolledOn);
+    return new EquipmentAsset(Guid.NewGuid(), name.Trim(), category, assetTag.Trim(), DateTime.UtcNow);
 }
 ```
 
-There is no other way to make a `Student`. That is the point — validation you can't bypass
-because there is no second door.
+There is no other way to make an `EquipmentAsset`. That is the point — validation you can't
+bypass because there is no second door.
 
-**Aggregates** own their children and guard the rules that span them.
-`Students.Domain/CourseSection.cs` is the good example here: it owns a roster and runs the
-waitlist, so "when a seated student drops, promote the first person waiting" lives inside
-the object that knows both facts. Not in a service that has to load two things and hope.
+**Aggregates** guard the rules that span their own state, not just one field at a time.
+`OnboardingRequest` is the example here: `Approve()` throws if the request has already been
+decided, and `MarkReady()` throws unless it's currently in progress — invariants enforced by
+the object itself, checked against its *own* state, not by a service that loads a status
+column and hopes nobody else changed it first.
 
-**Value objects** have no identity — they *are* their values. `Address`, `Grade`. Validated
-on construction, immutable after.
+**Value objects** have no identity — they *are* their values, validated on construction and
+immutable after. This codebase's two modules keep their domain flat (entities and enums, no
+dedicated value object), but the shape shows up constantly elsewhere — a `Money` type, an
+`EmailAddress` type — anywhere "is this value even valid" is a question worth asking once,
+at the boundary, rather than everywhere it's used.
 
 ### Application — the use cases
 
@@ -144,16 +150,16 @@ One file per use case, holding a `Command` (changes state) or `Query` (reads), a
 ```csharp
 public async Task<Guid> Handle(Command command, CancellationToken cancellationToken)
 {
-    var student = Student.Create(...);              // the domain does the work
-    await _repository.AddAsync(student, cancellationToken);   // an interface, not EF
-    return student.Id;
+    var asset = EquipmentAsset.Create(command.Name, command.Category, command.AssetTag); // the domain does the work
+    await _equipment.AddAsync(asset, cancellationToken);                                  // an interface, not EF
+    return asset.Id;
 }
 ```
 
 Three lines. If a handler grows past orchestration and starts making decisions, the decision
 belongs in the domain.
 
-This layer also declares **what persistence it needs**, as interfaces — `IStudentRepository`
+This layer also declares **what persistence it needs**, as interfaces — `IEquipmentRepository`
 — without saying how.
 
 ### Infrastructure — the how
@@ -167,10 +173,10 @@ heard of it.
 Endpoints bind a request, send it, shape the response:
 
 ```csharp
-group.MapPost("/students", async (CreateStudent.Command command, ISender sender, CancellationToken ct) =>
+group.MapPost("/equipment", async (CreateEquipment.Command command, ISender sender, CancellationToken ct) =>
 {
     var id = await sender.Send(command, ct);
-    return Results.Created($"/students/{id}", new { id });
+    return Results.Created($"/equipment/{id}", new { id });
 });
 ```
 
@@ -182,20 +188,20 @@ into a `400` centrally, so the domain never learns that HTTP exists.
 ## 4. How a request flows
 
 ```
-HTTP POST /students
+HTTP POST /equipment
   │
   ▼
-Presentation   StudentEndpoints.cs          binds JSON → CreateStudent.Command, calls ISender
+Presentation   EquipmentEndpoints.cs        binds JSON → CreateEquipment.Command, calls ISender
   │
   ▼
-Application    CreateStudent.Handler         the use case: orchestrates
+Application    CreateEquipment.Handler      the use case: orchestrates
   │
-  ├──────────► Domain        Student.Create  enforces the rules — throws if broken
+  ├──────────► Domain      EquipmentAsset.Create   enforces the rules — throws if broken
   │
-  └──────────► Application   IStudentRepository.AddAsync    "I need this saved"
+  └──────────► Application   IEquipmentRepository.AddAsync    "I need this saved"
                    │
                    ▼
-               Infrastructure   EfStudentRepository         actually talks to the database
+               Infrastructure   EfEquipmentRepository         actually talks to the database
 ```
 
 Read the last two lines again, because that is where the rule is doing its work. The handler
@@ -209,8 +215,8 @@ That inversion is the whole trick, and it has a name.
 
 ## 5. Interfaces are the hinge
 
-The Application layer needs to save a student. Saving means a database. Databases are
-Infrastructure. So Application must depend on Infrastructure — which points the wrong way.
+The Application layer needs to save a piece of equipment. Saving means a database. Databases
+are Infrastructure. So Application must depend on Infrastructure — which points the wrong way.
 
 **Dependency inversion** resolves it: the inner layer declares the interface it needs; the
 outer layer implements it.
@@ -221,19 +227,19 @@ outer layer implements it.
    Application                        Application
        │ depends on                       │ declares
        ▼                                  ▼
-   EfStudentRepository                IStudentRepository        ◄── interface lives INSIDE
+   EfEquipmentRepository              IEquipmentRepository      ◄── interface lives INSIDE
        │                                  ▲
        ▼                                  │ implements
-   the database                       EfStudentRepository       ◄── implementation lives OUTSIDE
+   the database                       EfEquipmentRepository     ◄── implementation lives OUTSIDE
                                           │
                                           ▼
                                       the database
 ```
 
-The interface belongs to the **consumer**, not the implementer. `IStudentRepository` is in
-`Students.Application/Abstractions/` — the layer that *uses* it — even though the only class
+The interface belongs to the **consumer**, not the implementer. `IEquipmentRepository` is in
+`Equipment.Application/Abstractions/` — the layer that *uses* it — even though the only class
 implementing it lives in Infrastructure. And it speaks in domain terms: it takes and returns
-`Student`, never an EF entity or a DTO.
+`EquipmentAsset`, never an EF entity or a DTO.
 
 At runtime, dependency injection supplies the real implementation. The handler never learns
 which one it got — which is also why a test can hand it an in-memory fake and nothing
@@ -250,11 +256,11 @@ Layers are separate **projects**, not folders. That is deliberate and it is what
 architecture real rather than aspirational.
 
 ```bash
-dotnet add Students.Application reference Students.Domain          # allowed
-dotnet add Students.Domain reference Students.Infrastructure       # you can type this...
+dotnet add Equipment.Application reference Equipment.Domain          # allowed
+dotnet add Equipment.Domain reference Equipment.Infrastructure       # you can type this...
 ```
 
-...and now `Students.Domain` compiles against EF Core, and nothing stops a value object from
+...and now `Equipment.Domain` compiles against EF Core, and nothing stops a value object from
 taking a `DbContext`. Folders would let this happen silently. Project references make it a
 deliberate act you have to commit.
 
@@ -273,16 +279,16 @@ The question you will actually ask, twenty times a week.
 
 | The code | Layer | Why |
 |---|---|---|
-| "An email must contain `@`" | **Domain** | Always true, regardless of how it arrives |
+| "A name and an asset tag are required" | **Domain** | Always true, regardless of how it arrives |
 | "Page size must be 1–100" | **Application** (validator) | A request constraint, not a business truth |
-| "When a seat frees, promote the first waitlisted student" | **Domain** | A rule spanning the aggregate's own data |
-| "Load the student, charge them, save" | **Application** (handler) | Orchestration |
-| "`Email` is `nvarchar(256)`" | **Infrastructure** | Storage detail |
+| "An onboarding request can't be approved twice" | **Domain** | A rule spanning the aggregate's own state |
+| "Load the request, run the saga steps, save" | **Application** (handler) | Orchestration |
+| "`AssetTag` is `nvarchar(50)`" | **Infrastructure** | Storage detail |
 | "Return 404 when it's null" | **Presentation** | An HTTP concern |
-| "Call the payments provider" | **Infrastructure**, behind an Application interface | External system |
+| "Call the licence vendor" | **Infrastructure**, behind an Application interface | External system |
 | "Round to 2 decimal places for money" | **Domain** (value object) | Part of what money *is* |
 | "Cache this for 5 minutes" | **Infrastructure** (a decorator) | Performance, not behaviour |
-| "This student's fines exceed the limit" | **Domain** | A business threshold |
+| "This equipment is already reserved" | **Domain** | A business precondition |
 | "Retry the HTTP call three times" | **Infrastructure** | Transport detail |
 
 Two tests that resolve most disagreements:
@@ -294,25 +300,27 @@ Two tests that resolve most disagreements:
 
 ## 8. Modules — the second dimension
 
-Layers are one axis. This codebase has a second: **modules**. `Students`, `Library`,
-`TestPlans`, `TesterGuide` — each with its own five layers *and its own database*.
+Layers are one axis. This codebase has a second: **modules**. `Equipment` and `Onboarding` —
+each with its own layers *and its own database*.
 
 ```
                 Domain    Application    Infrastructure    Presentation
-   Students        ▪           ▪               ▪                ▪        → students.db
-   Library         ▪           ▪               ▪                ▪        → library.db
-   TestPlans       ▪           ▪               ▪                ▪        → testplans.db
-   TesterGuide     ▪           ▪               ▪                ▪        → testerguide.db
+   Equipment       ▪           ▪               ▪                ▪        → equipment.db
+   Onboarding      ▪           ▪               ▪                ▪        → onboarding.db
 ```
 
 One process, one deployment — a **modular monolith**. The layers stop code from depending
 downward; the modules stop it from depending sideways.
 
-Two rules govern the sideways direction, and both exist because the databases are separate:
+Two shapes govern the sideways direction, and both exist because the databases are separate:
 
-- **Reads** go through a published contract — an interface in the owning module's
-  `*.Contracts` project, which has zero dependencies so anyone may reference it.
-- **Writes** go through the outbox, because a transaction cannot span two databases.
+- **Reads, and simple synchronous actions**, go through a published contract — an interface
+  in the owning module's `*.Contracts` project, which has zero dependencies so anyone may
+  reference it. Onboarding calls `Equipment.Contracts.IEquipmentReservationService` directly
+  this way.
+- **Anything that must survive a crash mid-flight** — a multi-step saga — drives itself off
+  its own database via the outbox, rather than trusting a distributed transaction that no
+  single database engine can give you across two separate files.
 
 [Guide 60](60-talking-across-modules.md) covers both in full. What matters here is the
 principle: **a module's public surface is the interface it publishes, not its tables.**
@@ -394,9 +402,11 @@ return materialised domain objects or purpose-built DTOs.
 is never only an `if`, and it is now untestable without HTTP. *Fix:* push it into the
 handler, then the rule into the domain.
 
-**One DTO for everything.** A `StudentDto` with thirty properties, most null on any given
-call. Every endpoint that uses it is coupled to every other. *Fix:* one response record per
-endpoint — `GetStudentDetail.Response` is nested inside the feature that returns it.
+**One DTO for everything.** An `OnboardingRequestDto` used by every onboarding endpoint, most
+fields null on any given call. Every endpoint that uses it is coupled to every other. *Fix:*
+one response record per endpoint — `GetOnboardingSummary.Response` is nested inside the
+feature that returns it, and it has none of `GetOnboardingRequest.Response`'s fields, because
+the two answer different questions.
 
 **Reaching into another module.** Injecting another module's `DbContext` because a contract
 would take longer. This works, and it silently deletes the boundary. *Fix:* publish a

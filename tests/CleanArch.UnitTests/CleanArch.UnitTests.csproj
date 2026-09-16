@@ -16,14 +16,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BuildingBlocks\BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\src\BuildingBlocks.RealTime\BuildingBlocks.RealTime.csproj" />
-    <ProjectReference Include="..\..\src\Modules\Students\Students.Domain\Students.Domain.csproj" />
-    <ProjectReference Include="..\..\src\Modules\Students\Students.Application\Students.Application.csproj" />
-    <ProjectReference Include="..\..\src\Modules\Students\Students.Contracts\Students.Contracts.csproj" />
-    <ProjectReference Include="..\..\src\Modules\Library\Library.Domain\Library.Domain.csproj" />
-    <ProjectReference Include="..\..\src\Modules\Library\Library.Application\Library.Application.csproj" />
-    <ProjectReference Include="..\..\src\Modules\TesterGuide\TesterGuide.Domain\TesterGuide.Domain.csproj" />
-    <ProjectReference Include="..\..\src\Modules\TesterGuide\TesterGuide.Application\TesterGuide.Application.csproj" />
-    <ProjectReference Include="..\..\src\Modules\TestPlans\TestPlans.Contracts\TestPlans.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Domain\Equipment.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Application\Equipment.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Contracts\Equipment.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Onboarding\Onboarding.Domain\Onboarding.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Onboarding\Onboarding.Application\Onboarding.Application.csproj" />
   </ItemGroup>
 
 </Project>

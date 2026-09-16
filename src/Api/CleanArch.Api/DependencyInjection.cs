@@ -25,11 +25,11 @@ internal static class DependencyInjection
             {
                 Title = "CleanArchitecture API",
                 Version = "v1",
-                Description = "College API — database-per-domain modular monolith (Students + Library)."
+                Description = "Employee IT Onboarding and Equipment Management API — database-per-domain modular monolith (Equipment + Onboarding)."
             });
 
-            // Vertical-slice requests are nested (e.g. CreateStudent.Command, BorrowBook.Command), so the
-            // default schema id (the short type name "Command") collides. Qualify with the declaring type.
+            // Vertical-slice requests are nested (e.g. CreateEquipment.Command, ApproveOnboarding.Command),
+            // so the default schema id (the short type name "Command") collides. Qualify with the declaring type.
             options.CustomSchemaIds(SchemaId);
 
             // Three ways to authorize in Swagger UI. Each is a separate security requirement, so they are

@@ -103,14 +103,14 @@ the colours changed.
 | CPU / Memory / Thread-pool queue | The host or the runtime is struggling | **Runtime health** |
 
 **30–45s — Narrow it to one endpoint.** **Which endpoint** is a table of every route sorted by error
-rate. "The API is broken" becomes "`POST /students` is broken", which is a completely
+rate. "The API is broken" becomes "`POST /equipment` is broken", which is a completely
 different and much smaller problem.
 
 **45–60s — Find out why.** **What is failing**: the errors and warnings log on the left, the failed
 traces on the right. Open one failed trace, read the exception on the span, then read the log
 lines for that trace id.
 
-At sixty seconds you should be able to finish this sentence: *"`POST /students` started
+At sixty seconds you should be able to finish this sentence: *"`POST /equipment` started
 returning 500 at 14:32, throwing `SqliteException`, and it began two minutes after the
 deploy."* That sentence is the handover. Everything after it is ordinary debugging.
 
@@ -193,7 +193,7 @@ degradation; a second band appearing suddenly is a code path that just started b
 ### Which endpoint is the problem?
 
 One row per route, sorted by error rate. This is the panel that turns *"the API is broken"*
-into *"`POST /students` is broken"*.
+into *"`POST /equipment` is broken"*.
 
 | What you see | What it means |
 |---|---|
@@ -339,7 +339,7 @@ HTTP routes tell you what callers *asked for*. This section tells you what the c
 derived from the log line `LoggingBehavior` writes for every mediator request:
 
 ```
-Handled GetStudent.Query in 0ms
+Handled GetEquipment.Query in 0ms
 ```
 
 The two differ wherever one endpoint dispatches several commands, or where work runs off the
@@ -558,7 +558,7 @@ Verified from a real line in this app:
 | `detected_level` | `info`, `warn`, `error` | Severity filtering |
 | `severity_text` | `Information`, `Warning` | The .NET name, if you prefer it |
 | `scope_name` | `BuildingBlocks.Messaging.Behaviors.LoggingBehavior` | Which class logged it — the fastest way to silence a noisy component |
-| `RequestPath` | `/students/1111…` | The URL, including the actual id |
+| `RequestPath` | `/equipment/1111…` | The URL, including the actual id |
 | `RequestId`, `ConnectionId` | `0HNO9UQQ2HCJF:00000001` | Kestrel's own ids |
 | `_OriginalFormat_` | `Handled {Request} in {ElapsedMs}ms` | The message *template* — groups all instances of one message regardless of values |
 
@@ -590,7 +590,7 @@ templates: `"Handled {Request} in {ElapsedMs}ms"` is searchable, and
 {service_name="CleanArch.Api"} | CorrelationId =~ `$find` or trace_id =~ `$find`
 
 # One feature
-{service_name="CleanArch.Api"} | Request = "CreateStudent.Command"
+{service_name="CleanArch.Api"} | Request = "CreateEquipment.Command"
 
 # Slow handlers — numeric comparison works on structured metadata
 {service_name="CleanArch.Api"} |= `Handled` | ElapsedMs > 500
@@ -602,7 +602,7 @@ templates: `"Handled {Request} in {ElapsedMs}ms"` is searchable, and
 {service_name="CleanArch.Api"} | scope_name != "Microsoft.EntityFrameworkCore.Database.Command"
 
 # One URL, wildcard on the id
-{service_name="CleanArch.Api"} | RequestPath =~ "/students/.*/transcript"
+{service_name="CleanArch.Api"} | RequestPath =~ "/onboarding/.*/summary"
 ```
 
 Turning logs into a graph — this is how **Features** is built:
@@ -628,8 +628,8 @@ sum(count_over_time({service_name="CleanArch.Api"} | detected_level = "error" [$
 ### Reading a log line like an engineer
 
 ```
-14:32:07  Handled CreateStudent.Command in 4071ms
-          Request=CreateStudent.Command  ElapsedMs=4071
+14:32:07  Handled CreateEquipment.Command in 4071ms
+          Request=CreateEquipment.Command  ElapsedMs=4071
           CorrelationId=a8faac35-…  trace_id=00c137b6…
           scope_name=BuildingBlocks.Messaging.Behaviors.LoggingBehavior
 ```
@@ -662,7 +662,7 @@ one), or paste a trace id.
 {resource.service.name = "CleanArch.Api" && span.http.response.status_code >= 500}
 
 # Slow requests on one route
-{span.http.route = "/students" && duration > 500ms}
+{span.http.route = "/equipment" && duration > 500ms}
 
 # Slow AND failing
 {span.http.response.status_code >= 500 && duration > 1s}
@@ -698,17 +698,17 @@ request that ran them:
 {span.db.system = "sqlite" && duration > 100ms}
 
 # One table
-{span.db.statement =~ ".*Students.*"}
+{span.db.statement =~ ".*EquipmentAssets.*"}
 ```
 
 ### What a waterfall looks like here
 
 ```
-POST /students/search                             ██████████████████████  76ms   SERVER
-  └─ main  SELECT COUNT(*) FROM "Students"                   ▌            0.24ms CLIENT
-  └─ main  SELECT "s"."Id", "s"."FirstName" …                  ▌          0.29ms CLIENT
+POST /equipment/search                             ██████████████████████  76ms   SERVER
+  └─ main  SELECT COUNT(*) FROM "EquipmentAssets"                   ▌            0.24ms CLIENT
+  └─ main  SELECT "e"."Id", "e"."Name" …                  ▌          0.29ms CLIENT
 
-POST /students                                    ██████████████████████  1.2s   SERVER
+POST /equipment                                    ██████████████████████  1.2s   SERVER
   └─ OnBehalfOf.Exchange                          ██                      140ms  INTERNAL
   └─ POST billing.internal/invoices                 ████████              600ms  CLIENT
 ```
@@ -773,9 +773,9 @@ Kibana → **Discover**, data view `cleanarch-audit-*`, time field `occurredOnUt
 
 ```
 actor : "integration-service"
-action : "WithdrawStudent" and succeeded : false
-category : "Read" and resource : "Student/bd0034a3-832a-4399-b106-54d03a223898"
-resource : "Student/bd0034a3-*"
+action : "DeleteEquipment" and succeeded : false
+category : "Read" and resource : "OnboardingRequest/bd0034a3-832a-4399-b106-54d03a223898"
+resource : "OnboardingRequest/bd0034a3-*"
 category : "Security"
 correlationId : "a8faac35-f23e-43b2-a42a-df4e9ae09b03"
 ```
@@ -800,7 +800,7 @@ Two traps, both of which look exactly like "there is no data":
 - **The time picker defaults to 15 minutes.** Widen it before concluding anything.
 
 **When to use the audit trail instead of the logs:** anything a person will be asked to
-answer for. *Who changed this record?* *Who looked at this student's data?* *Did the
+answer for. *Who changed this record?* *Who looked at this onboarding request's data?* *Did the
 integration service actually run that job?* Logs get deleted on a retention schedule and are
 full of noise; the audit trail is a deliberate, mapped, searchable record of decisions.
 
@@ -876,7 +876,7 @@ the failures you will actually meet.
 | **Diagnose** | **What is failing** — failed traces → open one → the failing span's `exception.type` and stack trace |
 
 ```logql
-{service_name="CleanArch.Api"} | detected_level = "error" | Request = "CreateStudent.Command"
+{service_name="CleanArch.Api"} | detected_level = "error" | Request = "CreateEquipment.Command"
 ```
 
 **What it means.** If the start time is within a minute or two of a deploy, it is the deploy —
@@ -1037,7 +1037,7 @@ back to the request that caused it. See
 Not a dashboard question. Kibana:
 
 ```
-resource : "Student/bd0034a3-832a-4399-b106-54d03a223898" and category : "Write"
+resource : "OnboardingRequest/bd0034a3-832a-4399-b106-54d03a223898" and category : "Write"
 ```
 
 Expand a row and read `changes[]` — entity, operation, and each property's old → new. Take the
@@ -1049,7 +1049,7 @@ explains why, at length, and what to do instead.
 ### 13. "Who looked at this person's data?"
 
 ```
-resource : "Student/bd0034a3-*" and category : "Read"
+resource : "OnboardingRequest/bd0034a3-*" and category : "Read"
 ```
 
 A read leaves no trace in the database and no 5xx anywhere. If read auditing is not switched
@@ -1391,7 +1391,7 @@ up{job="cleanarch-api"}                                                         
 {service_name="CleanArch.Api"} | detected_level =~ "warn|error"             # problems
 {service_name="CleanArch.Api"} | CorrelationId = "<guid>"                   # one request
 {service_name="CleanArch.Api"} | trace_id = "<32 hex>"                      # one request, from a trace
-{service_name="CleanArch.Api"} | Request = "CreateStudent.Command"          # one feature
+{service_name="CleanArch.Api"} | Request = "CreateEquipment.Command"          # one feature
 {service_name="CleanArch.Api"} |= `Handled` | ElapsedMs > 500               # slow handlers
 sum by (Request) (count_over_time({service_name="CleanArch.Api"} |= `Handled` | Request != `` [$__auto]))
 ```
@@ -1401,9 +1401,9 @@ Labels: **`service_name`, `service_instance_id`. Nothing else.** Everything else
 
 ```traceql
 {resource.service.name = "CleanArch.Api" && span.http.response.status_code >= 500}
-{span.http.route = "/students" && duration > 500ms}
+{span.http.route = "/equipment" && duration > 500ms}
 {span.db.system = "sqlite" && duration > 100ms}     # slow queries, whatever ran them
-{span.db.statement =~ ".*Students.*"}               # queries against one table
+{span.db.statement =~ ".*EquipmentAssets.*"}               # queries against one table
 {status = error}
 {name = "OnBehalfOf.Exchange"}
 <paste a 32-character trace id>
@@ -1412,7 +1412,7 @@ Labels: **`service_name`, `service_instance_id`. Nothing else.** Everything else
 ### Kibana (audit)
 
 ```
-resource : "Student/<id>"                     # everything that touched this person
+resource : "OnboardingRequest/<id>"           # everything that touched this person's onboarding
 category : "Read" and not actor : "system"    # who looked
 action : "*" and succeeded : false            # what failed
 correlationId : "<guid>"                      # the bridge to logs and traces

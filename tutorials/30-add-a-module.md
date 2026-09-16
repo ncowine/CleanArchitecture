@@ -22,7 +22,7 @@ features, and it is hard to build the container before you know what goes in it.
 | 2 | [Why each module owns its database](#2-why-each-module-owns-its-database) | Understand the trade you are making |
 | 3 | [The five projects](#3-the-five-projects) | The shape you are about to create |
 | 4 | [Decisions to make before you type](#4-decisions-to-make-before-you-type) | Name, boundary, relationships |
-| 5 | [Step 1 — Create the projects](#5-step-1--create-the-projects) | `dotnet new`, six times |
+| 5 | [Step 1 — Create the projects](#5-step-1--create-the-projects) | `dotnet new`, five times |
 | 6 | [Step 2 — Point the references inward](#6-step-2--point-the-references-inward) | The step that *is* the architecture |
 | 7 | [Step 3 — Model the domain](#7-step-3--model-the-domain) | The rules, with no framework in sight |
 | 8 | [Step 4 — The Application layer](#8-step-4--the-application-layer) | Markers, abstractions, your first slice |
@@ -33,7 +33,7 @@ features, and it is hard to build the container before you know what goes in it.
 | 13 | [Step 9 — The first migration](#13-step-9--the-first-migration) | Create the database |
 | 14 | [Step 10 — Expose it over HTTP](#14-step-10--expose-it-over-http) | Endpoints |
 | 15 | [Step 11 — Tests](#15-step-11--tests) | Prove the rules without a database |
-| 16 | [Connecting to other modules](#16-connecting-to-other-modules) | Contracts, outbox, and the trap |
+| 16 | [Connecting to other modules](#16-connecting-to-other-modules) | Contracts, the outbox, and the trap |
 | 17 | [The checklist](#17-the-checklist) | Run this when doing it for real |
 | 18 | [Troubleshooting](#18-troubleshooting) | Symptom, cause, fix |
 | 19 | [Command cheat sheet](#19-command-cheat-sheet) | The commands, in one place |
@@ -47,8 +47,8 @@ A **module** is a self-contained slice of the system: its own domain model, its 
 database, its own HTTP endpoints, deployed inside the same process as every other module.
 
 That last part is what makes it a *modular monolith* rather than microservices. One
-process, one deployment, one debugger — but internally partitioned so that the `Library`
-code cannot reach into the `Students` tables, even though both are running a metre apart.
+process, one deployment, one debugger — but internally partitioned so that `Onboarding`
+code cannot reach into `Equipment`'s tables, even though both are running a metre apart.
 
 ### When to add one
 
@@ -61,7 +61,7 @@ argue with you about the *interface* rather than the internals? Then it is a mod
 | A new endpoint on an existing concept | Add a feature to the existing module |
 | A new concept that lives *inside* an existing area's rules | Add to the existing module's domain |
 | A new area with its own lifecycle, own tables, own users | **Add a module** |
-| A new app layered over an existing system of record | **Add a module** that references the other by id |
+| A new process layered over an existing system of record | **Add a module** that references the other by id |
 | Something you'll deploy separately one day | Add a module — it is the natural seam to split on later |
 
 ### When not to
@@ -70,17 +70,21 @@ Two modules that constantly need each other's data in the same transaction were 
 modules. If your first three features all need a cross-module write, the boundary is in
 the wrong place — move it before you have migrations to unpick.
 
-> **The worked example in this guide** is `TesterGuide`, the newest module in this
-> repository. It is a good specimen because it does everything: its own database, a
-> cross-module read from `TestPlans`, a cross-database write via the outbox, and
-> real-time notifications. Open `src/Modules/TesterGuide/` alongside this guide.
+> **The worked example in this guide** is `Equipment`. It's a good specimen because it does
+> almost everything a module can: its own database, plain CRUD, real-time notifications, a
+> cache-aside read, a published contract that another module (`Onboarding`) calls into, and
+> a service that never touches the database at all (the file-backed catalogue). The one
+> thing it doesn't need is an outbox — nothing calls *out* of Equipment asynchronously. Open
+> `src/Modules/Equipment/` alongside this guide; where the outbox specifically comes up in
+> [chapter 16](#16-connecting-to-other-modules), we'll look at `Onboarding` instead, since
+> that's the module that actually has one.
 
 ---
 
 ## 2. Why each module owns its database
 
 Each module has its own database file, its own `DbContext`, its own migration history.
-`Students` cannot see `library.db`. That is the point, and it is worth being clear about
+`Equipment` cannot see `onboarding.db`. That is the point, and it is worth being clear about
 what you gain and what it costs, because the cost is real.
 
 **What you gain.** You can change a module's schema without a company-wide meeting.
@@ -112,16 +116,16 @@ compiler enforces the dependency rule* — you cannot accidentally use EF Core i
 if the domain project doesn't reference it.
 
 ```
-   Modules/TesterGuide/
+   Modules/Equipment/
    │
    │   ┌─ inner: knows nothing about frameworks ────────────────┐
-   ├── TesterGuide.Domain            the rules. Zero references. │
-   ├── TesterGuide.Contracts         what other modules may call │
-   ├── TesterGuide.Application       use cases + interfaces      │
+   ├── Equipment.Domain              the rules. Zero references. │
+   ├── Equipment.Contracts           what other modules may call │
+   ├── Equipment.Application         use cases + interfaces      │
    │   └────────────────────────────────────────────────────────┘
    │   ┌─ outer: frameworks live here ───────────────────────────┐
-   ├── TesterGuide.Infrastructure    EF Core, repositories       │
-   └── TesterGuide.Presentation      HTTP endpoints              │
+   ├── Equipment.Infrastructure      EF Core, repositories       │
+   └── Equipment.Presentation        HTTP endpoints              │
        └────────────────────────────────────────────────────────┘
 ```
 
@@ -137,7 +141,7 @@ Two of those projects have genuinely empty project files, which is the clearest 
 statement of the rule:
 
 ```xml
-<!-- src/Modules/TesterGuide/TesterGuide.Domain/TesterGuide.Domain.csproj -->
+<!-- src/Modules/Equipment/Equipment.Domain/Equipment.Domain.csproj -->
 <Project Sdk="Microsoft.NET.Sdk">
 
 </Project>
@@ -159,16 +163,23 @@ Four things, and getting them wrong is expensive later.
 
 **1. The name.** It becomes the namespace, five project names, the database file, the
 connection-string key and the route prefix. Singular or plural, pick one and match the
-existing modules. Avoid names that collide with framework types — this repository has an
-entity called `TestTask` rather than `Task` for exactly that reason, because
-`System.Threading.Tasks.Task` would shadow it in every file that does async work.
+existing modules.
+
+> Avoid names that collide with **the module's own namespace**, not just framework types.
+> This module's aggregate is called `EquipmentAsset`, not `Equipment` — because a class
+> named identically to its root namespace makes every bare reference to it ambiguous
+> throughout the module. Inside `namespace Equipment.Application`, an unqualified
+> `Equipment` would try to resolve against the enclosing namespace `Equipment` before it
+> ever considers the type `Equipment.Domain.Equipment`, and the compiler tells you a
+> namespace is being used like a type. This was a real decision made while building this
+> module, not a hypothetical.
 
 **2. The boundary.** Write down, in one sentence, what this module is responsible for. If
 the sentence needs an "and", you may have two modules.
 
-**3. What it needs from other modules.** For each: is it a *read* (get me that student's
-name) or a *write* (record something over there)? Reads are easy — a published contract.
-Writes are the outbox and a saga. Knowing which you need changes what you build.
+**3. What it needs from other modules.** For each: is it a *read* (or a simple synchronous
+action), or does it need to survive a crash mid-flight? The first is a published contract.
+The second is the outbox and a saga. Knowing which you need changes what you build.
 
 **4. What other modules will need from it.** This is what goes in `Contracts`. Start
 empty; add only when a real consumer appears.
@@ -181,13 +192,13 @@ From the repository root:
 
 ```bash
 cd src/Modules
-mkdir TesterGuide && cd TesterGuide
+mkdir Equipment && cd Equipment
 
-dotnet new classlib -o TesterGuide.Domain
-dotnet new classlib -o TesterGuide.Contracts
-dotnet new classlib -o TesterGuide.Application
-dotnet new classlib -o TesterGuide.Infrastructure
-dotnet new classlib -o TesterGuide.Presentation
+dotnet new classlib -o Equipment.Domain
+dotnet new classlib -o Equipment.Contracts
+dotnet new classlib -o Equipment.Application
+dotnet new classlib -o Equipment.Infrastructure
+dotnet new classlib -o Equipment.Presentation
 ```
 
 Delete the `Class1.cs` that `dotnet new` puts in each one.
@@ -197,12 +208,12 @@ Then add them to the solution. This repository uses the newer XML solution forma
 
 ```xml
 <!-- CleanArchitecture.slnx -->
-<Folder Name="/src/Modules/TesterGuide/">
-  <Project Path="src/Modules/TesterGuide/TesterGuide.Application/TesterGuide.Application.csproj" />
-  <Project Path="src/Modules/TesterGuide/TesterGuide.Contracts/TesterGuide.Contracts.csproj" />
-  <Project Path="src/Modules/TesterGuide/TesterGuide.Domain/TesterGuide.Domain.csproj" />
-  <Project Path="src/Modules/TesterGuide/TesterGuide.Infrastructure/TesterGuide.Infrastructure.csproj" />
-  <Project Path="src/Modules/TesterGuide/TesterGuide.Presentation/TesterGuide.Presentation.csproj" />
+<Folder Name="/src/Modules/Equipment/">
+  <Project Path="src/Modules/Equipment/Equipment.Application/Equipment.Application.csproj" />
+  <Project Path="src/Modules/Equipment/Equipment.Contracts/Equipment.Contracts.csproj" />
+  <Project Path="src/Modules/Equipment/Equipment.Domain/Equipment.Domain.csproj" />
+  <Project Path="src/Modules/Equipment/Equipment.Infrastructure/Equipment.Infrastructure.csproj" />
+  <Project Path="src/Modules/Equipment/Equipment.Presentation/Equipment.Presentation.csproj" />
 </Folder>
 ```
 
@@ -222,28 +233,29 @@ This step *is* the architecture. Everything else is detail.
 # Domain and Contracts: nothing. Leave them alone.
 
 # Application depends on Domain (and the shared building blocks)
-dotnet add TesterGuide.Application reference TesterGuide.Domain
-dotnet add TesterGuide.Application reference ../../BuildingBlocks/BuildingBlocks.csproj
+dotnet add Equipment.Application reference Equipment.Domain
+dotnet add Equipment.Application reference ../../BuildingBlocks/BuildingBlocks.csproj
 
 # Infrastructure depends on Application + this module's Contracts
-dotnet add TesterGuide.Infrastructure reference TesterGuide.Application
-dotnet add TesterGuide.Infrastructure reference TesterGuide.Contracts
-dotnet add TesterGuide.Infrastructure reference ../../BuildingBlocks.Persistence/BuildingBlocks.Persistence.csproj
+dotnet add Equipment.Infrastructure reference Equipment.Application
+dotnet add Equipment.Infrastructure reference Equipment.Contracts
+dotnet add Equipment.Infrastructure reference ../../BuildingBlocks.Persistence/BuildingBlocks.Persistence.csproj
 
 # Presentation depends on Application only
-dotnet add TesterGuide.Presentation reference TesterGuide.Application
+dotnet add Equipment.Presentation reference Equipment.Application
 ```
 
 Then the packages each outer layer needs:
 
 ```bash
-dotnet add TesterGuide.Application package FluentValidation.DependencyInjectionExtensions
-dotnet add TesterGuide.Application package Microsoft.Extensions.DependencyInjection.Abstractions
+dotnet add Equipment.Application    package FluentValidation.DependencyInjectionExtensions
+dotnet add Equipment.Application    package Microsoft.Extensions.DependencyInjection.Abstractions
 
-dotnet add TesterGuide.Infrastructure package Microsoft.EntityFrameworkCore.Sqlite
-dotnet add TesterGuide.Infrastructure package Microsoft.EntityFrameworkCore.Design
+dotnet add Equipment.Infrastructure package Microsoft.EntityFrameworkCore.Sqlite
+dotnet add Equipment.Infrastructure package Microsoft.EntityFrameworkCore.Design
+dotnet add Equipment.Infrastructure package Microsoft.Extensions.Caching.Hybrid   # only if you're adding a cache-aside read
 
-dotnet add TesterGuide.Presentation package Asp.Versioning.Http
+dotnet add Equipment.Presentation   package Asp.Versioning.Http
 ```
 
 > **No version numbers.** This repository uses Central Package Management: every version
@@ -287,28 +299,42 @@ Start here, always. Not with the database, not with the endpoint — with the ru
 
 The domain layer holds objects that **cannot exist in an invalid state**. The pattern in
 this repository: private constructor, static factory that validates, private setters,
-behaviour as methods. From `src/Modules/TesterGuide/TesterGuide.Domain/Focus.cs`'s shape:
+behaviour as methods. From `src/Modules/Equipment/Equipment.Domain/EquipmentAsset.cs`'s
+shape (trimmed — the real file also has `Update`, `Release`, and two more fields):
 
 ```csharp
-namespace TesterGuide.Domain;
+namespace Equipment.Domain;
 
-public sealed class Focus
+public sealed class EquipmentAsset
 {
-    private Focus() { }                       // EF needs a parameterless ctor; nobody else may use it
-
     public Guid Id { get; private set; }
     public string Name { get; private set; } = null!;
-    public string? Description { get; private set; }
+    public EquipmentStatus Status { get; private set; }
 
-    public static Focus Create(string name, string? description)
+    private EquipmentAsset() { }                // EF needs a parameterless ctor; nobody else may use it
+
+    private EquipmentAsset(Guid id, string name, DateTime createdOnUtc)
     {
-        if (string.IsNullOrWhiteSpace(name))
-            throw new DomainException("A focus needs a name.");
-
-        return new Focus { Id = Guid.NewGuid(), Name = name.Trim(), Description = description };
+        Id = id;
+        Name = name;
+        Status = EquipmentStatus.Available;
     }
 
-    public void Rename(string name) { /* validate, then assign */ }
+    public static EquipmentAsset Create(string name, EquipmentCategory category, string assetTag)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new DomainException("Name is required.");
+
+        return new EquipmentAsset(Guid.NewGuid(), name.Trim(), DateTime.UtcNow);
+    }
+
+    public void Reserve(Guid onboardingRequestId)
+    {
+        if (Status != EquipmentStatus.Available)
+            throw new DomainException($"Equipment '{Id}' is not available (status: {Status}).");
+
+        Status = EquipmentStatus.Reserved;
+    }
 }
 ```
 
@@ -332,69 +358,84 @@ Three things go here: the command marker, the abstractions, and the use cases.
 One empty interface, and it does more work than its size suggests:
 
 ```csharp
-// src/Modules/TesterGuide/TesterGuide.Application/ITesterGuideCommand.cs
-namespace TesterGuide.Application;
+// src/Modules/Equipment/Equipment.Application/IEquipmentCommand.cs
+namespace Equipment.Application;
 
 /// <summary>
-/// Marks a request as a Tester Guide-module write that must run inside a TesterGuideDbContext
+/// Marks a request as an Equipment-module write that must run inside an EquipmentDbContext
 /// transaction. The module's transaction behavior wraps only requests carrying this marker, so
 /// queries — and other modules' requests — are left untouched.
 /// </summary>
-public interface ITesterGuideCommand;
+public interface IEquipmentCommand;
 ```
 
 Every module has one. It is how the module's transaction behaviour knows which requests
-are *its* writes: a `Students` command flowing through the pipeline must not open a
+are *its* writes: an `Onboarding` command flowing through the pipeline must not open a
 transaction on *your* database.
 
 ### 8.2 The abstractions
 
 Interfaces describing the persistence your use cases need, in
-`TesterGuide.Application/Abstractions/`. They speak in domain types and know nothing about
+`Equipment.Application/Abstractions/`. They speak in domain types and know nothing about
 EF:
 
 ```csharp
-public interface IFocusRepository
+public interface IEquipmentRepository
 {
-    Task AddAsync(Focus focus, CancellationToken cancellationToken);
-    Task<Focus?> GetAsync(Guid focusId, CancellationToken cancellationToken);
+    Task AddAsync(EquipmentAsset asset, CancellationToken cancellationToken);
+    Task<EquipmentAsset?> GetAsync(Guid equipmentId, CancellationToken cancellationToken);
+    void Remove(EquipmentAsset asset);
 }
 ```
 
-Reads get their own interface — `IGuideReadService` — because reads don't load aggregates;
-they project straight to the response shape the endpoint needs.
+Reads get their own interface — this module actually has two. `IEquipmentReadService` is
+the plain paged search; `IEquipmentDirectory` is the single-item lookup that gets a caching
+decorator in front of it in Infrastructure ([chapter 9](#9-step-5--the-infrastructure-layer)).
+Neither loads the full aggregate to then throw most of it away; they project straight to
+the response shape the endpoint needs.
 
 ### 8.3 The first use case
 
 One file per use case: a static class holding the `Command`, an optional `Validator`, and
-the `Handler`. This is `TesterGuide.Application/Focuses/CreateFocus.cs`, complete:
+the `Handler`. This is `Equipment.Application/Inventory/CreateEquipment.cs`, complete —
+[guide 20](20-add-a-feature.md) walks through writing a slice like this line by line, so
+here it's just the finished shape:
 
 ```csharp
-public static class CreateFocus
+public static class CreateEquipment
 {
-    public sealed record Command(string Name, string? Description)
-        : IRequest<Guid>, ITesterGuideCommand, IAuditableRequest;
+    public sealed record Command(string Name, EquipmentCategory Category, string AssetTag)
+        : IRequest<Guid>, IEquipmentCommand, IAuditableRequest;
 
     public sealed class Validator : AbstractValidator<Command>
     {
         public Validator()
         {
-            RuleFor(command => command.Name).NotEmpty().MaximumLength(100);
-            RuleFor(command => command.Description).MaximumLength(500);
+            RuleFor(command => command.Name).NotEmpty().MaximumLength(200);
+            RuleFor(command => command.Category).IsInEnum();
+            RuleFor(command => command.AssetTag).NotEmpty().MaximumLength(50);
         }
     }
 
     public sealed class Handler : IRequestHandler<Command, Guid>
     {
-        private readonly IFocusRepository _focuses;
+        private readonly IEquipmentRepository _equipment;
+        private readonly IRealtimeDispatch _realtime;
 
-        public Handler(IFocusRepository focuses) => _focuses = focuses;
+        public Handler(IEquipmentRepository equipment, IRealtimeDispatch realtime)
+        {
+            _equipment = equipment;
+            _realtime = realtime;
+        }
 
         public async Task<Guid> Handle(Command command, CancellationToken cancellationToken)
         {
-            var focus = Focus.Create(command.Name, command.Description);
-            await _focuses.AddAsync(focus, cancellationToken);
-            return focus.Id;
+            var asset = EquipmentAsset.Create(command.Name, command.Category, command.AssetTag);
+            await _equipment.AddAsync(asset, cancellationToken);
+
+            _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentCreated", new { id = asset.Id }));
+
+            return asset.Id;
         }
     }
 }
@@ -405,7 +446,7 @@ Read the three marker interfaces on that `Command` — they are the whole cross-
 | Marker | Effect |
 |---|---|
 | `IRequest<Guid>` | The mediator can dispatch it, and it returns a `Guid` |
-| `ITesterGuideCommand` | Run me inside a transaction on **this module's** database |
+| `IEquipmentCommand` | Run me inside a transaction on **this module's** database |
 | `IAuditableRequest` | Record me to the audit trail ([guide 40](40-auditing.md)) |
 
 Note what the handler does **not** do: it never calls `SaveChanges`. `AddAsync` only
@@ -416,10 +457,10 @@ in one atomic write.
 ### 8.4 The DI extension
 
 ```csharp
-// src/Modules/TesterGuide/TesterGuide.Application/DependencyInjection.cs
+// src/Modules/Equipment/Equipment.Application/DependencyInjection.cs
 public static class DependencyInjection
 {
-    public static IServiceCollection AddTesterGuideApplication(this IServiceCollection services)
+    public static IServiceCollection AddEquipmentApplication(this IServiceCollection services)
     {
         services.AddHandlersFromAssembly(typeof(DependencyInjection).Assembly);
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
@@ -440,22 +481,23 @@ Now frameworks are allowed.
 ### 9.1 The DbContext
 
 ```csharp
-// src/Modules/TesterGuide/TesterGuide.Infrastructure/Persistence/TesterGuideDbContext.cs
-public sealed class TesterGuideDbContext : DbContext
+// src/Modules/Equipment/Equipment.Infrastructure/Persistence/EquipmentDbContext.cs
+public sealed class EquipmentDbContext : DbContext
 {
-    public TesterGuideDbContext(DbContextOptions<TesterGuideDbContext> options) : base(options) { }
+    public EquipmentDbContext(DbContextOptions<EquipmentDbContext> options) : base(options) { }
 
-    public DbSet<Focus> Focuses => Set<Focus>();
-    public DbSet<GuideConfig> Configs => Set<GuideConfig>();
-    public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();   // only if you publish events
+    public DbSet<EquipmentAsset> Equipment => Set<EquipmentAsset>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(TesterGuideDbContext).Assembly);
-        modelBuilder.ApplyOutboxConfiguration();                   // only if you publish events
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(EquipmentDbContext).Assembly);
     }
 }
 ```
+
+(A module that publishes outbox messages adds a `DbSet<OutboxMessage> Outbox` and calls
+`modelBuilder.ApplyOutboxConfiguration()` here too — `Onboarding`'s context does exactly
+that. This one doesn't need it; see [chapter 16](#16-connecting-to-other-modules) for why.)
 
 `ApplyConfigurationsFromAssembly` means you never edit this file again either — each
 entity's mapping lives in its own class.
@@ -466,14 +508,15 @@ One per entity, in `Persistence/EntityConfigurations/`. This is where the domain
 mapped to tables **without the domain knowing**:
 
 ```csharp
-internal sealed class FocusConfiguration : IEntityTypeConfiguration<Focus>
+internal sealed class EquipmentAssetConfiguration : IEntityTypeConfiguration<EquipmentAsset>
 {
-    public void Configure(EntityTypeBuilder<Focus> builder)
+    public void Configure(EntityTypeBuilder<EquipmentAsset> builder)
     {
-        builder.ToTable("Focuses");
-        builder.HasKey(focus => focus.Id);
-        builder.Property(focus => focus.Name).IsRequired().HasMaxLength(100);
-        builder.Property(focus => focus.Description).HasMaxLength(500);
+        builder.ToTable("EquipmentAssets");
+        builder.HasKey(asset => asset.Id);
+        builder.Property(asset => asset.Name).IsRequired().HasMaxLength(200);
+        builder.Property(asset => asset.AssetTag).IsRequired().HasMaxLength(50);
+        builder.HasIndex(asset => asset.AssetTag).IsUnique();
     }
 }
 ```
@@ -486,8 +529,8 @@ here. The domain class stays a plain C# object.
 Implement the Application's interfaces. They stage; they do not save:
 
 ```csharp
-public async Task AddAsync(Focus focus, CancellationToken cancellationToken) =>
-    await _db.Focuses.AddAsync(focus, cancellationToken);
+public async Task AddAsync(EquipmentAsset asset, CancellationToken cancellationToken) =>
+    await _db.Equipment.AddAsync(asset, cancellationToken);
 ```
 
 ### 9.4 The design-time factory
@@ -496,19 +539,19 @@ EF's command-line tools need to construct your `DbContext` without booting the A
 this class, `dotnet ef` either fails or starts the whole host just to read a schema:
 
 ```csharp
-internal sealed class TesterGuideDbContextFactory : IDesignTimeDbContextFactory<TesterGuideDbContext>
+internal sealed class EquipmentDbContextFactory : IDesignTimeDbContextFactory<EquipmentDbContext>
 {
-    public TesterGuideDbContext CreateDbContext(string[] args)
+    public EquipmentDbContext CreateDbContext(string[] args)
     {
         var connectionString =
-            Environment.GetEnvironmentVariable("ConnectionStrings__TesterGuide")
-            ?? "Data Source=testerguide-design.db";
+            Environment.GetEnvironmentVariable("ConnectionStrings__Equipment")
+            ?? "Data Source=equipment-design.db";
 
-        var options = new DbContextOptionsBuilder<TesterGuideDbContext>()
+        var options = new DbContextOptionsBuilder<EquipmentDbContext>()
             .UseSqlite(connectionString)
             .Options;
 
-        return new TesterGuideDbContext(options);
+        return new EquipmentDbContext(options);
     }
 }
 ```
@@ -524,12 +567,12 @@ connect to.
 Small, mandatory, and the thing people forget:
 
 ```csharp
-// src/Modules/TesterGuide/TesterGuide.Infrastructure/Behaviors/TransactionBehavior.cs
+// src/Modules/Equipment/Equipment.Infrastructure/Behaviors/TransactionBehavior.cs
 internal sealed class TransactionBehavior<TRequest, TResponse>
-    : TransactionBehaviorBase<TRequest, TResponse, TesterGuideDbContext>
-    where TRequest : IRequest<TResponse>, ITesterGuideCommand
+    : TransactionBehaviorBase<TRequest, TResponse, EquipmentDbContext>
+    where TRequest : IRequest<TResponse>, IEquipmentCommand
 {
-    public TransactionBehavior(TesterGuideDbContext db) : base(db) { }
+    public TransactionBehavior(EquipmentDbContext db) : base(db) { }
 }
 ```
 
@@ -545,23 +588,37 @@ confusing first bug, and it is always this file missing.
 
 ## 11. Step 7 — Register the module
 
-One public method — the module's only entry point:
+One public method — the module's only entry point. This is the real, complete
+`AddEquipmentModule` (it's a fuller module than the bare minimum — the caching lines are
+only here because this module happens to have a cache-aside read; skip them if yours
+doesn't):
 
 ```csharp
-// src/Modules/TesterGuide/TesterGuide.Infrastructure/DependencyInjection.cs
-public static IServiceCollection AddTesterGuideModule(
+// src/Modules/Equipment/Equipment.Infrastructure/DependencyInjection.cs
+public static IServiceCollection AddEquipmentModule(
     this IServiceCollection services, string connectionString)
 {
-    services.AddTesterGuideApplication();
+    services.AddEquipmentApplication();
 
     // Audit change-tracking: capture before/after values of every write for the audit trail.
     services.AddAuditChangeTracking();
-    services.AddDbContext<TesterGuideDbContext>((sp, options) =>
+    services.AddDbContext<EquipmentDbContext>((sp, options) =>
         options.UseSqlite(connectionString).UseAuditChangeTracking(sp));
 
-    services.AddScoped<IFocusRepository, EfFocusRepository>();
-    services.AddScoped<IGuideConfigRepository, EfGuideConfigRepository>();
-    services.AddScoped<IGuideReadService, GuideReadService>();
+    services.AddScoped<IEquipmentRepository, EfEquipmentRepository>();
+
+    // Cache-aside single lookup: EquipmentDirectory is the cache-miss fallthrough to the database.
+    services.AddScoped<EquipmentDirectory>();
+    services.AddScoped<IEquipmentDirectory>(provider => new CachingEquipmentDirectory(
+        provider.GetRequiredService<EquipmentDirectory>(),
+        provider.GetRequiredService<HybridCache>()));
+    services.AddScoped<IEquipmentCacheInvalidator, EquipmentCacheInvalidator>();
+
+    services.AddScoped<IEquipmentReadService, EquipmentReadService>();
+    services.AddScoped<IEquipmentCatalogueReader, EquipmentCatalogueFileReader>();
+
+    // Published contract: the Onboarding module calls this directly to reserve/release equipment.
+    services.AddScoped<IEquipmentReservationService, EquipmentReservationService>();
 
     services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
 
@@ -586,17 +643,16 @@ Four small edits outside your module. This is the only time you touch shared fil
 
 ```json
 "ConnectionStrings": {
-  "Students": "Data Source=students.db",
-  "Library": "Data Source=library.db",
-  "TestPlans": "Data Source=testplans.db",
-  "TesterGuide": "Data Source=testerguide.db"
+  "ApiKeys": "Data Source=apikeys.db",
+  "Equipment": "Data Source=equipment.db",
+  "Onboarding": "Data Source=onboarding.db"
 }
 ```
 
 **2. `Program.cs`** — read it, and fail loudly if it is missing:
 
 ```csharp
-var testerGuideConnectionString = RequireConnectionString("TesterGuide");
+var equipmentConnectionString = RequireConnectionString("Equipment");
 ```
 
 `RequireConnectionString` throws at startup when the value is absent. That is deliberate:
@@ -609,16 +665,14 @@ file next to the binary in production.
 builder.Services
     .AddApiServices()
     // ...
-    .AddStudentsModule(studentsConnectionString)
-    .AddLibraryModule(libraryConnectionString)
-    .AddTestPlansModule(testPlansConnectionString)
-    .AddTesterGuideModule(testerGuideConnectionString);
+    .AddEquipmentModule(equipmentConnectionString)
+    .AddOnboardingModule(onboardingConnectionString);
 ```
 
 **4. `WebApplicationExtensions.cs`** — migrate it on startup:
 
 ```csharp
-await scope.ServiceProvider.GetRequiredService<TesterGuideDbContext>().Database.MigrateAsync();
+await scope.ServiceProvider.GetRequiredService<EquipmentDbContext>().Database.MigrateAsync();
 ```
 
 That runs automatically in Development, and outside Development only when
@@ -637,9 +691,9 @@ From the repository root:
 
 ```bash
 dotnet ef migrations add InitialCreate \
-  --project src/Modules/TesterGuide/TesterGuide.Infrastructure \
+  --project src/Modules/Equipment/Equipment.Infrastructure \
   --startup-project src/Api/CleanArch.Api \
-  --context TesterGuideDbContext \
+  --context EquipmentDbContext \
   --output-dir Persistence/Migrations
 ```
 
@@ -649,7 +703,7 @@ Every argument matters:
 |---|---|
 | `--project` | Where the migration files are written — your Infrastructure project |
 | `--startup-project` | Where the design-time factory is discovered from |
-| `--context` | **Required.** The host references four `DbContext`s; without this EF refuses to guess |
+| `--context` | **Required.** The host references more than one `DbContext` (Equipment, Onboarding, and the API-key store); without this EF refuses to guess |
 | `--output-dir` | Keeps migrations beside the `DbContext` instead of a top-level `Migrations/` folder |
 
 Then run the app. In Development it applies migrations on startup and your database file
@@ -667,21 +721,24 @@ Endpoints map a route to a command and send it through the mediator. They contai
 business logic — bind, send, shape the response:
 
 ```csharp
-public static class TesterGuideEndpoints
+public static class EquipmentEndpoints
 {
-    public static IEndpointRouteBuilder MapTesterGuideEndpoints(
+    public static IEndpointRouteBuilder MapEquipmentEndpoints(
         this IEndpointRouteBuilder app, ApiVersionSet versionSet)
     {
-        var focuses = MapGuideGroup(app, versionSet, "Tester Guide — Focus Manager");
+        var equipment = app.MapGroup("")
+            .WithTags("Equipment")
+            .WithApiVersionSet(versionSet)
+            .HasApiVersion(new ApiVersion(1, 0));
 
-        focuses.MapPost("/focuses", async (
-            CreateFocus.Command command, ISender sender, CancellationToken cancellationToken) =>
+        equipment.MapPost("/equipment", async (
+            CreateEquipment.Command command, ISender sender, CancellationToken cancellationToken) =>
         {
             var id = await sender.Send(command, cancellationToken);
-            return Results.Created($"/guide/focuses/{id}", new { id });
+            return Results.Created($"/equipment/{id}", new { id });
         })
-        .WithName("CreateFocus")
-        .WithSummary("Create a focus (a named label attached to configs).")
+        .WithName("CreateEquipment")
+        .WithSummary("Add a piece of hardware to inventory. Pushes an EquipmentCreated event to connected clients.")
         .RequireAuthorization();
 
         return app;
@@ -689,11 +746,11 @@ public static class TesterGuideEndpoints
 }
 ```
 
-Group your routes under one prefix (`/guide` here) and give each group a Swagger tag, so
-the API explorer stays navigable as the module grows. Then map it in `Program.cs`:
+Group your routes under one tag, so the API explorer stays navigable as the module grows.
+Then map it in `Program.cs`:
 
 ```csharp
-app.MapTesterGuideEndpoints(versionSet);
+app.MapEquipmentEndpoints(versionSet);
 ```
 
 `RequireAuthorization()` goes on writes. Reads in this repository are open; that is a
@@ -718,29 +775,33 @@ database and no web server.
 
 ```csharp
 [Fact]
-public void Create_rejects_an_empty_name() =>
-    Assert.Throws<DomainException>(() => Focus.Create("  ", null));
+public void Create_with_invalid_input_throws() =>
+    Assert.Throws<DomainException>(() => EquipmentAsset.Create("", EquipmentCategory.Laptop, "LAP-001"));
 ```
 
 **Handler tests** use hand-written fakes of the Application interfaces — see
-`tests/CleanArch.UnitTests/Fakes.cs` for the existing ones (`FakeStudentRepository` and
-friends are simple in-memory dictionaries, not mocking-framework setups):
+`tests/CleanArch.UnitTests/EquipmentFakes.cs` and `OnboardingFakes.cs` for the existing ones
+(simple in-memory dictionaries, not mocking-framework setups):
 
 ```csharp
 [Fact]
-public async Task CreateFocus_stores_the_focus()
+public async Task Creates_the_asset_and_publishes_an_EquipmentCreated_event()
 {
-    var repository = new FakeFocusRepository();
-    var handler = new CreateFocus.Handler(repository);
+    var repository = new FakeEquipmentRepository();
+    var realtime = new FakeRealtimeDispatch();
+    var handler = new CreateEquipment.Handler(repository, realtime);
 
-    var id = await handler.Handle(new CreateFocus.Command("Regression", null), default);
+    var id = await handler.Handle(
+        new CreateEquipment.Command("ThinkPad X1", EquipmentCategory.Laptop, "LAP-001"), default);
 
-    Assert.NotNull(await repository.GetAsync(id, default));
+    Assert.Single(repository.Added);
 }
 ```
 
-There is also `tests/CleanArch.Api.IntegrationTests/` for tests that need the real host —
-use it for the wiring you cannot check in isolation, not as your default.
+There is also `tests/CleanArch.Api.IntegrationTests/` for tests that need real EF Core and a
+real database — use it for the wiring you cannot check in isolation, not as your default.
+[Guide 80](80-testing.md) covers the split, and what this repository's integration tests
+actually look like, in full.
 
 ---
 
@@ -748,52 +809,66 @@ use it for the wiring you cannot check in isolation, not as your default.
 
 Two sanctioned ways. Never a third.
 
-### Synchronous reads — a published contract
+### Synchronous calls — a published contract
 
-The module that **owns** the data publishes an interface in its `Contracts` project; you
-reference that project and depend on the interface. `TesterGuide` reads test-plan content
-this way:
+The module that **owns** the data or the action publishes an interface in its `Contracts`
+project; the caller references that project and depends on the interface. This covers both
+plain reads and simple actions that either fully succeed or fully fail within one call —
+`Onboarding` reserves equipment this way:
 
 ```csharp
-// TestPlans.Contracts/ITestPlanCatalog.cs — owned by TestPlans, referenced by TesterGuide
-public interface ITestPlanCatalog
+// Equipment.Contracts/IEquipmentReservationService.cs — owned by Equipment, referenced by Onboarding
+public interface IEquipmentReservationService
 {
-    Task<TestPlanTree?> GetTreeAsync(Guid testPlanId, CancellationToken ct);
-    Task<bool> VersionExistsAsync(Guid testPlanId, Guid versionId, CancellationToken ct);
+    Task<EquipmentReservationResult> ReserveAsync(
+        Guid onboardingRequestId, string category, CancellationToken cancellationToken);
+
+    Task ReleaseAsync(Guid onboardingRequestId, CancellationToken cancellationToken);
 }
 ```
 
-`TesterGuide.Application.csproj` references `TestPlans.Contracts.csproj` and nothing else
-of theirs. The implementation lives in `TestPlans.Infrastructure` and owns the database
-access. Composition happens in your application layer — never a cross-database join.
+`Onboarding.Application.csproj` references `Equipment.Contracts.csproj` and nothing else of
+theirs. The implementation lives in `Equipment.Infrastructure` and owns the database
+access. Composition happens in the caller's application layer — never a cross-database
+join.
 
-### Asynchronous writes — the outbox
+### When a process needs to survive a crash — the outbox
 
-When your module must cause a write in another module's database, you cannot do it in your
-transaction. You write an **outbox message** in the same transaction as your own change,
-and a background processor delivers it afterwards:
+A synchronous contract call is fine as long as the caller is still running to react to the
+result. A multi-step process — reserve equipment, allocate a licence, provision access,
+compensating whichever of those already succeeded if a later step fails — is not something
+you want to keep only in memory, because a process restart between steps 2 and 3 would
+strand it. `Onboarding` solves this by driving **itself** through its own outbox: each step,
+on success, enqueues the message for the next step in the same transaction as its own
+change, and a background processor delivers those messages one at a time — including after
+a restart, because the queue lives in the database, not in memory:
 
 ```csharp
-services.AddScoped<ITesterGuideOutbox, TesterGuideOutbox>();
-services.AddOutboxProcessing<TesterGuideDbContext, TesterGuideOutboxDispatcher>();
-services.AddOutboxAdmin<TesterGuideDbContext>();
+services.AddOutboxWriter<OnboardingDbContext>();
+services.AddOutboxAdmin<OnboardingDbContext>();
+services.AddOutboxProcessing<OnboardingDbContext, OnboardingOutboxDispatcher>();
 ```
 
 You also add `DbSet<OutboxMessage> Outbox` and `ApplyOutboxConfiguration()` to your
-`DbContext`, and a new migration for the table. Delivery is **at-least-once**, so the
-consumer on the other side must be idempotent. The full pattern — sagas, compensation,
-dead-lettering, replay — is its own guide.
+`DbContext`, and a migration for the table. This is a **self-directed** saga: `Onboarding`'s
+own dispatcher still calls into `Equipment`'s published contract synchronously from
+Onboarding's side, exactly as in the previous section — the outbox's job is only to
+guarantee the *next* step still happens even if the process dies right after this one
+committed. [Guide 60](60-talking-across-modules.md) covers the full pattern, including
+compensation and why a business failure (no stock left) and an unexpected exception (a bug)
+are handled completely differently.
 
 > ### The trap that will cost you an afternoon
 >
-> The shared `IOutbox` abstraction is registered as an **open generic**, so only one module
-> can own it. If a second module also registers `IOutbox`, DI resolution is
-> last-registration-wins and the first module's outbox silently starts writing to the wrong
-> database.
->
-> That is why every module after the first defines its **own** writer interface —
-> `ITesterGuideOutbox`, `IStudentOutbox` — pointing at its own table. Follow that pattern;
-> the failure mode if you don't is silent and intermittent.
+> The shared `IOutbox` abstraction is a plain, non-keyed interface, so only **one** module
+> in the whole process can safely call `AddOutboxWriter<TContext>()` and then inject bare
+> `IOutbox` — the last module to register it wins, and DI resolution silently hands every
+> consumer the wrong module's writer, pointed at the wrong database. Right now only
+> `Onboarding` does this (`Equipment` has no outbox at all), so the trap is dormant. The
+> moment a **second** module needs to enqueue its own messages, it must not also inject
+> bare `IOutbox` — it needs its own module-specific writer interface (following the same
+> shape: an interface plus a small implementation over its own `DbContext`) pointing at its
+> own table. The failure mode if you don't is silent and intermittent.
 
 ### What is never allowed
 
@@ -854,7 +929,7 @@ Then:
 | `Unable to create a DbContext` from `dotnet ef` | No design-time factory, or `--startup-project` missing | [Chapter 9.4](#94-the-design-time-factory) |
 | `NU1010: no PackageVersion` | Package not in `Directory.Packages.props` | Add a `<PackageVersion>` entry centrally |
 | `Cannot consume scoped service … from singleton` | Used the one-argument `AddDbContext` overload | Use `(sp, options) => …` so the audit interceptor resolves |
-| Another module's outbox messages stop being delivered | Two modules registered the open-generic `IOutbox` | Give your module its own writer interface — see the trap in [chapter 16](#16-connecting-to-other-modules) |
+| Another module's outbox messages stop being delivered | Two modules both injected the shared `IOutbox` | Give the second module its own writer interface — see the trap in [chapter 16](#16-connecting-to-other-modules) |
 | Build fails on an unused `using` | `TreatWarningsAsErrors` is inherited from the root props | Fix it — that is the gate working |
 | `ConnectionStrings:<Module> is not configured` | The key is missing from configuration | [Chapter 12](#12-step-8--connection-string-and-host-wiring) |
 | Domain project won't compile after adding EF | You added a reference that points outward | Introduce an interface in Application instead |
@@ -926,7 +1001,7 @@ dotnet build-server shutdown                    # if the compiler runs out of me
 | **Pipeline behaviour** | Cross-cutting code wrapped around every handler — logging, validation, transactions, audit |
 | **Query** | A request that only reads. Carries no command marker, so it skips transactions and audit |
 | **Repository** | An interface in the Application layer describing the persistence a use case needs |
-| **Saga** | A multi-step process across databases, glued by events, with compensating actions instead of rollback |
+| **Saga** | A multi-step process, glued by durable state rather than a single transaction, with compensating actions instead of rollback |
 | **System of record** | The authoritative owner of a piece of data. Other modules reference it by id |
 | **Unit of work** | Committing everything a request changed as one transaction — here, the module's `TransactionBehavior` |
 | **Value object** | A domain type with no identity, defined by its values and validated on construction |
@@ -975,5 +1050,6 @@ Plus four edits outside the module:
 - **[Auditing — who changed what](40-auditing.md)** — your module's writes are already
   being captured if you called `AddAuditChangeTracking()`; that guide explains what you
   get and how to make it trustworthy.
-- The cross-module messaging guide (planned) — for the outbox, sagas and idempotency in
-  full, once your module needs to write into someone else's database.
+- **[Talking across modules](60-talking-across-modules.md)** — the outbox, sagas and
+  idempotency in full, once your module needs a multi-step process that must survive a
+  restart, or a write into someone else's database.

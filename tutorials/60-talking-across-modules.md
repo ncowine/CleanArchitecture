@@ -1,13 +1,13 @@
 # Talking Across Modules
 
 **Who this is for:** someone whose module needs something from another module — a piece of
-data, or a change made over there — and who has just discovered that the obvious way to do
-it isn't available.
+data, an action performed over there, or a multi-step process that must survive a restart —
+and who has just discovered that the obvious way to do it isn't available.
 
-**What you'll be able to do by the end:** read another module's data through a published
-contract, cause a write in another module's database reliably, make the receiving end safe
-against duplicate delivery, and build a two-step process that undoes itself when the second
-step says no.
+**What you'll be able to do by the end:** read another module's data (or trigger a simple
+action in it) through a published contract, build a multi-step process that survives a
+crash between steps, make each step safe against being run twice, and undo whichever earlier
+steps already succeeded when a later one says no.
 
 **What you need first:** a module of your own ([guide 30](30-add-a-module.md)), and one
 feature in it that works.
@@ -20,17 +20,17 @@ feature in it that works.
 |---|---|---|
 | 1 | [The problem](#1-the-problem) | Understand why you can't just do it |
 | 2 | [Two sanctioned routes](#2-two-sanctioned-routes) | Pick the right one for your case |
-| 3 | [Reads — published contracts](#3-reads--published-contracts) | The easy half |
-| 4 | [Why writes need an outbox](#4-why-writes-need-an-outbox) | The dual-write problem |
+| 3 | [Reads and simple actions — published contracts](#3-reads-and-simple-actions--published-contracts) | The easy half |
+| 4 | [Why a multi-step process needs the outbox](#4-why-a-multi-step-process-needs-the-outbox) | Durable state instead of memory |
 | 5 | [What a saga is](#5-what-a-saga-is) | The vocabulary, before the code |
-| 6 | [Step 1 — Define the event](#6-step-1--define-the-event) | A record with the ids |
-| 7 | [Step 2 — Enqueue it atomically](#7-step-2--enqueue-it-atomically) | One line, in the right place |
-| 8 | [Step 3 — Publish the receiving contract](#8-step-3--publish-the-receiving-contract) | The other module's entry point |
-| 9 | [Step 4 — Implement the consumer](#9-step-4--implement-the-consumer) | Where idempotency lives |
-| 10 | [Step 5 — Route it in the dispatcher](#10-step-5--route-it-in-the-dispatcher) | Type name to method call |
-| 11 | [Step 6 — Register the pieces](#11-step-6--register-the-pieces) | Three extension methods |
-| 12 | [Idempotency — three strategies](#12-idempotency--three-strategies) | Pick one, deliberately |
-| 13 | [Compensation — the two-leg saga](#13-compensation--the-two-leg-saga) | When step two says no |
+| 6 | [Step 1 — Define the step messages](#6-step-1--define-the-step-messages) | A record per step, ids only |
+| 7 | [Step 2 — Enqueue the first step atomically](#7-step-2--enqueue-the-first-step-atomically) | One line, in the right place |
+| 8 | [Step 3 — The published contract the saga calls](#8-step-3--the-published-contract-the-saga-calls) | The other module's entry point |
+| 9 | [Step 4 — Route each step in the dispatcher](#9-step-4--route-each-step-in-the-dispatcher) | Business failure vs. genuine failure |
+| 10 | [Step 5 — Register the pieces](#10-step-5--register-the-pieces) | Three extension methods |
+| 11 | [Idempotency — two strategies, and a third you might need](#11-idempotency--two-strategies-and-a-third-you-might-need) | Pick one, deliberately |
+| 12 | [Compensation — the saga unwinding itself](#12-compensation--the-saga-unwinding-itself) | When a later step says no |
+| 13 | [Orchestration vs. choreography](#13-orchestration-vs-choreography) | Two shapes for the same problem |
 | 14 | [When delivery keeps failing](#14-when-delivery-keeps-failing) | Retry, dead-letter, replay |
 | 15 | [Correlation across the hop](#15-correlation-across-the-hop) | Keeping one flow traceable |
 | 16 | [The traps](#16-the-traps) | Four ways to lose an afternoon |
@@ -47,15 +47,22 @@ Your module owns its database. So does every other module. That is the arrangeme
 [guide 30](30-add-a-module.md#2-why-each-module-owns-its-database) explains why it's worth
 having.
 
-Now you need this: *"when a library fine pushes a student over the limit, place a hold on
-that student."* The fine lives in `library.db`. The hold lives in `students.db`.
+Now you need this: *"approving an onboarding request should reserve a laptop, allocate a
+licence, and provision system access — and if any of those fails, undo whichever of the
+earlier ones already succeeded."* The equipment lives in `equipment.db`. The onboarding
+request, and the record of how far the process got, lives in `onboarding.db`.
 
-The instinct is to inject the other module's `DbContext` and write both. Two reasons not to:
+The instinct is to inject the other module's `DbContext` and do it all in one method. Two
+reasons not to:
 
-1. **It deletes the boundary.** The moment `Library` writes to `students.db`, the Students
-   module can no longer change its own schema, and nobody will find out until it breaks.
-2. **It doesn't actually work.** A database transaction lives inside **one** database. There
-   is no `BEGIN TRAN` spanning both files. You would commit one and hope for the other.
+1. **It deletes the boundary.** The moment `Onboarding` writes to `equipment.db` directly,
+   the Equipment module can no longer change its own schema, and nobody will find out until
+   it breaks.
+2. **It doesn't actually work, past the first step.** A database transaction lives inside
+   **one** database. There is no `BEGIN TRAN` spanning both files. Reserving the equipment
+   and recording the saga's progress cannot commit as a single atomic unit — so if the
+   process dies right after the equipment is reserved but before that fact is recorded,
+   nothing knows the reservation exists.
 
 That second point is the hard constraint. Everything in this guide follows from it.
 
@@ -70,76 +77,94 @@ That second point is the hard constraint. Everything in this guide follows from 
 
 | You need | Route | Consistency | Chapter |
 |---|---|---|---|
-| To **read** something the other module owns | A published contract, called synchronously | Immediate | [3](#3-reads--published-contracts) |
-| To **cause a write** in the other module | An outbox event, delivered in the background | Eventual | [4](#4-why-writes-need-an-outbox) onward |
+| To **read** something the other module owns, or trigger a **simple action** that either fully succeeds or fully fails in one call | A published contract, called synchronously | Immediate | [3](#3-reads-and-simple-actions--published-contracts) |
+| A **multi-step process** that must survive the caller (or the whole process) dying partway through | The outbox, driving a durable saga | Eventual, but crash-safe | [4](#4-why-a-multi-step-process-needs-the-outbox) onward |
 
 And one route that is never sanctioned: referencing another module's `Infrastructure` or
 `Domain` project, injecting its `DbContext`, or querying its tables.
 
-**How to tell which you need.** Ask whether the caller can proceed if the other side is
-momentarily unavailable. "Does this student exist?" — no, you need the answer now, that's a
-read. "Charge their account" — yes, a few seconds late is fine, that's an event.
+**How to tell which you need.** Ask whether the *whole operation* can safely live inside one
+method call, in memory, for its entire duration. "Is this equipment reserved?" — yes, one
+call, one answer, done. "Reserve equipment, then allocate a licence, then provision access,
+undoing whatever succeeded if a later step fails" — that's three separate outcomes over
+time, and a crash between any two of them must not lose track of where it got to. That's a
+saga.
+
+This repo actually demonstrates **both engines** for that second case side by side —
+`ApproveOnboardingInstant` runs the same three steps synchronously in one method, accepting
+no crash recovery, purely to show the contrast; `ApproveOnboardingStandard` is the durable
+version this guide is about. If you haven't seen the instant version, skim it first — it's
+the same steps with none of the machinery, which makes the machinery easier to justify.
 
 ---
 
-## 3. Reads — published contracts
+## 3. Reads and simple actions — published contracts
 
-The module that **owns** the data publishes an interface in its `*.Contracts` project. That
-project has zero dependencies, so anyone can reference it without dragging along a domain
-model or an ORM.
+The module that **owns** the data or the action publishes an interface in its
+`*.Contracts` project. That project has zero dependencies, so anyone can reference it
+without dragging along a domain model or an ORM.
 
 ```csharp
-// src/Modules/Students/Students.Contracts/IStudentDirectory.cs
-public sealed record StudentSummary(Guid Id, string FullName, string Email, string Status);
-
-public interface IStudentDirectory
+// src/Modules/Equipment/Equipment.Contracts/IEquipmentReservationService.cs
+public interface IEquipmentReservationService
 {
-    Task<StudentSummary?> GetAsync(Guid studentId, CancellationToken cancellationToken);
+    Task<EquipmentReservationResult> ReserveAsync(
+        Guid onboardingRequestId, string category, CancellationToken cancellationToken);
+
+    Task ReleaseAsync(Guid onboardingRequestId, CancellationToken cancellationToken);
 }
+
+public sealed record EquipmentReservationResult(bool Reserved, Guid? EquipmentId, string? Reason);
 ```
 
-Two things to notice, because both are deliberate:
+Three things to notice, because all three are deliberate:
 
-**It returns a `StudentSummary`, not a `Student`.** The aggregate never crosses the
-boundary. The summary carries only the fields outside modules are allowed to depend on — so
-the Students module can restructure `Student` freely, as long as it can still produce these
-four values.
+**It speaks in primitives, not domain types.** `category` is a `string`, not
+`Equipment.Domain.EquipmentCategory` — the consumer (`Onboarding`) never references
+`Equipment.Domain` at all, only `Equipment.Contracts`. Crossing the boundary in domain types
+would force every consumer to reference the owner's internals just to call one method.
 
-**The implementation lives in `Students.Infrastructure`** and owns the database access. The
+**`Reserved: false` is a normal return value, not an exception.** "No laptops in stock" is
+an expected business outcome, and the caller is meant to branch on it — see
+[chapter 9](#9-step-4--route-each-step-in-the-dispatcher) for why that distinction matters a
+lot more once this call is made from a background dispatcher instead of a request.
+
+**The implementation lives in `Equipment.Infrastructure`** and owns the database access. The
 consumer sees an interface and never learns there is a second database involved.
 
-Consuming it is ordinary dependency injection. Your `Application.csproj` references
-`Students.Contracts.csproj` and your handler takes the interface:
+Consuming it is ordinary dependency injection. `Onboarding.Application.csproj` references
+`Equipment.Contracts.csproj` and the handler takes the interface:
 
 ```csharp
-public sealed class Handler : IRequestHandler<Command, Guid>
+public sealed class Handler : IRequestHandler<Command, Result>
 {
-    private readonly IStudentDirectory _students;
-    private readonly ILoanRepository _loans;
+    private readonly IOnboardingRequestRepository _requests;
+    private readonly IEquipmentReservationService _equipment;
 
-    public async Task<Guid> Handle(Command command, CancellationToken cancellationToken)
+    public async Task<Result> Handle(Command command, CancellationToken cancellationToken)
     {
-        var student = await _students.GetAsync(command.StudentId, cancellationToken)
-            ?? throw new DomainException($"No student exists with id '{command.StudentId}'.");
-        // ... proceed, knowing the student is real
+        var request = await _requests.GetAsync(command.OnboardingRequestId, cancellationToken)
+            ?? throw new DomainException($"No onboarding request exists with id '{command.OnboardingRequestId}'.");
+
+        var equipmentResult = await _equipment.ReserveAsync(
+            request.Id, request.RequiredEquipmentCategory, cancellationToken);
+        // ... branch on equipmentResult.Reserved
     }
 }
 ```
 
+That's the actual shape of `ApproveOnboardingInstant.Handler` — a synchronous contract call,
+awaited like any other `Task`, with the result checked like any other value.
+
 ### Composing, not joining
 
-When an endpoint needs data from both sides — a student's loans *and* their name — you fetch
-from each and combine **in the application layer**:
-
-```csharp
-var loans   = await _loans.GetForStudentAsync(studentId, ct);      // library.db
-var student = await _students.GetAsync(studentId, ct);             // students.db, via contract
-return new Response(student?.FullName ?? "(unknown)", loans);
-```
-
-That is two round trips where a monolithic schema would have done one join. Usually
-irrelevant; occasionally a real performance conversation, and the answer then is a
-purpose-built read model rather than a shortcut through the boundary.
+When an endpoint needs data from both sides, you fetch from each and combine **in the
+application layer**, never with a cross-database join. Neither module in this codebase
+currently has an endpoint that reads from both — `GetOnboardingSummary` derives its fields
+from Onboarding's own data alone — but the shape is the same one already familiar from
+[chapter 3's](#3-reads-and-simple-actions--published-contracts) reservation call: fetch
+through each side's own contract, then combine the results as plain values in your handler,
+the same way you'd combine any two variables.
 
 > **Design the contract for the consumer, not the owner.** A contract that returns
 > everything "in case someone needs it" recreates the coupling you were avoiding — now
@@ -147,271 +172,269 @@ purpose-built read model rather than a shortcut through the boundary.
 
 ---
 
-## 4. Why writes need an outbox
+## 4. Why a multi-step process needs the outbox
 
-The naive version of "change my data, then tell the other module" is two operations:
+A single synchronous call, like the reservation above, is safe on its own: it either
+completes and its own database commits, or it throws and nothing does. The trouble starts
+the moment you chain **several** of these across a process that must outlive any one of
+them.
+
+Picture doing the whole saga inline, in one request:
 
 ```csharp
-await _loans.SaveAsync(loan);           // 1. commits to library.db
-await _holds.PlaceHoldAsync(studentId); // 2. writes to students.db
+await _equipment.ReserveAsync(request.Id, category, ct);      // commits to equipment.db
+await _licences.AllocateAsync(request.Id, licenceType, ct);    // commits to... itself
+// process crashes here
+await _access.ProvisionAsync(request.Id, accessLevel, ct);     // never runs
 ```
 
-This is the **dual-write problem**, and it is broken in both directions:
+If the process dies after the second line, the equipment is reserved and a licence is
+allocated — real, committed facts in two different places — and **nothing on disk says the
+onboarding request is even mid-flight.** Restart the process and there is no record to
+resume, and no record to compensate either. That's exactly what `ApproveOnboardingInstant`
+accepts as its tradeoff, deliberately, for the simplicity of having no extra machinery.
 
-- Crash between 1 and 2 → the fine exists, the hold never happens. The modules disagree
-  forever, and nothing knows.
-- Step 2 succeeds, step 1's transaction rolls back → a hold for a fine that doesn't exist.
+### The fix: make "what happens next" part of your own transaction
 
-Retrying doesn't fix it, because the crash can happen inside the retry. Doing them in the
-other order doesn't fix it either. There is no ordering of two independent writes that is
-safe.
-
-### The fix: make the message part of your own transaction
-
-The **transactional outbox** turns two writes into one. Instead of calling the other module,
-you write a row into an `Outbox` table **in your own database, in the same transaction** as
-your business change:
+Instead of holding the sequence in memory, write down **which step comes next** as a row in
+your own database, in the same transaction as the step that just completed:
 
 ```
-   ONE transaction on library.db
-   ┌─────────────────────────────────────┐
-   │  UPDATE Loans SET FineAmount = 25   │
-   │  INSERT INTO Outbox (StudentHold…)  │   ← the message is just another row
-   └─────────────────────────────────────┘
+   Onboarding approves the request
+   ┌──────────────────────────────────────────┐
+   │  UPDATE OnboardingRequests SET ...        │
+   │  INSERT INTO OnboardingSagaStates (...)   │
+   │  INSERT INTO Outbox (ReserveEquipment...) │   ← "do step 1 next" is just a row
+   └──────────────────────────────────────────┘
               │ commits together, or not at all
               ▼
    OutboxProcessor (background, every 2s)
-              │ reads unprocessed rows
+              │ reads the undelivered row
               ▼
-   IStudentHoldService.PlaceHoldAsync(...)   → writes students.db
+   OnboardingOutboxDispatcher.DispatchAsync(...)
+              │ calls IEquipmentReservationService.ReserveAsync(...) — synchronously, same as chapter 3
+              ▼
+   records the outcome, enqueues the NEXT step's row, in one transaction
 ```
 
-Both rows commit together or neither does. The gap is gone.
-
-Delivery then becomes a **separate, retryable step**. It can fail, be retried, and succeed
-later — the message is safely on disk the whole time. The trade you are making, stated
-plainly:
+All three — the business change, the saga's own progress, and "what to do next" — commit
+together or not at all. A crash at any point leaves the last committed row as the honest
+truth of where the saga is, and the next poll picks it up from exactly there. This is what
+makes `ApproveOnboardingStandard` resumable where the instant version isn't: nothing about
+the *steps themselves* changed, only where "what happens next" lives.
 
 | You get | You accept |
 |---|---|
-| The event can never be lost once your change commits | The other module finds out *slightly later* |
-| Delivery retries automatically | Delivery is **at-least-once** — duplicates happen |
-| No coordinator, no distributed locks | Consumers must be **idempotent** |
+| The saga's progress can never be lost once a step commits | Each step happens *slightly later* than the one before, not synchronously in one request |
+| A crash between steps is a delay, not data loss | Delivery is **at-least-once** — a step can run twice |
+| No coordinator, no distributed locks | Every step must be **idempotent** |
 
-That last row is not optional, and [chapter 12](#12-idempotency--three-strategies) is
-entirely about it.
+That last row is not optional, and [chapter 11](#11-idempotency--two-strategies-and-a-third-you-might-need)
+is entirely about it.
 
 ---
 
 ## 5. What a saga is
 
-> A **saga** is a business process spanning several local transactions in different
-> modules, coordinated by **events** rather than by one shared transaction. Each step
-> commits locally and publishes an event; the next step reacts. If a later step fails,
-> earlier steps are undone by **compensating actions** — not by rollback, because you cannot
-> roll back a transaction that has already committed in another database.
+> A **saga** is a business process spanning several steps — often several local
+> transactions in different modules — coordinated by durable state rather than one shared
+> transaction. Each step commits locally and records what happens next; if a later step
+> fails, earlier steps are undone by **compensating actions**, not by rollback, because you
+> cannot roll back a transaction that has already committed.
 
 The vocabulary, once, so the rest of the guide reads cleanly:
 
 | Term | Meaning here |
 |---|---|
-| **Local transaction** | An ordinary transaction inside one module's database. Each saga step is one |
-| **Integration event** | The message one module publishes for another. A plain record |
-| **Forward leg** | The happy path — request the hold, place the hold |
-| **Reverse / compensating leg** | The undo, when a later step rejects |
-| **Compensating action** | A *new* operation that semantically reverses a committed one |
-| **Choreography** | Each module reacts to events; no central coordinator. What this repo does |
-| **Orchestration** | One coordinator object drives every step. The alternative |
-| **At-least-once** | The processor may deliver the same message more than once |
+| **Local transaction** | An ordinary transaction inside one module's database. Each saga step commits one |
+| **Step message** | The outbox row that says "do this step next". A plain record |
+| **Forward leg** | The happy path — reserve, allocate, provision |
+| **Reverse / compensating leg** | The undo, when a later step fails |
+| **Compensating action** | A *new* operation that semantically reverses a committed one — `Release`, not "un-reserve" |
+| **Orchestration** | One component drives every step, forward and reverse, and knows the whole sequence. What `Onboarding`'s Standard saga does — see [chapter 13](#13-orchestration-vs-choreography) |
+| **Choreography** | Each module reacts to the other's events independently; no single place knows the whole saga. The heavier alternative — also chapter 13 |
+| **At-least-once** | The processor may deliver the same step message more than once |
 | **Idempotency** | A repeated delivery has no additional effect |
 | **Eventual consistency** | The databases agree *eventually*; briefly, they don't |
 
-**Compensation is not rollback.** If you waive a fine to compensate for a hold that couldn't
-be placed, the fine *was* charged and is now *waived* — two real events, both in the
-history. That is usually what a business actually wants, and it is the only thing available.
+**Compensation is not rollback.** If you release equipment to compensate for a licence pool
+being empty, the equipment *was* reserved and is now *released* — two real, recorded facts,
+not an erased one. That is usually what actually happened, and it's the only thing
+available once the reservation has committed.
 
 ---
 
-## 6. Step 1 — Define the event
+## 6. Step 1 — Define the step messages
 
-A plain record carrying exactly what the consumer needs — ids and values, never objects:
+A plain record per step, carrying only the id needed to look everything else up:
 
 ```csharp
-// src/Modules/Library/Library.Application/Outbox/StudentHoldRequested.cs
-public sealed record StudentHoldRequested(Guid StudentId, string Reason);
-```
+// src/Modules/Onboarding/Onboarding.Application/Outbox/OnboardingSagaMessages.cs
+public sealed record ReserveEquipmentForOnboarding(Guid OnboardingRequestId);
+public sealed record AllocateLicenceForOnboarding(Guid OnboardingRequestId);
+public sealed record ProvisionAccessForOnboarding(Guid OnboardingRequestId);
 
-It lives in the **Application** layer's `Outbox` folder, because the command that publishes
-it needs to see it.
+// Compensation:
+public sealed record ReleaseLicenceForOnboarding(Guid OnboardingRequestId);
+public sealed record ReleaseEquipmentForOnboarding(Guid OnboardingRequestId);
+```
 
 Three rules:
 
-- **Ids and primitives only.** The event is serialised to JSON and read back by a different
-  module, possibly minutes later. A domain object in there is a coupling and a
-  deserialisation hazard.
-- **Name it in the past tense**, after what happened: `StudentWithdrawn`, `LibraryFineAssessed`.
-  `StudentHoldRequested` is named for a *request* because that is genuinely what it is — the
-  Library is asking, and the Students module may say no.
-- **Treat the shape as a published API.** Once messages of that type are on disk, changing
-  the record's fields breaks the deserialisation of anything not yet delivered. Add
-  nullable fields; don't rename or remove.
+- **Ids and primitives only — here, just the one id.** The message is serialised to JSON and
+  read back by a background process, possibly seconds or minutes later. Everything else the
+  step needs (which category, which licence type) is re-loaded fresh from the request row —
+  not carried in the message — so a redelivery always acts on current data, never on a
+  stale copy of it.
+- **Name it for the action to take**, in the imperative: `ReserveEquipmentForOnboarding`, not
+  `EquipmentReserved`. Unlike a plain integration event announcing something that already
+  happened, this *is* the instruction — the saga is telling its future self what to do next.
+- **Treat the shape as a published API**, even though only this module ever reads it. Once
+  messages of that type are on disk, changing the record's fields breaks the deserialisation
+  of anything not yet delivered. Add nullable fields; don't rename or remove.
 
 > The type's **name** is the routing key. `OutboxWriter` stores `typeof(TEvent).Name`, and
-> the dispatcher switches on that string. Renaming the class renames the routing key, and
+> the dispatcher switches on that string. Renaming the record renames the routing key, and
 > any undelivered messages of the old name will fail to route.
 
 ---
 
-## 7. Step 2 — Enqueue it atomically
+## 7. Step 2 — Enqueue the first step atomically
 
-One call, inside the handler, alongside your normal work:
+One call, inside the command that starts the saga:
 
 ```csharp
+// src/Modules/Onboarding/Onboarding.Application/Requests/ApproveOnboardingStandard.cs
 public async Task<Result> Handle(Command command, CancellationToken cancellationToken)
 {
-    var loan = await _loans.GetAsync(command.LoanId, cancellationToken)
-        ?? throw new DomainException($"No loan exists with id '{command.LoanId}'.");
+    var request = await _requests.GetAsync(command.OnboardingRequestId, cancellationToken)
+        ?? throw new DomainException($"No onboarding request exists with id '{command.OnboardingRequestId}'.");
 
-    var priorTotal = await _loans.GetFineTotalAsync(loan.StudentId, cancellationToken);
+    request.Approve();
 
-    loan.AssessFine(command.Amount);
-    var newTotal = priorTotal + command.Amount;
+    var saga = OnboardingSagaState.Start(request.Id);
+    await _sagaStates.AddAsync(saga, cancellationToken);
 
-    _outbox.Enqueue(new LibraryFineAssessed(loan.StudentId, command.Amount));
+    // Atomic with the approval and the saga row above (same transaction): the first step is
+    // reliably queued the moment this commits, even if the process dies immediately after.
+    _outbox.Enqueue(new ReserveEquipmentForOnboarding(request.Id));
 
-    // "Only when required": enqueue on the TRANSITION from under the limit to over it.
-    var holdRequested = priorTotal < HoldThreshold && newTotal >= HoldThreshold;
-    if (holdRequested)
-    {
-        _outbox.Enqueue(new StudentHoldRequested(
-            loan.StudentId,
-            $"Outstanding library fines of {newTotal:0.00} exceed the {HoldThreshold:0.00} limit."));
-    }
-
-    return new Result(newTotal, holdRequested);
+    return new Result(saga.Status.ToString());
 }
 ```
-
-That is `src/Modules/Library/Library.Application/Loans/AssessFine.cs`, and two things in it
-are worth pausing on.
 
 **`Enqueue` does not save.** It adds a row to the change tracker and returns. The module's
-`TransactionBehavior` commits the loan *and* the outbox row together at the end of the
-request. That shared transaction is the entire mechanism — it is why the event cannot be
-lost, and it is why the handler stays this simple.
+`TransactionBehavior` commits the approval, the saga state row, *and* the outbox row
+together at the end of the request. That shared transaction is the entire mechanism — it is
+why the first step can never be silently lost, and why the handler stays this simple.
 
-**Publish on the transition, not on the state.** `priorTotal < threshold && newTotal >= threshold`
-fires once, on the crossing. Publishing whenever `newTotal >= threshold` would enqueue a hold
-request on *every subsequent fine*, and you would be relying on the consumer's idempotency to
-clean up a mess you created. Idempotency is a safety net for redelivery, not a licence to
-publish carelessly.
-
-The same discipline appears in `WithdrawStudent`:
-
-```csharp
-var wasActive = student.Status != StudentStatus.Withdrawn;
-student.Withdraw();
-if (wasActive)                                   // only on the transition
-    _outbox.Enqueue(new StudentWithdrawn(student.Id));
-```
+The same discipline continues inside the dispatcher, one level down: every step handler
+enqueues **exactly one** follow-up message — the next forward step on success, or the first
+compensating step on failure — from the same branch that decided the outcome, in the same
+transaction as recording that outcome. Never both, never neither. [Chapter 12](#12-compensation--the-saga-unwinding-itself)
+is the worked example.
 
 ---
 
-## 8. Step 3 — Publish the receiving contract
+## 8. Step 3 — The published contract the saga calls
 
-The **receiving** module publishes the entry point, in its `*.Contracts` project:
+Nothing new here beyond [chapter 3](#3-reads-and-simple-actions--published-contracts) — the
+saga's steps call published contracts exactly the way any other consumer would.
+`IEquipmentReservationService` is both this saga's step 1/reverse-leg dependency *and* an
+ordinary contract anyone else could call. The saga doesn't get a special calling convention;
+it's just code that happens to run from a background dispatcher instead of an HTTP request.
 
-```csharp
-// src/Modules/Students/Students.Contracts/IStudentHoldService.cs
-public interface IStudentHoldService
-{
-    Task PlaceHoldAsync(Guid messageId, Guid studentId, string reason, CancellationToken cancellationToken);
-}
-```
-
-**Note the first parameter.** `messageId` is the outbox row's id, and it is stable across
-redeliveries — the same message retried is the same id. It is therefore the perfect
-idempotency key, and passing it is what makes the consumer's job possible at all.
-
-Every write contract in this repository takes it. If you write one that doesn't, you have
-given the consumer no way to tell a retry from a genuine second request.
+**Note the parameter that plays the idempotency-key role.** `onboardingRequestId` is stable
+across redeliveries — the same saga step retried is the same id — so it doubles as the
+dedupe key ([chapter 11](#11-idempotency--two-strategies-and-a-third-you-might-need)). It
+doesn't need to be an abstract generated message id the way a pure integration-event
+contract's would: at most one reservation will ever exist per onboarding request, which
+makes the request's own id a more meaningful key than a generated one would be.
 
 ---
 
-## 9. Step 4 — Implement the consumer
+## 9. Step 4 — Route each step in the dispatcher
 
-In the receiving module's `Infrastructure`, against **its own** `DbContext`. Two differences
-from a normal handler:
-
-1. It **does** call `SaveChanges` — the dispatcher runs on a background thread, outside any
-   request, so there is no `TransactionBehavior` wrapping it.
-2. It **must** be idempotent.
-
-The simplest case is naturally idempotent — `FineWaiver` looks at current state and does
-nothing if there is nothing to do:
+One dispatcher per module: a switch from the message's type name to the step logic. This is
+the real `OnboardingOutboxDispatcher`, one case shown in full:
 
 ```csharp
-public async Task WaiveStudentFinesAsync(Guid studentId, string reason, CancellationToken ct)
+internal sealed class OnboardingOutboxDispatcher : IOutboxDispatcher<OnboardingDbContext>
 {
-    var finedLoans = await _db.Loans
-        .Where(loan => loan.StudentId == studentId && loan.FineAmount > 0m)
-        .ToListAsync(ct);
+    private readonly OnboardingDbContext _db;
+    private readonly IEquipmentReservationService _equipment;
+    private readonly ILicenceAllocationService _licences;
+    private readonly IAccessProvisioningService _access;
+    private readonly IOutbox _outbox;
 
-    if (finedLoans.Count == 0) return;      // already waived — a redelivery is a no-op
-
-    foreach (var loan in finedLoans) loan.WaiveFine();
-    await _db.SaveChangesAsync(ct);
-}
-```
-
----
-
-## 10. Step 5 — Route it in the dispatcher
-
-Each module has one dispatcher: a switch from the event's type name to the contract call.
-
-```csharp
-internal sealed class LibraryOutboxDispatcher : IOutboxDispatcher<LibraryDbContext>
-{
-    private readonly IStudentHoldService _holds;
-    private readonly IStudentBilling _billing;
-
-    public Task DispatchAsync(Guid messageId, string type, string content, CancellationToken ct)
+    private async Task HandleReserveEquipmentAsync(Guid onboardingRequestId, CancellationToken cancellationToken)
     {
-        switch (type)
+        var (request, saga) = await LoadAsync(onboardingRequestId, cancellationToken);
+
+        var result = await _equipment.ReserveAsync(onboardingRequestId, request.RequiredEquipmentCategory, cancellationToken);
+        if (!result.Reserved)
         {
-            case nameof(StudentHoldRequested):
-                var hold = JsonSerializer.Deserialize<StudentHoldRequested>(content)
-                    ?? throw new InvalidOperationException($"Outbox message {messageId} had empty content.");
-                // The message id is the idempotency key — placing the same hold twice is a no-op.
-                return _holds.PlaceHoldAsync(messageId, hold.StudentId, hold.Reason, ct);
-
-            case nameof(LibraryFineAssessed):
-                var fine = JsonSerializer.Deserialize<LibraryFineAssessed>(content)
-                    ?? throw new InvalidOperationException($"Outbox message {messageId} had empty content.");
-                return _billing.ChargeLibraryFineAsync(messageId, fine.StudentId, fine.Amount, ct);
-
-            default:
-                throw new InvalidOperationException($"Unknown outbox message type '{type}'.");
+            request.RecordEquipmentFailed();
+            request.MarkFailed(result.Reason!);
+            saga.MarkFailed(); // first step — nothing to compensate
+            await _db.SaveChangesAsync(cancellationToken);
+            return;
         }
+
+        request.RecordEquipmentReserved(result.EquipmentId!.Value);
+        saga.AdvanceTo(SagaStep.AllocateLicence);
+        Enqueue(new AllocateLicenceForOnboarding(onboardingRequestId));
+        await _db.SaveChangesAsync(cancellationToken);
     }
 }
 ```
 
-The `default` case throwing is deliberate. An unrecognised type is a bug — usually a renamed
-event or a missing case — and throwing sends the message down the retry-then-dead-letter
-path where a human will find it. Silently ignoring it would lose the message with no trace.
+(`Enqueue` here is a one-line private wrapper around the injected `IOutbox`, kept so every
+step handler reads the same way. It's `_outbox.Enqueue` underneath.)
+
+### Business failure vs. genuine failure — the distinction that matters most here
+
+`result.Reserved == false` ("no laptops in stock") is handled **inline, without throwing** —
+the method records the failure and returns normally. This is the single most important
+design decision in the whole dispatcher, and it's easy to get backwards:
+
+> If a business outcome like "nothing in stock" were allowed to throw, the generic
+> `OutboxProcessor` (which knows nothing about onboarding, licences, or equipment) would
+> treat it exactly like a genuine delivery failure — retry it twice more, two seconds apart,
+> then dead-letter it. An entirely ordinary, expected business result would end up parked
+> next to real bugs, indistinguishable from them, on the dashboard an operator watches for
+> actual problems.
+
+Only a **genuinely unexpected** condition — the request or saga row is simply missing, which
+is a data-integrity bug, not a business outcome — is allowed to throw:
+
+```csharp
+private async Task<(OnboardingRequest Request, OnboardingSagaState Saga)> LoadAsync(
+    Guid onboardingRequestId, CancellationToken cancellationToken)
+{
+    var request = await _db.Requests.FirstOrDefaultAsync(r => r.Id == onboardingRequestId, cancellationToken)
+        ?? throw new InvalidOperationException($"Onboarding request '{onboardingRequestId}' does not exist.");
+    // ...
+}
+```
+
+*That* is correctly left to the outbox's normal retry-then-dead-letter path — there is no
+sensible business handling for "the row I need doesn't exist," and a human should see it.
+
+The `default` case in the outer `switch` throwing on an unrecognised type is the same
+principle: an unrecognised type is a bug (usually a renamed message, or a missing `case`),
+so it takes the retry-then-dead-letter path where a human will find it.
 
 ---
 
-## 11. Step 6 — Register the pieces
+## 10. Step 5 — Register the pieces
 
-Three extension methods, in the module's `Add<Module>Module`:
+Three extension methods, in the module's `AddOnboardingModule`:
 
 ```csharp
-services.AddScoped<ILibraryOutbox, LibraryOutbox>();                        // the writer
-services.AddOutboxProcessing<LibraryDbContext, LibraryOutboxDispatcher>();  // background delivery
-services.AddOutboxAdmin<LibraryDbContext>();                                // dead-letter + replay
+services.AddOutboxWriter<OnboardingDbContext>();                              // the writer (IOutbox)
+services.AddOutboxProcessing<OnboardingDbContext, OnboardingOutboxDispatcher>(); // background delivery
+services.AddOutboxAdmin<OnboardingDbContext>();                                // dead-letter + replay
 ```
 
 And the table itself, in the module's `DbContext`:
@@ -421,143 +444,193 @@ public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
 
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
-    modelBuilder.ApplyConfigurationsFromAssembly(typeof(LibraryDbContext).Assembly);
+    modelBuilder.ApplyConfigurationsFromAssembly(typeof(OnboardingDbContext).Assembly);
     modelBuilder.ApplyOutboxConfiguration();
 }
 ```
 
-Then a migration for the new table. The receiving module registers its consumer as an
-ordinary service:
-
-```csharp
-services.AddScoped<IStudentHoldService, StudentHoldService>();
-```
+Then a migration for the new table. Because `Onboarding` is the only module in this
+codebase that currently needs an outbox, it can inject the shared `IOutbox` directly rather
+than defining its own writer interface — see the trap in [chapter 16](#16-the-traps) before
+you copy that if you're adding a **second** outbox-using module.
 
 ---
 
-## 12. Idempotency — three strategies
+## 11. Idempotency — two strategies, and a third you might need
 
-At-least-once delivery means **your consumer will run twice**. Not might — will, eventually,
-when a process dies after doing the work but before marking the message processed. If it
-double-charges when that happens, you have a financial bug with no stack trace.
+At-least-once delivery means **a step will run twice**. Not might — will, eventually, when a
+process dies after doing the work but before the outbox marks the message delivered. If a
+step double-charges or double-reserves when that happens, you have a bug with no stack
+trace.
 
-This repository uses three strategies. Pick deliberately.
+This codebase uses two strategies for its steps; a third exists for cases neither fits.
 
-### 1. By existing state — the cleanest, when it fits
+### 1. By existing state, checked first
 
-Look at current state and do nothing if the work is already done. `FineWaiver` (above) and
-`LibraryWithdrawalService` both work this way: no outstanding fines, no active loans,
-nothing to do.
+Look at current state and return the existing outcome if the work is already done. This is
+`IEquipmentReservationService.ReserveAsync`'s **first** line:
+
+```csharp
+public async Task<EquipmentReservationResult> ReserveAsync(Guid onboardingRequestId, string category, CancellationToken cancellationToken)
+{
+    // Idempotent: a redelivery/retry for the same request finds its own reservation already made.
+    var already = await _db.Equipment
+        .FirstOrDefaultAsync(asset => asset.ReservedForOnboardingRequestId == onboardingRequestId, cancellationToken);
+    if (already is not null)
+    {
+        return new EquipmentReservationResult(true, already.Id, null);
+    }
+    // ... otherwise reserve one
+}
+```
 
 **Use it when** the operation is naturally "make it so" rather than "add one more".
-**Don't** when the operation is additive — "charge £5" is not idempotent by state, because
-the state after two charges looks like a legitimate £10.
+`ReleaseAsync` is idempotent the same way, from the other direction: if nothing is reserved
+for that request, releasing it is a no-op, not an error.
 
-### 2. By a marker row keyed on the message id
+### 2. By a marker field on the thing you create
 
-Record something whose primary key **is** the message id, then check for it first:
+Notice `ReservedForOnboardingRequestId` in the query above is not a *separate* dedupe table
+— it's the same field that already records "who holds this equipment", doing double duty as
+the idempotency marker. No extra table, and the field is useful on its own merits (it's how
+`GetOnboardingRequest` shows which equipment a request holds) as well as for dedup.
 
-```csharp
-var alreadyAccepted = await _db.Holds.AnyAsync(hold => hold.Id == messageId, ct);
-var alreadyRejected = await _db.Outbox.AnyAsync(message => message.Id == messageId, ct);
-if (alreadyAccepted || alreadyRejected) return;
-```
+### 3. A marker row keyed on the message id — when neither fits
 
-That is `StudentHoldService`, and it checks **two** places because the message has two
-possible outcomes: accepted (a `StudentHold` row with `Id = messageId`) or rejected (an
-outbox row with `Id = messageId`). Either one means "this message has been dealt with".
-
-**Why this matters:** a consumer that can reject must make the *rejection* idempotent too.
-Guard only the success path and a redelivery of a rejected message publishes the
-compensation event a second time — and now the compensating leg runs twice.
-
-### 3. By a marker field on the thing you create
-
-The record you write carries the message id, so it is its own dedupe marker:
+Sometimes the operation is genuinely additive ("charge £5" is not idempotent by state — two
+charges of £5 look exactly like one legitimate £10 charge) and there's no natural field to
+attach a marker to. The fix, not currently needed anywhere in this codebase, is a row whose
+primary key **is** the message id, checked before acting:
 
 ```csharp
-if (account is not null && account.HasEntryFrom(messageId)) return;
-
-account.Charge(amount, ChargeCategory.LibraryFine, "Library fine", today, messageId);
-                                                                 // ^^^^^^^^^ SourceReference
+var alreadyProcessed = await _db.ProcessedMessages.AnyAsync(m => m.Id == messageId, ct);
+if (alreadyProcessed) return;
 ```
 
-`StudentBilling` does this. No extra table, and the ledger gains a useful provenance field
-for free — you can trace any charge back to the event that caused it.
+Reach for this only when 1 and 2 genuinely don't fit — it's the one that costs an extra
+table.
 
 ---
 
-## 13. Compensation — the two-leg saga
+## 12. Compensation — the saga unwinding itself
 
-Everything so far delivers one event one way. A saga adds the interesting part: what happens
-when the receiver says **no**.
-
-The worked example spans four files. Follow it in order.
+Everything so far runs the forward leg. The interesting part is what happens when a step
+says **no** — the worked example spans the same one dispatcher, calling into `Equipment`
+twice: once forward, once to undo.
 
 ```
-  1. Library: AssessFine
-     fines cross the limit → enqueue StudentHoldRequested        [library.db, one transaction]
+  1. ApproveOnboardingStandard: enqueue ReserveEquipmentForOnboarding    [onboarding.db, one transaction]
                                         │
-  2. LibraryOutboxDispatcher            ▼
-     StudentHoldRequested → IStudentHoldService.PlaceHoldAsync(messageId, …)
-                                        │
-  3. Students: StudentHoldService       ▼                        [students.db, one transaction]
-     student active?  ──yes──► record the StudentHold. Done.
+  2. OnboardingOutboxDispatcher         ▼
+     ReserveEquipmentForOnboarding → IEquipmentReservationService.ReserveAsync(...)  [SYNC call into Equipment]
+       succeeds ──► record Completed, enqueue AllocateLicenceForOnboarding
               │
-              └──no (withdrawn / graduated / gone)
-                   └─► enqueue StudentHoldRejected               [REVERSE LEG STARTS]
+              └─ fails (no stock) ──► record Failed, saga.MarkFailed() — nothing to compensate yet
                                         │
-  4. StudentsOutboxDispatcher           ▼
-     StudentHoldRejected → IFineWaiver.WaiveStudentFinesAsync(…)
+  3. OnboardingOutboxDispatcher         ▼
+     AllocateLicenceForOnboarding → ILicenceAllocationService.AllocateAsync(...)
+       succeeds ──► record Completed, enqueue ProvisionAccessForOnboarding
+              │
+              └─ fails (pool empty) ──► record Failed, enqueue ReleaseEquipmentForOnboarding   [REVERSE LEG]
                                         │
-  5. Library: FineWaiver                ▼                        [library.db, one transaction]
-     waives the fines that triggered the request. Compensated.
+  4. OnboardingOutboxDispatcher         ▼
+     ReleaseEquipmentForOnboarding → IEquipmentReservationService.ReleaseAsync(...)
+       record Compensated, saga.MarkCompensated()
 ```
 
-The decision point, from `StudentHoldService`:
+If it's the **third** step (access) that fails instead, the reverse leg is one message
+longer — release the licence, *then* enqueue releasing the equipment, exactly the reverse of
+the order they were acquired in:
 
 ```csharp
-if (status is null or StudentStatus.Graduated or StudentStatus.Withdrawn)
+private async Task HandleProvisionAccessAsync(Guid onboardingRequestId, CancellationToken cancellationToken)
 {
-    var rejectionReason = status is null
-        ? "Student no longer exists."
-        : $"Student is {status} and cannot be placed on hold.";
+    var (request, saga) = await LoadAsync(onboardingRequestId, cancellationToken);
 
-    _db.Outbox.Add(new OutboxMessage
+    var result = await _access.ProvisionAsync(onboardingRequestId, request.RequiredAccessLevel, cancellationToken);
+    if (!result.Provisioned)
     {
-        Id = messageId,                                  // ← ties the legs together AND dedupes
-        Type = nameof(StudentHoldRejected),
-        Content = JsonSerializer.Serialize(new StudentHoldRejected(studentId, rejectionReason)),
-        OccurredOnUtc = DateTime.UtcNow,
-    });
-}
-else
-{
-    _db.Holds.Add(StudentHold.Place(messageId, studentId, reason, DateTime.UtcNow));
+        request.RecordAccessFailed();
+        request.MarkFailed(result.Reason!);
+        saga.BeginCompensating(SagaStep.AllocateLicence);
+        Enqueue(new ReleaseLicenceForOnboarding(onboardingRequestId));   // one step at a time...
+        await _db.SaveChangesAsync(cancellationToken);
+        return;
+    }
+    // ...
 }
 
-// One transaction: either the hold is recorded, or the rejection event is enqueued.
-await _db.SaveChangesAsync(ct);
+private async Task HandleReleaseLicenceAsync(Guid onboardingRequestId, CancellationToken cancellationToken)
+{
+    var (request, saga) = await LoadAsync(onboardingRequestId, cancellationToken);
+
+    await _licences.ReleaseAsync(onboardingRequestId, cancellationToken);
+    request.RecordLicenceCompensated();
+    saga.BeginCompensating(SagaStep.ReserveEquipment);
+    Enqueue(new ReleaseEquipmentForOnboarding(onboardingRequestId));     // ...then the next
+    await _db.SaveChangesAsync(cancellationToken);
+}
 ```
 
-Three things this does at once, and it is worth naming them separately:
+Three things worth naming separately:
 
-1. **The rejection is published through the outbox too** — in the same transaction as the
-   decision not to place the hold. The reverse leg gets the same delivery guarantee as the
-   forward one.
-2. **The outbox row's id is the incoming `messageId`**, which both dedupes the rejection and
-   makes the two legs traceable to each other.
-3. **Either/or, one transaction.** There is no state where both a hold and a rejection exist.
+1. **The compensating step is enqueued from the exact branch that decided to fail** — in the
+   same transaction as recording the failure. The reverse leg gets the same durability
+   guarantee as the forward one.
+2. **Compensation unwinds one step at a time**, each its own message, in the reverse of the
+   order the steps ran forward. There is no "undo everything" message — just the same
+   mechanism, run backwards.
+3. **`MarkFailed` and `RecordAccessFailed` happen immediately**, before compensation has
+   necessarily finished. The *business outcome* (this request has failed) is known the
+   moment the failing step reports it; the *cleanup* (releasing what already succeeded) is a
+   separate fact that catches up a step at a time. Reading the request mid-compensation is
+   completely valid — it shows `Status: Failed` with some steps still `Completed`, briefly,
+   until the next poll advances them to `Compensated`.
 
 ### Designing your own compensation
 
-The compensating action is a **business decision, not a technical one**. "The hold failed,
-so waive the fines" is a policy someone chose — the alternative, "keep the fines and alert
-an operator", is equally valid code. Ask the business what should happen; do not default to
-the reversal that is easiest to write.
+The compensating action is a **business decision, not a technical one**. "Access failed, so
+release the licence and the equipment" was a policy choice — the alternative, "keep them
+reserved and alert an operator", is equally valid code. Ask what the business actually wants
+instead of defaulting to whichever reversal is easiest to write.
 
-And compensation must itself be idempotent, because the reverse leg is delivered
-at-least-once exactly like the forward one.
+And compensation must itself be idempotent, for the same reason the forward leg is: the
+reverse leg is delivered at-least-once too. `EquipmentAsset.Release()` is a no-op if the
+asset is already available — see the comment on it in the real file.
+
+---
+
+## 13. Orchestration vs. choreography
+
+Everything in this guide so far is **orchestration**: one component —
+`OnboardingOutboxDispatcher` — owns the entire sequence, forward and reverse. It calls
+`Equipment`'s published contract synchronously, the same way any other consumer would, and
+`Equipment` has no idea a saga is happening at all. From Equipment's side, its contract is
+just being called, then possibly called again to release. There is no `Equipment` outbox,
+no `Equipment` dispatcher, and no message ever flows *back into* Equipment.
+
+The alternative is **choreography**: each side has its own dispatcher, reacting to the
+other's events independently, with no single component that knows the whole saga. Sketched,
+for the *same* scenario, choreographed instead:
+
+```
+  Onboarding's dispatcher enqueues "EquipmentReservationRequested"
+                          │
+  Equipment's OWN dispatcher reacts: reserves, then enqueues "EquipmentReserved" (or "...Rejected")
+                          │
+  Onboarding's dispatcher reacts to THAT event to decide what happens next
+```
+
+Both are legitimate; this codebase uses orchestration because one module (`Onboarding`)
+already has to know the whole process to make sense of the domain — asking Equipment to
+also carry saga-shaped knowledge it doesn't otherwise need would be coupling for its own
+sake. Choreography earns its extra dispatcher and extra event types when **no single module
+is a natural owner of the process** and each side genuinely needs to react to the other
+independently — most commonly when the two sides are owned by different teams who each want
+to evolve their own reaction to events without the other's release schedule. If you're
+building a saga and one side is obviously "in charge" of it, default to orchestration; it's
+less to build, and there's one place — not two — to read when you want to understand the
+whole thing.
 
 ---
 
@@ -578,22 +651,20 @@ On each attempt it increments `Attempts` and records the `Error`. On success it 
 
 **Why park rather than retry forever:** one poison message retried forever burns CPU,
 fills logs, and — with a batch that fetches oldest-first — can starve every message behind
-it. Dead-lettering keeps the queue moving and puts the problem in front of a human.
+it. Dead-lettering keeps the queue moving and puts the problem in front of a human. (Which
+is exactly why [chapter 9](#9-step-4--route-each-step-in-the-dispatcher)'s business-failure
+distinction matters: only genuine bugs should ever reach this path.)
 
 Operators inspect and replay:
 
 ```bash
-GET  /library/outbox/dead-letter               # what is parked, and why
-POST /library/outbox/dead-letter/{id}/replay   # clear the flag, try again
+POST /onboarding/outbox/dead-letter/search       # what is parked, and why (paging in the body)
+POST /onboarding/outbox/dead-letter/{id}/replay  # clear the flag, try again
 ```
 
 Replay is the right move once you have fixed the cause — a missing dispatcher case, a
 consumer bug, the other module being down. Replaying without fixing the cause just parks it
 again three attempts later.
-
-There is also a development-only endpoint that injects a deliberately unroutable message, so
-you can watch the retry → dead-letter → replay path once without breaking something real.
-Do that; it is much better than meeting the mechanism for the first time during an incident.
 
 ### Metrics
 
@@ -624,81 +695,83 @@ if (message.CorrelationId is not null)
 }
 ```
 
-So the consumer's logs, its audit records, and the original HTTP request all carry the same
-id — even though the consumer runs on a background thread, seconds later, in a different
-module, writing to a different database.
+So the dispatcher's logs, its audit records, and the original HTTP request that started the
+saga all carry the same id — even though each step runs on a background thread, seconds
+apart, possibly minutes after the request that kicked things off has long since returned.
 
 **Why this matters:** without it, an async hop is where a trail goes cold. Someone
-investigating "what happened to this request?" gets to the enqueue and stops. With it, one
-search returns the whole flow, both legs of the saga included.
+investigating "what happened to this onboarding request?" gets to the enqueue and stops.
+With it, one search returns the whole saga, forward and reverse legs both.
 
 ---
 
 ## 16. The traps
 
-### The open-generic `IOutbox` collision
+### The shared `IOutbox` collision
 
-`AddOutboxWriter<TContext>()` registers `IOutbox` — an **open generic with one slot**. If
-two modules both call it, DI resolution is last-registration-wins, and the first module's
+`AddOutboxWriter<TContext>()` registers `IOutbox` as a plain, **non-keyed** interface. If two
+modules both call it, DI resolution is last-registration-wins, and the first module's
 `Enqueue` silently starts writing rows into the *other* module's outbox table. No error. The
 messages are then delivered by the wrong processor, or never.
 
-The convention here: the first module uses the shared `IOutbox`; every module after it
-defines **its own** writer interface — `IStudentOutbox`, `ITesterGuideOutbox` — pointing at
-its own table.
+Right now only `Onboarding` calls `AddOutboxWriter<OnboardingDbContext>()`, so the trap is
+dormant. The moment a **second** module needs one, it must **not** also inject bare
+`IOutbox` — it needs its own writer interface pointing at its own table:
 
 ```csharp
-services.AddScoped<ITesterGuideOutbox, TesterGuideOutbox>();   // not IOutbox
+services.AddScoped<IMySecondModuleOutbox, MySecondModuleOutbox>();   // not IOutbox
 ```
 
-### Publishing on state instead of on transition
+### Enqueuing more than one follow-up per outcome
 
-Covered in [chapter 7](#7-step-2--enqueue-it-atomically). Publish on the *change*, or you
-will flood the queue and lean on idempotency to hide it.
+Covered in [chapter 7](#7-step-2--enqueue-the-first-step-atomically). Each step handler
+enqueues exactly one message — the next forward step, or the first compensating step — from
+the branch that decided the outcome. Enqueuing from two branches, or forgetting the `return`
+after the failure branch, means both the forward and the compensating chain can end up
+running.
 
-### Renaming an event type
+### Renaming a step message type
 
 The type's simple name is the routing key, stored as a string in already-written rows.
-Rename the record and undelivered messages of the old name hit the dispatcher's `default`
-case and dead-letter. If you must rename, drain the outbox first, or keep a `case` for the
-old name.
+Rename `ReserveEquipmentForOnboarding` and any undelivered messages of the old name hit the
+dispatcher's `default` case and dead-letter. If you must rename, drain the outbox first, or
+keep a `case` for the old name.
 
-### Assuming the consumer runs in your transaction
+### Assuming a step runs in the original request's transaction
 
 It does not. It runs later, on a background thread, in its own scope, against its own
-database — and it calls `SaveChanges` itself. Anything you wanted atomic with your change
-had to be in *your* transaction.
+`DbContext` instance — and it calls `SaveChangesAsync` itself, once per message, inside
+`HandleReserveEquipmentAsync` and friends. Anything you wanted atomic with the *approval*
+had to be in the approval's own transaction ([chapter 7](#7-step-2--enqueue-the-first-step-atomically));
+anything atomic with *one step* has to be in that step's own `SaveChangesAsync` call.
 
 ---
 
 ## 17. The checklist
 
-For a cross-module **read**:
+For a cross-module **read or simple action**:
 
 - [ ] The owning module publishes an interface in its `*.Contracts` project
-- [ ] The contract returns a purpose-built summary record, never a domain object
+- [ ] The contract speaks in primitives, never a domain type from the owning module
+- [ ] A business failure is a return value (`Reserved: false`), not an exception
 - [ ] Your `Application.csproj` references only that `Contracts` project
 - [ ] Composition happens in your application layer, not in SQL
 
-For a cross-module **write**:
+For a **saga**:
 
-- [ ] Event record defined in `Application/Outbox/`, ids and primitives only, past tense
-- [ ] `_outbox.Enqueue(...)` in the handler, on the **transition**
+- [ ] One message record per step, in `Application/Outbox/`, ids and primitives only
+- [ ] `_outbox.Enqueue(...)` for the first step, in the command that starts the saga
 - [ ] `DbSet<OutboxMessage>` + `ApplyOutboxConfiguration()` + a migration
-- [ ] Your own writer interface if another module already owns `IOutbox`
-- [ ] The receiving contract takes `messageId` as its first parameter
-- [ ] The consumer is idempotent — and you can say which of the three strategies it uses
-- [ ] The consumer calls `SaveChanges` itself
-- [ ] A `case` in the dispatcher; `default` still throws
+- [ ] Your own writer interface if another module already owns the shared `IOutbox`
+- [ ] Every step handler calls a published contract synchronously, exactly like chapter 3
+- [ ] Every step is idempotent — and you can say which strategy it uses
+- [ ] A business failure is handled inline (record it, enqueue compensation); it never throws
+- [ ] Only a genuinely unexpected condition throws, into the retry-then-dead-letter path
+- [ ] Compensation unwinds one step at a time, in reverse order, each its own message
+- [ ] Each step handler calls `SaveChanges` itself
+- [ ] A `case` per message type in the dispatcher; `default` still throws
 - [ ] `AddOutboxProcessing<,>` and `AddOutboxAdmin<>` registered
-- [ ] Both sides tested, including a **duplicate delivery** test
-
-If it can be rejected:
-
-- [ ] Rejection publishes a compensation event, in the same transaction as the decision
-- [ ] The rejection path is idempotent too
-- [ ] The compensating action is one the business actually asked for
-- [ ] The reverse leg has a `case` in the *other* module's dispatcher
+- [ ] Tested: full success, failure at each step, and a duplicate delivery of one step
 
 ---
 
@@ -706,16 +779,17 @@ If it can be rejected:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Message enqueued but never delivered | No `AddOutboxProcessing` for that context | [Chapter 11](#11-step-6--register-the-pieces) |
-| Messages land in another module's outbox | Two modules registered `IOutbox` | Give yours its own writer interface |
-| `Unknown outbox message type` in dead-letter | Missing `case`, or the event was renamed | Add the case; drain before renaming |
-| Consumer ran twice, data is doubled | Consumer is not idempotent | [Chapter 12](#12-idempotency--three-strategies) |
-| Rejection compensates twice | Only the success path is deduped | Guard the rejection path too |
+| Message enqueued but never delivered | No `AddOutboxProcessing` for that context | [Chapter 10](#10-step-5--register-the-pieces) |
+| Messages land in another module's outbox | Two modules both injected the shared `IOutbox` | Give the second one its own writer interface |
+| `Unknown outbox message type` in dead-letter | Missing `case`, or the message was renamed | Add the case; drain before renaming |
+| A step ran twice, data is doubled | The step is not idempotent | [Chapter 11](#11-idempotency--two-strategies-and-a-third-you-might-need) |
+| An ordinary "no stock" outcome got dead-lettered | The business-failure branch threw instead of returning | [Chapter 9](#9-step-4--route-each-step-in-the-dispatcher) |
+| Compensation ran twice | The release step isn't idempotent | Make release a no-op when there's nothing to release |
 | Everything dead-letters after ~6 seconds | Other side down; 3 attempts on a 2s poll | Fix the cause, then replay |
 | Nothing in the outbox table at all | `Enqueue` ran but the transaction rolled back — or the handler isn't a command | Check the command carries the module's marker |
-| Correlation id missing on the consumer side | Message enqueued outside a request scope | Expected for background-produced events |
-| Consumer changes never persist | It didn't call `SaveChanges` | It runs outside `TransactionBehavior` |
-| `outbox_dead_lettered_total` climbing | A real bug, by definition | Inspect `/outbox/dead-letter` — the `Error` is recorded |
+| Correlation id missing on a step | Message enqueued outside a request scope | Expected for a step enqueued by another step |
+| Step's changes never persist | It didn't call `SaveChangesAsync` | Each step handler must call it itself — it runs outside `TransactionBehavior` |
+| `outbox_dead_lettered_total` climbing | A real bug, by definition | Inspect `/onboarding/outbox/dead-letter/search` — the `Error` is recorded |
 
 ---
 
@@ -724,26 +798,26 @@ If it can be rejected:
 ### Registration
 
 ```csharp
-// Publishing module
-services.AddScoped<IMyModuleOutbox, MyModuleOutbox>();                 // your own writer
-services.AddOutboxProcessing<MyDbContext, MyOutboxDispatcher>();       // background delivery
-services.AddOutboxAdmin<MyDbContext>();                                // dead-letter + replay
+// Onboarding — the only module currently using the shared IOutbox
+services.AddOutboxWriter<OnboardingDbContext>();
+services.AddOutboxProcessing<OnboardingDbContext, OnboardingOutboxDispatcher>();
+services.AddOutboxAdmin<OnboardingDbContext>();
 
 // DbContext
 public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
 modelBuilder.ApplyOutboxConfiguration();
 
-// Receiving module
-services.AddScoped<IMyWriteContract, MyWriteContractImplementation>();
+// A second outbox-using module would need its OWN writer interface instead of IOutbox:
+services.AddScoped<IMySecondModuleOutbox, MySecondModuleOutbox>();
 ```
 
 ### The message row
 
 | Column | Meaning |
 |---|---|
-| `Id` | The idempotency key. Passed to every consumer |
+| `Id` | Unique per row. Not the idempotency key here — the step message's own payload id is |
 | `Type` | `typeof(TEvent).Name` — the routing key |
-| `Content` | The event, as JSON |
+| `Content` | The message, as JSON |
 | `OccurredOnUtc` | When enqueued. Delivery is oldest-first |
 | `ProcessedOnUtc` | Null until delivered successfully |
 | `CorrelationId` | Restored before dispatch, so the flow stays traceable |
@@ -754,9 +828,8 @@ services.AddScoped<IMyWriteContract, MyWriteContractImplementation>();
 ### Operations
 
 ```bash
-GET  /library/outbox/dead-letter                 # inspect parked messages
-POST /library/outbox/dead-letter/{id}/replay     # requeue one, after fixing the cause
-POST /library/outbox/_dev/poison                 # Development only: exercise the path
+POST /onboarding/outbox/dead-letter/search        # inspect parked steps (paging in the body)
+POST /onboarding/outbox/dead-letter/{id}/replay   # requeue one, after fixing the cause
 ```
 
 ### Processor constants
@@ -770,24 +843,23 @@ POST /library/outbox/_dev/poison                 # Development only: exercise th
 | Term | Meaning |
 |---|---|
 | **At-least-once** | Delivery may repeat. The reason idempotency is mandatory |
-| **Choreography** | Modules react to events with no central coordinator. What this repo does |
+| **Choreography** | Each side has its own dispatcher, reacting to the other's events independently — no single owner of the saga. The heavier alternative; see [chapter 13](#13-orchestration-vs-choreography) |
 | **Compensating action** | A new operation that semantically reverses a committed one |
 | **Contract** | An interface a module publishes for others to call. Lives in `*.Contracts` |
-| **Correlation id** | The per-request id carried across the async hop so one flow stays traceable |
+| **Correlation id** | The per-request id carried across every async hop so one flow stays traceable |
 | **Dead-letter** | A message parked after the retry cap, for a human to inspect or replay |
-| **Dispatcher** | Per-module code mapping an event type name onto a contract call |
-| **Dual-write problem** | Two independent writes with no safe ordering — what the outbox fixes |
+| **Dispatcher** | Per-module code mapping a message type name onto the step logic |
 | **Eventual consistency** | The databases agree eventually, not instantly |
 | **Forward leg** | The happy path of a saga |
-| **Idempotency key** | The stable value used to recognise a repeat. Here, the outbox message id |
-| **Integration event** | A record published by one module for another. Serialised to JSON |
-| **Local transaction** | A transaction inside one database. Each saga step is one |
-| **Orchestration** | A central coordinator drives each step. The alternative to choreography |
-| **Outbox** | A table of pending events, written in the same transaction as the change |
+| **Idempotency key** | The stable value used to recognise a repeat. Here, usually the saga's own id (e.g. the onboarding request id) |
+| **Local transaction** | A transaction inside one database. Each saga step commits one |
+| **Orchestration** | One component drives every step, forward and reverse, and knows the whole sequence. What this repo's Standard saga does |
+| **Outbox** | A table of pending steps, written in the same transaction as the change that decided them |
 | **Poison message** | One that can never succeed. Dead-lettering exists to contain it |
 | **Replay** | Clearing the dead-letter flag so a message is retried |
 | **Reverse leg** | The compensating half of a saga |
-| **Saga** | A multi-step process across databases, glued by events |
+| **Saga** | A multi-step process, coordinated by durable state rather than a single transaction |
+| **Step message** | An outbox row instructing the saga's own dispatcher to run one specific step next |
 | **System of record** | The authoritative owner of a piece of data |
 | **Transactional outbox** | The full pattern: atomic enqueue, background delivery, retries |
 
@@ -811,16 +883,17 @@ src/BuildingBlocks.Outbox/
 ├── OutboxDiagnostics.cs                  delivered / failed / dead-lettered counters
 └── OutboxServiceCollectionExtensions.cs  AddOutboxProcessing / Writer / Admin
 
-Worked example — the fine → hold → rejection → waiver saga:
-├── Library.Application/Loans/AssessFine.cs               enqueue, on the transition
-├── Library.Infrastructure/Outbox/LibraryOutboxDispatcher.cs   route forward leg
-├── Students.Infrastructure/Contracts/StudentHoldService.cs    accept or reject
-├── Students.Infrastructure/Outbox/StudentsOutboxDispatcher.cs route reverse leg
-└── Library.Infrastructure/Contracts/FineWaiver.cs             compensate
+Worked example — the reserve → allocate → provision saga, both directions:
+├── Onboarding.Application/Requests/ApproveOnboardingStandard.cs   starts the saga
+├── Onboarding.Application/Outbox/OnboardingSagaMessages.cs        the five step messages
+├── Onboarding.Infrastructure/Outbox/OnboardingOutboxDispatcher.cs forward AND reverse legs
+├── Onboarding.Domain/OnboardingSagaState.cs                       durable progress + status
+└── Onboarding.Domain/OnboardingRequest.cs                         Record*/*Compensated methods
 
-Synchronous reads:
-├── Students.Contracts/IStudentDirectory.cs               the published interface
-└── Library.Application/Loans/BorrowBook.cs               a consumer of it
+Synchronous contract, called from both the instant and the durable engine:
+├── Equipment.Contracts/IEquipmentReservationService.cs   the published interface
+├── Equipment.Infrastructure/Contracts/EquipmentReservationService.cs   idempotent implementation
+└── Onboarding.Application/Requests/ApproveOnboardingInstant.cs    a consumer that calls it synchronously, no outbox at all
 ```
 
 ---
@@ -828,6 +901,8 @@ Synchronous reads:
 ## Where to go next
 
 - **[Adding a new module](30-add-a-module.md)** — the module that will publish or consume
-  these events.
-- **[Auditing](40-auditing.md)** — commands that enqueue events are audited like any other;
+  these contracts and messages.
+- **[Auditing](40-auditing.md)** — commands that enqueue steps are audited like any other;
   the outbox table itself is deliberately excluded from change capture.
+- **[Testing](80-testing.md)** — how the same saga is tested at three levels: the domain
+  rules, the instant engine with fakes, and the durable engine against a real database.

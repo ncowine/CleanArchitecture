@@ -6,6 +6,6 @@ namespace BuildingBlocks.RealTime;
 /// </summary>
 public static class RealtimeGroups
 {
-    /// <summary>The group of everyone viewing/working a single guide config.</summary>
-    public static string Config(Guid configId) => $"config:{configId}";
+    /// <summary>Everyone watching equipment inventory changes.</summary>
+    public static string Equipment() => "equipment";
 }

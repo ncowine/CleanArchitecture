@@ -207,9 +207,9 @@ services.AddDbContext<ApiKeyDbContext>(options =>
         sqlite => sqlite.MigrationsHistoryTable(ApiKeyDbContext.MigrationsHistoryTable)));
 ```
 
-The keys share the Students database file but sit behind a **dedicated `DbContext` with its
-own migrations-history table**. So an authentication concern never entangles a business
-module's schema, and the two can be migrated independently despite sharing a file.
+The keys live in their own database, behind a **dedicated `DbContext` with its own
+migrations-history table**. So an authentication concern never entangles any business
+module's schema — not even by sharing a file.
 
 ### Validation, and why it's cached
 
@@ -369,10 +369,10 @@ into business code — which is exactly where authentication logic must never en
 ## 8. Step 4 — Protect an endpoint
 
 ```csharp
-group.MapPost("/students", async (CreateStudent.Command command, ISender sender, CancellationToken ct) =>
+group.MapPost("/equipment", async (CreateEquipment.Command command, ISender sender, CancellationToken ct) =>
 {
     var id = await sender.Send(command, ct);
-    return Results.Created($"/students/{id}", new { id });
+    return Results.Created($"/equipment/{id}", new { id });
 })
 .RequireAuthorization();
 ```
@@ -392,7 +392,7 @@ Applying it to a group rather than each endpoint is safer, because the failure m
 forgetting one endpoint is silent:
 
 ```csharp
-var group = app.MapGroup("/students").RequireAuthorization();
+var group = app.MapGroup("/equipment").RequireAuthorization();
 ```
 
 ---
@@ -698,7 +698,7 @@ Verify:
 dotnet CleanArch.Api.dll --mint-api-key=reporting-service --mint-api-key-roles=service
 
 # Call with a key
-curl -H "X-Api-Key: ca_live_..." http://localhost:5235/students
+curl -H "X-Api-Key: ca_live_..." http://localhost:5235/equipment
 
 # Verify you are NOT in Development (expect a non-200)
 curl -o /dev/null -w '%{http_code}\n' http://localhost:5235/swagger

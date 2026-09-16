@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Api\CleanArch.Api.Authentication\CleanArch.Api.Authentication.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Infrastructure\Equipment.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Onboarding\Onboarding.Infrastructure\Onboarding.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

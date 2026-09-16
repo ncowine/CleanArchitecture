@@ -190,9 +190,9 @@ services.Configure<OpenTelemetryLoggerOptions>(options =>
 ```
 
 Without `IncludeFormattedMessage`, Loki receives the raw message *template*
-(`"Student {StudentId} enrolled"`) rather than the rendered text. Searching for a student id
-in the message then finds nothing. `IncludeScopes` carries the logging scope — including the
-correlation id — as attributes.
+(`"Onboarding request {OnboardingRequestId} approved"`) rather than the rendered text.
+Searching for a specific request's id in the message then finds nothing. `IncludeScopes`
+carries the logging scope — including the correlation id — as attributes.
 
 ---
 
@@ -343,7 +343,8 @@ correct, and the graph is empty because nobody subscribed the meter.
 ### Tags, and the trap in them
 
 Tags (`("db", context)` above) split one metric into series you can group by. They are the
-difference between "delivery failures" and "delivery failures *for the Library module*".
+difference between "delivery failures" and "delivery failures *for the Onboarding module*"
+— the one module in this codebase that currently has an outbox to fail.
 
 **The trap: never tag with something unbounded.** A tag whose value is a user id, an order
 id, or a raw URL creates one time series per distinct value. That is called a *cardinality
@@ -371,17 +372,17 @@ Automatic tracing shows one span per request and one per outgoing HTTP call. Whe
 interesting work happens *inside* your handler, add a span of your own:
 
 ```csharp
-private static readonly ActivitySource Activity = new("CleanArch.Enrollment");
+private static readonly ActivitySource Activity = new("CleanArch.Onboarding");
 
-using var activity = Activity.StartActivity("promote-waitlist");
-activity?.SetTag("section.id", sectionId);
-activity?.SetTag("waitlist.length", waiting.Count);
+using var activity = Activity.StartActivity("reserve-equipment");
+activity?.SetTag("onboarding.request_id", onboardingRequestId);
+activity?.SetTag("equipment.category", category);
 ```
 
 Then subscribe the source, exactly as with meters:
 
 ```csharp
-.WithTracing(tracing => tracing.AddSource("CleanArch.Enrollment"))
+.WithTracing(tracing => tracing.AddSource("CleanArch.Onboarding"))
 ```
 
 Note the `?.` — `StartActivity` returns `null` when nothing is listening, which is the normal
@@ -399,16 +400,16 @@ with two hundred spans is as unreadable as one with none.
 Log with **structured properties**, not string interpolation:
 
 ```csharp
-// Yes — StudentId arrives as a searchable field
-_logger.LogInformation("Student {StudentId} enrolled in {SectionId}", studentId, sectionId);
+// Yes — EquipmentId and OnboardingRequestId arrive as searchable fields
+_logger.LogInformation("Equipment {EquipmentId} reserved for onboarding request {OnboardingRequestId}", equipmentId, onboardingRequestId);
 
 // No — the values are baked into one opaque string
-_logger.LogInformation($"Student {studentId} enrolled in {sectionId}");
+_logger.LogInformation($"Equipment {equipmentId} reserved for onboarding request {onboardingRequestId}");
 ```
 
-The first produces a log record with `StudentId` and `SectionId` as fields you can filter on.
-The second produces a sentence you can only substring-match. In a log store the difference is
-between a query and a grep.
+The first produces a log record with `EquipmentId` and `OnboardingRequestId` as fields you
+can filter on. The second produces a sentence you can only substring-match. In a log store
+the difference is between a query and a grep.
 
 For hot paths, the source-generated form avoids allocating when the level is disabled — the
 pattern used throughout this codebase:
@@ -458,8 +459,8 @@ Registered like this:
 
 ```csharp
 services.AddHealthChecks()
-    .AddDbContextCheck<StudentsDbContext>("students-db")
-    .AddDbContextCheck<LibraryDbContext>("library-db");
+    .AddDbContextCheck<EquipmentDbContext>("equipment-db")
+    .AddDbContextCheck<OnboardingDbContext>("onboarding-db");
 ```
 
 Both are exempt from rate limiting, for the same reason as `/metrics`: probes come

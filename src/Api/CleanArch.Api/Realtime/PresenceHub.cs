@@ -4,9 +4,10 @@ using Microsoft.AspNetCore.SignalR;
 namespace CleanArch.Api.Realtime;
 
 /// <summary>
-/// Real-time presence + notifications hub. A client calls <c>JoinConfig</c> to subscribe to a guide config's
-/// activity; while subscribed it receives <c>TaskActioned</c> events (someone actioned a task in that config)
-/// and <c>presence</c> updates (who is currently working the config). Presence is best-effort and tracked
+/// Real-time presence + notifications hub. A client calls <c>JoinGroup</c> with one of
+/// <see cref="RealtimeGroups"/>'s names (e.g. <c>RealtimeGroups.Equipment()</c>) to subscribe to that
+/// group's activity; while subscribed it receives that group's events (e.g. <c>EquipmentCreated</c>) and
+/// <c>presence</c> updates (who is currently connected to the group). Presence is best-effort and tracked
 /// per connection.
 /// </summary>
 public sealed class PresenceHub : Hub
@@ -18,17 +19,15 @@ public sealed class PresenceHub : Hub
         _presence = presence;
     }
 
-    public async Task JoinConfig(Guid configId)
+    public async Task JoinGroup(string group)
     {
-        var group = RealtimeGroups.Config(configId);
         await Groups.AddToGroupAsync(Context.ConnectionId, group);
         _presence.Join(group, Context.ConnectionId, CurrentUser());
         await BroadcastPresenceAsync(group);
     }
 
-    public async Task LeaveConfig(Guid configId)
+    public async Task LeaveGroup(string group)
     {
-        var group = RealtimeGroups.Config(configId);
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, group);
         _presence.Leave(Context.ConnectionId);
         await BroadcastPresenceAsync(group);

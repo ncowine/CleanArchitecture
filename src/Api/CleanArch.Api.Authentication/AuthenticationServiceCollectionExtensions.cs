@@ -22,13 +22,13 @@ public static class AuthenticationServiceCollectionExtensions
     public static IServiceCollection AddApiAuthentication(
         this IServiceCollection services, IConfiguration configuration)
     {
-        // API keys are validated against the DATABASE. The keys live in students.db (the primary DB) but
-        // behind a dedicated ApiKeyDbContext isolated from the Students domain (its own migrations-history
-        // table), so an auth concern never entangles the Students schema. Only SHA-256 hashes are stored —
-        // never plaintext. The concrete DB validator is wrapped by a short-TTL caching decorator (the same
-        // inner + decorator shape as the AD user directory) because validation runs on every request.
-        var apiKeyConnectionString = configuration.GetConnectionString("Students")
-            ?? throw new InvalidOperationException("ConnectionStrings:Students is not configured.");
+        // API keys are validated against the DATABASE — a dedicated ApiKeyDbContext with its own database
+        // and its own migrations-history table, isolated from every business module. Only SHA-256 hashes
+        // are stored — never plaintext. The concrete DB validator is wrapped by a short-TTL caching
+        // decorator (the same inner + decorator shape as the AD user directory) because validation runs on
+        // every request.
+        var apiKeyConnectionString = configuration.GetConnectionString("ApiKeys")
+            ?? throw new InvalidOperationException("ConnectionStrings:ApiKeys is not configured.");
         services.AddDbContext<ApiKeyDbContext>(options =>
             options.UseSqlite(apiKeyConnectionString,
                 sqlite => sqlite.MigrationsHistoryTable(ApiKeyDbContext.MigrationsHistoryTable)));
@@ -122,7 +122,7 @@ public static class AuthenticationServiceCollectionExtensions
         services.AddSingleton<ICredentialValidator, ActiveDirectoryCredentialValidator>();
 
         // Authorization: directory lookup (display name + groups → roles), cached (a hit per request is
-        // costly) — concrete inner + caching decorator, the same pattern as the Students module.
+        // costly) — the same concrete-inner + caching-decorator pattern used for module read models.
         services.AddScoped<ActiveDirectoryUserDirectory>();
         services.AddScoped<IUserDirectory>(provider => new CachingUserDirectory(
             provider.GetRequiredService<ActiveDirectoryUserDirectory>(),

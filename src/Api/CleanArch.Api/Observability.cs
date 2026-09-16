@@ -1,13 +1,13 @@
 using System.Diagnostics;
 using BuildingBlocks.Outbox;
 using CleanArch.Api.Authentication;
-using Library.Infrastructure.Persistence;
+using Equipment.Infrastructure.Persistence;
+using Onboarding.Infrastructure.Persistence;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
-using Students.Infrastructure.Persistence;
 
 namespace CleanArch.Api;
 
@@ -16,7 +16,7 @@ internal static class ObservabilityExtensions
     public const string ServiceName = "CleanArch.Api";
 
     /// <summary>
-    /// Health checks (both databases) plus OpenTelemetry for all three signals, wired to a local
+    /// Health checks (per module database) plus OpenTelemetry for all three signals, wired to a local
     /// Grafana stack:
     ///   • traces  -> Tempo over OTLP/gRPC   (the app PUSHES) — HTTP in, HTTP out, and every EF query
     ///   • logs    -> Loki  over OTLP/HTTP   (the app PUSHES)
@@ -26,8 +26,8 @@ internal static class ObservabilityExtensions
     public static IServiceCollection AddObservability(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddHealthChecks()
-            .AddDbContextCheck<StudentsDbContext>("students-db")
-            .AddDbContextCheck<LibraryDbContext>("library-db");
+            .AddDbContextCheck<EquipmentDbContext>("equipment-db")
+            .AddDbContextCheck<OnboardingDbContext>("onboarding-db");
 
         // Push targets. Defaults hit the local Tempo/Loki dev binaries on localhost.
         var tempoEndpoint = configuration["Observability:Tempo:OtlpEndpoint"] ?? "http://localhost:4317";

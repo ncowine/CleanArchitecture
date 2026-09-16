@@ -26,8 +26,8 @@ Set it per-site (**IIS Manager → your site → Configuration Editor →
 <aspNetCore processPath="dotnet" arguments=".\CleanArch.Api.dll" hostingModel="inprocess">
   <environmentVariables>
     <environmentVariable name="ASPNETCORE_ENVIRONMENT" value="Production" />
-    <environmentVariable name="ConnectionStrings__Students" value="Data Source=D:\CleanArchData\students.db" />
-    <!-- ... the other three databases, and the Observability__/Audit__ settings ... -->
+    <environmentVariable name="ConnectionStrings__ApiKeys" value="Data Source=D:\CleanArchData\apikeys.db" />
+    <!-- ... ConnectionStrings__Equipment, ConnectionStrings__Onboarding, and the Observability__/Audit__ settings ... -->
   </environmentVariables>
 </aspNetCore>
 ```

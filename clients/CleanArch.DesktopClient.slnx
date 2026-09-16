@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="CleanArch.DesktopClient.Api/CleanArch.DesktopClient.Api.csproj" />
-  <Project Path="CleanArch.DesktopClient/CleanArch.DesktopClient.csproj" />
-  <Project Path="CleanArch.DesktopClient.Tests/CleanArch.DesktopClient.Tests.csproj" />
-</Solution>

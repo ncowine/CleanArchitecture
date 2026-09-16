@@ -97,7 +97,7 @@ A real record, exactly as stored:
 {
   "correlationId": "5deecb4e-bd9b-4e8a-b99b-9842e4166157",
   "actor": "integration-service",
-  "action": "CreateInstructor",
+  "action": "CreateEquipment",
   "occurredOnUtc": "2026-07-21T19:14:05Z",
   "succeeded": true,
   "elapsedMs": 106,
@@ -108,21 +108,21 @@ A real record, exactly as stored:
   "details": null,
   "changes": [
     {
-      "entityType": "Instructor",
+      "entityType": "EquipmentAsset",
       "entityId": "bd0034a3-832a-4399-b106-54d03a223898",
       "operation": "Added",
       "properties": [
-        { "name": "FirstName", "newValue": "Grace" },
-        { "name": "LastName",  "newValue": "Hopper" },
-        { "name": "Email",     "newValue": "grace.hopper@navy.mil" }
+        { "name": "Name",     "newValue": "ThinkPad X1" },
+        { "name": "Category", "newValue": "Laptop" },
+        { "name": "AssetTag", "newValue": "LAP-001" }
       ]
     }
   ]
 }
 ```
 
-Read it as a sentence: *integration-service ran CreateInstructor at 19:14, it succeeded in
-106ms, and it added an Instructor with these values.*
+Read it as a sentence: *integration-service ran CreateEquipment at 19:14, it succeeded in
+106ms, and it added an EquipmentAsset with these values.*
 
 | Field | Meaning |
 |---|---|
@@ -133,8 +133,8 @@ Read it as a sentence: *integration-service ran CreateInstructor at 19:14, it su
 | `elapsedMs` | How long it took |
 | `correlationId` | Ties this record to the logs and traces of the same request |
 | `category` | `Write` / `Read` / `External` / `Security` / `Custom` — what *kind* of activity this was |
-| `source` | Where the data lived when it wasn't our own database: `Api:CreditBureau`, `Cache:students`. Null means our DB |
-| `resource` | **Whose** data — a searchable identifier like `Student/7f3…` |
+| `source` | Where the data lived when it wasn't our own database: `Api:LicenceVendor`, `Cache:equipment`. Null means our DB |
+| `resource` | **Whose** data — a searchable identifier like `Equipment/7f3…` |
 | `details` | Free-form facts the code attached: row counts, upstream request ids |
 | `changes[]` | Per entity: type, id, operation, and each property's old → new |
 
@@ -148,22 +148,22 @@ A read record for the same trail, produced by the query in
 ```json
 {
   "correlationId": "9a1f0c72-3f5e-4a91-8d02-6c9b4c1e5f77",
-  "actor": "clerk@uni",
-  "action": "GetStudentLoans",
+  "actor": "it-admin@corp",
+  "action": "GetOnboardingSummary",
   "occurredOnUtc": "2026-08-30T09:02:11Z",
   "succeeded": true,
   "elapsedMs": 14,
   "error": null,
   "category": "Read",
   "source": null,
-  "resource": "Student/bd0034a3-832a-4399-b106-54d03a223898",
-  "details": { "loansReturned": "3", "identitySource": "Module:Students" },
+  "resource": "OnboardingRequest/bd0034a3-832a-4399-b106-54d03a223898",
+  "details": { "readinessPercentage": "67" },
   "changes": []
 }
 ```
 
-Read as a sentence: *clerk@uni looked at that student's loans at 09:02 and three came back.*
-Nothing changed, and that is exactly the event worth recording.
+Read as a sentence: *it-admin@corp looked at that onboarding request's summary at 09:02 and
+it was 67% ready.* Nothing changed, and that is exactly the event worth recording.
 
 The shape of `changes` depends on the operation: an **add** has only `newValue`, a
 **delete** only `oldValue`, an **edit** has both. Property values are stored as strings so
@@ -242,11 +242,11 @@ never existed.
 Add one interface to the command:
 
 ```csharp
-public static class CreateFocus
+public static class CreateEquipment
 {
-    public sealed record Command(string Name, string? Description)
-        : IRequest<Guid>, ITesterGuideCommand, IAuditableRequest;
-                                                //  ^^^^^^^^^^^^^^^^^ this
+    public sealed record Command(string Name, EquipmentCategory Category, string AssetTag)
+        : IRequest<Guid>, IEquipmentCommand, IAuditableRequest;
+                                            //  ^^^^^^^^^^^^^^^^^ this
 ```
 
 That is the entire opt-in. No handler changes, no calls to make, nothing to remember at
@@ -257,15 +257,15 @@ the call site.
 The action is taken from the **enclosing type's** name, not the command's. Vertical-slice
 commands are nested types, so `typeof(TRequest).Name` would be the useless string
 `"Command"` for every command in the system. The behaviour asks `RequestName.Feature(…)` for
-the enclosing type's name instead, which gives you `CreateFocus`.
+the enclosing type's name instead, which gives you `CreateEquipment`.
 
 That rule lives in one place because logs need it too: `LoggingBehavior` calls
-`RequestName.Display(…)` for the fuller `CreateFocus.Command`, since a log line is read on its
-own and has no surrounding record to say whether a read or a write ran.
+`RequestName.Display(…)` for the fuller `CreateEquipment.Command`, since a log line is read on
+its own and has no surrounding record to say whether a read or a write ran.
 
 Practical consequence: **your feature class name is what appears in the audit trail**, so
-name it as an action someone investigating would search for. `WithdrawStudent` is a good
-audit action. `StudentUpdateHandlerV2` is not.
+name it as an action someone investigating would search for. `DeleteEquipment` is a good
+audit action. `EquipmentUpdateHandlerV2` is not.
 
 ### What to mark, and what not to
 
@@ -298,18 +298,18 @@ changes nothing, and is exactly the incident an audit trail exists to catch.
 A query opts in with a different marker:
 
 ```csharp
-public sealed record Query(Guid StudentId, int Page = 1, int PageSize = 20)
-    : PagedRequest(Page, PageSize), IRequest<Response>, IAuditableRead
+public sealed record Query(Guid OnboardingRequestId) : IRequest<Response?>, IAuditableRead
 {                                                    // ^^^^^^^^^^^^^^^ this
     // Names whose data was read, so the record answers "whose?" and not just "which query?"
-    public string AuditResource => $"Student/{StudentId}";
+    public string AuditResource => $"OnboardingRequest/{OnboardingRequestId}";
 }
 ```
 
 `IAuditableRead` extends `IAuditableRequest`, so the same behaviour picks it up and the same
 sink stores it. The difference is one field: the record is stamped
 `category: "Read"` instead of `category: "Write"`, which is what keeps "who changed this"
-and "who looked at this" separable in a store that holds both.
+and "who looked at this" separable in a store that holds both. This is real code — see
+`GetOnboardingSummary.Query` in `Onboarding.Application/Requests/GetOnboardingSummary.cs`.
 
 ### Name the resource, not just the action
 
@@ -317,12 +317,13 @@ and "who looked at this" separable in a store that holds both.
 setting on anything scoped to one subject:
 
 ```csharp
-public string AuditResource => $"Student/{StudentId}";
+public string AuditResource => $"OnboardingRequest/{OnboardingRequestId}";
 ```
 
-Without it, a record says `GetStudentLoans` ran. With it, the record says whose loans were
-read — the difference between a trail you can search by *person* and one you can only search
-by *feature*. Investigations start from a person far more often than from a query name.
+Without it, a record says `GetOnboardingSummary` ran. With it, the record says whose
+onboarding was read — the difference between a trail you can search by *person* and one you
+can only search by *feature*. Investigations start from a person far more often than from a
+query name.
 
 > **A create cannot name its resource.** The behaviour reads `AuditResource` off the request
 > *before* the handler runs, so an id generated inside the handler does not exist yet and the
@@ -362,8 +363,8 @@ API call and a database write land side by side in one view.
 await _audit.RecordAsync(new AuditFact("PermissionDenied")
 {
     Category = AuditCategory.Security,
-    Resource = $"Student/{studentId}",
-}.With("requiredScope", "students.read"), cancellationToken);
+    Resource = $"OnboardingRequest/{onboardingRequestId}",
+}.With("requiredScope", "onboarding.read"), cancellationToken);
 ```
 
 ### Timing something, and recording how it went
@@ -373,14 +374,14 @@ record either way — success with the elapsed time, or failure with the message
 exception is rethrown untouched, because auditing must never change behaviour:
 
 ```csharp
-var score = await _audit.TrackAsync(
-    new AuditFact("CreditScoreLookup")
+var availability = await _audit.TrackAsync(
+    new AuditFact("LicenceAvailabilityLookup")
     {
         Category = AuditCategory.External,
-        Source = "Api:CreditBureau",
-        Resource = $"Student/{studentId}",
+        Source = "Api:LicenceVendor",
+        Resource = $"OnboardingRequest/{onboardingRequestId}",
     },
-    token => _bureau.GetScoreAsync(studentId, token),
+    token => _vendor.GetAvailabilityAsync(licenceType, token),
     cancellationToken);
 ```
 
@@ -394,8 +395,8 @@ rows came back, which cache tier served it, the vendor's request id. `Annotate` 
 to **that request's own record** rather than creating a second one:
 
 ```csharp
-_audit.Annotate("loansReturned", summaries.Count.ToString(CultureInfo.InvariantCulture));
-_audit.Annotate("identitySource", "Module:Students");
+_audit.Annotate("readinessPercentage", summary.ReadinessPercentage.ToString(CultureInfo.InvariantCulture));
+_audit.Annotate("missingRequirements", string.Join(",", summary.MissingRequirements));
 ```
 
 Those arrive under `details` on the same entry the behaviour writes. Annotations survive
@@ -452,13 +453,13 @@ the module's `DbContext` needs the audit interceptor attached. Two lines, in the
 registration:
 
 ```csharp
-public static IServiceCollection AddTesterGuideModule(
+public static IServiceCollection AddEquipmentModule(
     this IServiceCollection services, string connectionString)
 {
-    services.AddTesterGuideApplication();
+    services.AddEquipmentApplication();
 
     services.AddAuditChangeTracking();                                    // 1
-    services.AddDbContext<TesterGuideDbContext>((sp, options) =>
+    services.AddDbContext<EquipmentDbContext>((sp, options) =>
         options.UseSqlite(connectionString).UseAuditChangeTracking(sp));  // 2
 
     // ...
@@ -548,7 +549,7 @@ that was registered earlier with `TryAdd`.
 
 Elasticsearch will happily index audit records with no mapping at all — it infers one. That
 is fine until `details` arrives, because every distinct annotation key becomes its **own
-mapped field**: `details.loansReturned`, `details.bureauReference`, one per key your code
+mapped field**: `details.readinessPercentage`, `details.vendorRequestId`, one per key your code
 ever writes. The default ceiling is 1000 fields per index, and an index that hits it starts
 **rejecting** documents — which this sink logs and drops. The trail thins out, and nothing
 in the application looks broken.
@@ -640,10 +641,10 @@ Do not assume. The failure modes here are all silent.
 **1. Run a command that writes something.**
 
 ```bash
-curl -X POST http://localhost:5235/instructors \
+curl -X POST http://localhost:5235/equipment \
   -H "X-Api-Key: dev-api-key-integration" \
   -H "Content-Type: application/json" \
-  -d '{"firstName":"Grace","lastName":"Hopper","email":"grace.hopper@navy.mil","departmentName":"Computer Science","rank":2}'
+  -d '{"name":"ThinkPad X1","category":0,"assetTag":"LAP-001"}'
 ```
 
 **2. Confirm a record exists.**
@@ -694,7 +695,7 @@ Useful searches:
 
 ```
 actor : "integration-service"
-action : "WithdrawStudent"
+action : "DeleteEquipment"
 succeeded : false
 action : "Delete*" and not actor : "system"
 ```
@@ -703,8 +704,8 @@ Now that one index holds more than writes, `category` and `resource` are the two
 turn it into an investigation tool:
 
 ```
-category : "Read" and resource : "Student/bd0034a3-832a-4399-b106-54d03a223898"
-resource : "Student/bd0034a3-*"
+category : "Read" and resource : "OnboardingRequest/bd0034a3-832a-4399-b106-54d03a223898"
+resource : "OnboardingRequest/bd0034a3-*"
 category : "External" and succeeded : false
 category : "Security"
 category : "Read" and not actor : "system"
@@ -893,26 +894,26 @@ Per application:
 public sealed record Command(...) : IRequest<Guid>, I<Module>Command, IAuditableRequest;
 
 // Audit one query — same behaviour, recorded as category: Read
-public sealed record Query(Guid StudentId) : IRequest<Response>, IAuditableRead
+public sealed record Query(Guid OnboardingRequestId) : IRequest<Response>, IAuditableRead
 {
-    public string AuditResource => $"Student/{StudentId}";   // whose data — set this
+    public string AuditResource => $"OnboardingRequest/{OnboardingRequestId}";   // whose data — set this
 }
 
 // Record something the pipeline never sees (inject IAuditRecorder)
 await _audit.RecordAsync(new AuditFact("PermissionDenied")
 {
     Category = AuditCategory.Security,
-    Resource = $"Student/{studentId}",
-}.With("requiredScope", "students.read"), cancellationToken);
+    Resource = $"OnboardingRequest/{onboardingRequestId}",
+}.With("requiredScope", "onboarding.read"), cancellationToken);
 
 // Time it, and record success or failure automatically
-var score = await _audit.TrackAsync(
-    new AuditFact("CreditScoreLookup") { Category = AuditCategory.External, Source = "Api:CreditBureau" },
-    token => _bureau.GetScoreAsync(studentId, token),
+var availability = await _audit.TrackAsync(
+    new AuditFact("LicenceAvailabilityLookup") { Category = AuditCategory.External, Source = "Api:LicenceVendor" },
+    token => _vendor.GetAvailabilityAsync(licenceType, token),
     cancellationToken);
 
 // Attach a fact to the record of the request already in flight
-_audit.Annotate("loansReturned", count.ToString(CultureInfo.InvariantCulture));
+_audit.Annotate("readinessPercentage", percentage.ToString(CultureInfo.InvariantCulture));
 
 // Capture before/after for a module (in Add<Module>Module)
 services.AddAuditChangeTracking();
@@ -962,7 +963,7 @@ curl "http://localhost:9200/cleanarch-audit-*/_search?q=actor:alice&pretty"
 curl "http://localhost:9200/cleanarch-audit-*/_search?q=category:Read&pretty"
 
 # Everything that touched one subject — reads and writes together
-curl "http://localhost:9200/cleanarch-audit-*/_search?q=resource:%22Student/<id>%22&pretty"
+curl "http://localhost:9200/cleanarch-audit-*/_search?q=resource:%22OnboardingRequest/<id>%22&pretty"
 ```
 
 ### Reading it in Kibana
@@ -981,7 +982,7 @@ curl "http://localhost:9200/cleanarch-audit-*/_search?q=resource:%22Student/<id>
 
 | Term | Meaning |
 |---|---|
-| **Action** | Which request ran. Taken from the feature class name, e.g. `WithdrawStudent` |
+| **Action** | Which request ran. Taken from the feature class name, e.g. `DeleteEquipment` |
 | **Annotation** | A fact a handler attaches to the record of the request already in flight (`details`) |
 | **Actor** | Who performed it — an authenticated user or a service |
 | **Append-only** | A store you may add to but not edit or delete from. The goal for a strict audit trail |
@@ -1000,10 +1001,10 @@ curl "http://localhost:9200/cleanarch-audit-*/_search?q=resource:%22Student/<id>
 | **Read audit** | A record that someone *looked at* data. Changes nothing, and is often the incident |
 | **Recorder** | `IAuditRecorder` — records activity that never passes through the request pipeline |
 | **Redaction** | Replacing a sensitive value with `***REDACTED***` at capture time. Applies to `changes[]`, **not** to details you write yourself |
-| **Resource** | Whose data a record concerns, as a searchable id — `Student/7f3…` |
+| **Resource** | Whose data a record concerns, as a searchable id — `OnboardingRequest/7f3…` |
 | **Separation of duties** | Ensuring whoever can write audit records cannot also delete them |
 | **Sink** | The destination audit records are sent to (`IAuditSink`) — shared by every route |
-| **Source** | The system data came from when it wasn't our own database — `Api:CreditBureau` |
+| **Source** | The system data came from when it wasn't our own database — `Api:LicenceVendor` |
 | **System of record** | The authoritative store for a piece of data. The audit trail is *not* one |
 | **Tamper-evident** | Designed so that alteration can be detected, even if not prevented |
 

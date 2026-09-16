@@ -103,7 +103,7 @@ those timelines so you can pull up any single slow request and see exactly which
 part of it was slow.
 
 **Loki — the diary.**
-The text lines the application writes ("Student 42 enrolled in course 7",
+The text lines the application writes ("Equipment LAP-001 reserved for onboarding request 42",
 "Failed to connect to X"). Loki stores them and lets you search them. Think of
 it as a `grep` across every log line from every server, with a date filter.
 
@@ -2602,7 +2602,7 @@ days" first.
 Search syntax (KQL) is readable:
 
 ```
-action : "StudentCreated"
+action : "EquipmentCreated"
 user : "alice" and action : "Delete*"
 not action : "Read*"
 ```
@@ -2950,7 +2950,7 @@ ls -lh /var/backups/cleanarch         # what has been kept
 | **Image** | A frozen, ready-to-run copy of a program plus its dependencies |
 | **Index** | Elasticsearch's word for a table. This stack creates one per day |
 | **KQL** | Kibana Query Language — the search box syntax in Discover |
-| **Label** | A key/value tag attached to a metric or log line, e.g. `http_route="/students"` |
+| **Label** | A key/value tag attached to a metric or log line, e.g. `http_route="/equipment"` |
 | **LogQL** | Loki's query language. Always starts with a `{label="value"}` selector |
 | **Named volume** | Docker-managed storage on the real disk that outlives its container. Used for data |
 | **OTLP** | OpenTelemetry Protocol — the standard format the application uses to push traces and logs |

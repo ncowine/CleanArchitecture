@@ -33,10 +33,8 @@ internal sealed class GlobalExceptionHandler : IExceptionHandler
 
             // Each module owns its own DomainException type; all map to the same 400 response. A
             // shared base in a dependency-free kernel would collapse these cases as more modules land.
-            case Students.Domain.DomainException:
-            case Library.Domain.DomainException:
-            case TestPlans.Domain.DomainException:
-            case TesterGuide.Domain.DomainException:
+            case Equipment.Domain.DomainException:
+            case Onboarding.Domain.DomainException:
                 await Results
                     .Problem(detail: exception.Message, statusCode: StatusCodes.Status400BadRequest, title: "Bad request")
                     .ExecuteAsync(httpContext);

@@ -38,9 +38,9 @@ Come back for the rest when you hit the problem it solves.
 | Create a whole new area of the system | [30](30-add-a-module.md) |
 | Record who changed what | [40](40-auditing.md) |
 | Add a metric for my own module | [50 §7](50-instrumenting-an-application.md#7-step-4--add-your-own-metric) |
-| Read another module's data | [60 §3](60-talking-across-modules.md#3-reads--published-contracts) |
-| Cause a write in another module | [60 §4](60-talking-across-modules.md#4-why-writes-need-an-outbox) onward |
-| Undo a step when a later one fails | [60 §13](60-talking-across-modules.md#13-compensation--the-two-leg-saga) |
+| Read another module's data, or trigger a simple action in it | [60 §3](60-talking-across-modules.md#3-reads-and-simple-actions--published-contracts) |
+| Build a multi-step process that survives a restart | [60 §4](60-talking-across-modules.md#4-why-a-multi-step-process-needs-the-outbox) onward |
+| Undo a step when a later one fails | [60 §12](60-talking-across-modules.md#12-compensation--the-saga-unwinding-itself) |
 | Issue an API key | [70 §4](70-authentication.md#4-step-1--api-keys) |
 | Protect an endpoint | [70 §8](70-authentication.md#8-step-4--protect-an-endpoint) |
 | Test a rule, or a handler | [80](80-testing.md) |
@@ -68,8 +68,9 @@ than one place:
   [90](90-observability-server-ubuntu.md) and *read* in
   [95](95-reading-your-telemetry.md). The last of the three is the one that pays for the
   other two.
-- **The transition rule** — publish on the *change*, not the state — is stated in
-  [60](60-talking-across-modules.md) and tested in [80](80-testing.md).
+- **One follow-up message per outcome** — never publish twice, never publish nothing — is
+  stated in [60](60-talking-across-modules.md) and the saga's transitions (each step
+  succeeding, each step failing) are tested in [80](80-testing.md).
 
 ---
 
@@ -95,14 +96,15 @@ stop compiling.
 
 | Convention | Meaning |
 |---|---|
-| `src/Modules/Students/…` | A real path in this repository — open it |
+| `src/Modules/Equipment/…` | A real path in this repository — open it |
 | **Why this matters** | The reasoning behind a step. These mark the places where the *wrong* choice still compiles and still returns `201` |
 | > A note block | A gotcha, a caveat, or an honest limitation |
 | ✅ / — | In endpoint tables: authorization required / open |
 
-The worked examples come from four modules — `Students`, `Library`, `TestPlans` and
-`TesterGuide`. When a guide needs a *newest, cleanest* example it uses `TesterGuide`; when it
-needs a *rich, mature* one it uses `Students`.
+The worked examples come from two modules — `Equipment` and `Onboarding`. When a guide needs
+a *simple, build-it-from-scratch* example it uses `Equipment`; when it needs a *multi-step,
+crosses-into-another-module* one it uses `Onboarding`, which also happens to be the only
+module with an outbox.
 
 ## Not covered here
 

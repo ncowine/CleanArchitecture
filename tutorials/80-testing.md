@@ -24,7 +24,7 @@ integration test.
 | 6 | [Fakes vs mocks](#6-fakes-vs-mocks) | Why this codebase chose one |
 | 7 | [Naming, and the Build helper](#7-naming-and-the-build-helper) | Make failures self-diagnosing |
 | 8 | [Testing the interesting cases](#8-testing-the-interesting-cases) | Transitions, not happy paths |
-| 9 | [Testing across modules](#9-testing-across-modules) | Events and idempotency |
+| 9 | [Testing across modules](#9-testing-across-modules) | Contracts and idempotency |
 | 10 | [Integration tests](#10-integration-tests) | The narrow, real use |
 | 11 | [What not to test](#11-what-not-to-test) | Where effort is wasted |
 | 12 | [The checklist](#12-the-checklist) | Run this when doing it for real |
@@ -38,12 +38,12 @@ integration test.
 
 Because of the dependency rule, and that is the whole return on the architecture.
 
-`Students.Domain` references nothing. `Students.Application` references only the domain and
+`Equipment.Domain` references nothing. `Equipment.Application` references only the domain and
 some building blocks. Neither can touch EF Core or ASP.NET — so **neither needs them to run
 in a test**.
 
 ```csharp
-var student = Student.Create("Ada", "Lovelace", "ada@uni.edu", Dob, Enrolled);
+var asset = EquipmentAsset.Create("ThinkPad X1", EquipmentCategory.Laptop, "LAP-001");
 ```
 
 No fixture, no container, no connection string, no `[Collection]` attribute to serialise
@@ -63,98 +63,107 @@ you cannot test without a database is a rule that has leaked into infrastructure
 |---|---|---|---|
 | **Domain test** | A business rule, directly | Nothing | Most of them |
 | **Handler test** | A use case, with fakes | Nothing | Most of the rest |
-| **Integration test** | The real host, wired up | The host | Very few |
+| **Integration test** | Real EF Core + a real database | A temp SQLite file | Very few |
 
-The 162 tests in `tests/CleanArch.UnitTests/` are almost all the first two kinds.
-`tests/CleanArch.Api.IntegrationTests/` holds a handful — and that ratio is deliberate, not
-an omission.
+The 88 tests in `tests/CleanArch.UnitTests/` are almost all the first two kinds.
+`tests/CleanArch.Api.IntegrationTests/` holds 22 — and that ratio is deliberate, not an
+omission.
 
-**Why so few integration tests:** they are slow, they fail for reasons unrelated to your
+**Why so few integration tests:** they are slower, they fail for reasons unrelated to your
 change, and each one covers a thin path through a lot of code. They earn their place when
 they test *wiring* — the thing unit tests structurally cannot see. Use them for that and
-nothing else.
+nothing else. (This codebase's integration tests don't spin up a full HTTP host either — see
+[chapter 10](#10-integration-tests) for why, and what they exercise instead.)
 
 ---
 
 ## 3. Step 1 — Test a rule
 
 Domain tests are the cheapest tests you will ever write, and they test the most valuable
-code. Go straight at the object:
+code. Go straight at the object — this is the real `EquipmentAssetTests`:
 
 ```csharp
-public class StudentTests
+public class EquipmentAssetTests
 {
-    private static readonly DateOnly Dob = new(1990, 1, 1);
-    private static readonly DateOnly Enrolled = new(2024, 9, 1);
+    private static EquipmentAsset Create() =>
+        EquipmentAsset.Create(" ThinkPad X1 ", EquipmentCategory.Laptop, " LAP-001 ");
 
     [Fact]
-    public void Create_with_valid_input_is_active_and_normalizes_email()
+    public void Create_trims_input_and_starts_available()
     {
-        var student = Student.Create("Ada", "Lovelace", "  ADA@UNI.EDU ", Dob, Enrolled);
+        var asset = Create();
 
-        Assert.Equal(StudentStatus.Active, student.Status);
-        Assert.Equal("ada@uni.edu", student.Email);      // trimmed and lower-cased
-        Assert.Equal("Ada", student.FirstName);
+        Assert.Equal("ThinkPad X1", asset.Name);
+        Assert.Equal("LAP-001", asset.AssetTag);
+        Assert.Equal(EquipmentCategory.Laptop, asset.Category);
+        Assert.Equal(EquipmentStatus.Available, asset.Status);
+        Assert.Null(asset.ReservedForOnboardingRequestId);
     }
 }
 ```
 
-Note it asserts the **normalisation**, not just that construction succeeded. Trimming and
-lower-casing the email is a real behaviour someone will depend on; if it silently stops, a
-test that only checked `Assert.NotNull(student)` would still pass.
+Note it asserts the **trimming and the starting state**, not just that construction
+succeeded. Both are real behaviour someone will depend on; if either silently stops, a test
+that only checked `Assert.NotNull(asset)` would still pass.
 
 For the rejection cases, a `[Theory]` keeps the table readable:
 
 ```csharp
 [Theory]
-[InlineData("", "L", "a@b.com")]
-[InlineData("F", "", "a@b.com")]
-[InlineData("F", "L", "")]
-[InlineData("F", "L", "not-an-email")]
-public void Create_with_invalid_input_throws(string first, string last, string email) =>
-    Assert.Throws<DomainException>(() => Student.Create(first, last, email, Dob, Enrolled));
+[InlineData("", "TAG-1")]
+[InlineData("  ", "TAG-1")]
+[InlineData("Name", "")]
+[InlineData("Name", "  ")]
+public void Create_with_invalid_input_throws(string name, string assetTag) =>
+    Assert.Throws<DomainException>(() => EquipmentAsset.Create(name, EquipmentCategory.Laptop, assetTag));
 ```
 
 Four rules in four lines, and adding a fifth is one line.
 
-Fixed dates as constants (`Dob`, `Enrolled`) matter more than they look: a test using
-`DateTime.Now` passes today and fails on some future Tuesday, and nobody will know why.
+State-transition rules belong here too — `Reserve()` throwing when the asset is already
+reserved, `Approve()` throwing when an onboarding request has already been decided
+(`OnboardingRequestTests`) — because they are domain invariants, not use cases. If a test
+needs a repository or a fake to exercise a rule, the rule has drifted into the wrong layer.
 
 ---
 
 ## 4. Step 2 — Test a use case
 
 A handler depends on interfaces, so a test hands it in-memory implementations and asserts on
-what came out. No database, no mediator, no host — construct the handler and call `Handle`:
+what came out. No database, no mediator, no host — construct the handler and call `Handle`.
+This is real code, one of six tests in `ApproveOnboardingInstantHandlerTests`:
 
 ```csharp
 [Fact]
-public async Task Fine_crossing_threshold_enqueues_a_hold_for_the_student()
+public async Task Licence_step_failing_compensates_the_reserved_equipment()
 {
-    var (handler, outbox, loan) = Build(priorTotal: 0m);
+    var (handler, request, equipment, _, access) = Build(
+        licences: FakeLicenceAllocationService.Failing("No Standard licences left."));
 
-    var result = await handler.Handle(new AssessFine.Command(loan.Id, 25m), default);
+    var result = await handler.Handle(new ApproveOnboardingInstant.Command(request.Id), default);
 
-    Assert.True(result.HoldRequested);
-    var hold = Assert.Single(outbox.Events.OfType<StudentHoldRequested>());
-    Assert.Equal(loan.StudentId, hold.StudentId);
-    Assert.Single(outbox.Events.OfType<LibraryFineAssessed>());
+    Assert.False(result.Ready);
+    Assert.Equal(OnboardingStatus.Failed, request.Status);
+    Assert.Equal(StepStatus.Compensated, request.EquipmentStepStatus);
+    Assert.Equal(request.Id, Assert.Single(equipment.ReleaseCalls));
+    Assert.Empty(access.ProvisionCalls); // never reached
 }
 ```
 
 Three things this demonstrates that are worth copying:
 
-**It asserts on the event, not just the return value.** `HoldRequested` being true is the
-handler's own claim about itself. `outbox.Events.OfType<StudentHoldRequested>()` is the
-observable consequence — the thing another module will actually react to. Assert on
-consequences.
+**It asserts on the compensating call, not just the return value.** `result.Ready` being
+false is the handler's own claim about itself. `equipment.ReleaseCalls` is the observable
+consequence — proof the equipment was actually released, not just that the handler said it
+failed. Assert on consequences.
 
-**`Assert.Single` returns the item**, so you can go on to assert about it. Nicer than
-`Assert.Equal(1, list.Count)` followed by `list[0]`, and the failure message is better.
+**`Assert.Single` returns the item**, so you can go on to assert about it (here, that it's
+this request's id). Nicer than `Assert.Equal(1, list.Count)` followed by `list[0]`, and the
+failure message is better.
 
-**Both events are checked.** The fine is charged *and* a hold is requested — two separate
-integration events with different consumers. A test that only checked the interesting one
-would not notice if the other stopped being published.
+**The failure *and* its cleanup are both checked, and so is what never ran.**
+`access.ProvisionCalls` being empty proves the saga stopped where it should have — a test
+that only checked the equipment release would not notice if access provisioning ran anyway.
 
 You do **not** need the mediator. Behaviours — validation, transactions, audit — are tested
 once, where they live. Re-testing them through every handler tests the framework, slowly.
@@ -163,58 +172,61 @@ once, where they live. Re-testing them through every handler tests the framework
 
 ## 5. Step 3 — Write a fake
 
-A fake is a real, working, in-memory implementation of an interface. They live in
-`tests/CleanArch.UnitTests/Fakes.cs`.
+A fake is a real, working, in-memory implementation of an interface. Equipment's live in
+`tests/CleanArch.UnitTests/EquipmentFakes.cs`, Onboarding's in `OnboardingFakes.cs`.
 
 ```csharp
-internal sealed class FakeLoanRepository : ILoanRepository
+internal sealed class FakeOnboardingRequestRepository : IOnboardingRequestRepository
 {
-    private readonly Dictionary<Guid, Loan> _loans = new();
+    private readonly Dictionary<Guid, OnboardingRequest> _requests = new();
 
-    /// <summary>Value returned by GetFineTotalAsync — set per test.</summary>
-    public decimal FineTotal { get; set; }
+    public List<OnboardingRequest> Added { get; } = new();
 
-    public List<Loan> Added { get; } = new();
+    public void Seed(OnboardingRequest request) => _requests[request.Id] = request;
 
-    public void Seed(Loan loan) => _loans[loan.Id] = loan;
-
-    public Task AddAsync(Loan loan, CancellationToken cancellationToken)
+    public Task AddAsync(OnboardingRequest request, CancellationToken cancellationToken)
     {
-        Added.Add(loan);
-        _loans[loan.Id] = loan;
+        Added.Add(request);
+        _requests[request.Id] = request;
         return Task.CompletedTask;
     }
 
-    public Task<Loan?> GetAsync(Guid loanId, CancellationToken cancellationToken) =>
-        Task.FromResult(_loans.TryGetValue(loanId, out var loan) ? loan : null);
+    public Task<OnboardingRequest?> GetAsync(Guid onboardingRequestId, CancellationToken cancellationToken) =>
+        Task.FromResult(_requests.TryGetValue(onboardingRequestId, out var request) ? request : null);
 }
 ```
 
-Three moves, and every good fake has them:
+Three moves, and every good fake has some combination of them:
 
 | Move | Purpose | Here |
 |---|---|---|
-| **Seed** | Arrange preconditions | `Seed(loan)` |
+| **Seed** | Arrange preconditions | `Seed(request)` |
 | **Record** | Let the test assert on what happened | `Added` |
-| **Configure** | Control a return value per test | `FineTotal { get; set; }` |
+| **Configure** | Control a return value per test | `FakeEquipmentReservationService.Succeeding(...)` / `.Failing(reason)` |
+
+That last move doesn't have to be a mutable property — a pair of named factory methods
+reads better at the call site (`FakeLicenceAllocationService.Failing("No Standard licences left.")`
+tells you what the test is arranging without opening the fake's file).
 
 The simplest useful fake in the whole file is four lines:
 
 ```csharp
-internal sealed class FakeOutbox : IOutbox
+internal sealed class FakeRealtimeDispatch : IRealtimeDispatch
 {
-    public List<object> Events { get; } = new();
+    public List<(string Group, RealtimeEvent Event)> Published { get; } = new();
 
-    public void Enqueue<TEvent>(TEvent integrationEvent) where TEvent : class => Events.Add(integrationEvent);
+    public void Publish(string group, RealtimeEvent realtimeEvent) => Published.Add((group, realtimeEvent));
 }
 ```
 
-That one fake is what makes every outbox assertion in the suite possible.
+That one fake is what makes every realtime-publish assertion in the suite possible — see
+`CreateEquipmentHandlerTests`.
 
-A fake should be **honest**. `GetByStudentAsync` in the real `FakeLoanRepository` genuinely
-filters, orders and pages, because a fake that ignores paging would let a paging bug through
-untested. Where a fake cheats — `FineTotal` returns a fixed value rather than summing — that
-is a deliberate choice to make the test's arrangement direct, and it is documented.
+A fake should be **honest**. `FakeEquipmentReservationService.ReserveCalls` genuinely records
+every call, in order, because a fake that silently dropped calls would let a "called it twice
+by accident" bug through untested. Where a fake simplifies — it returns one fixed result for
+every call rather than modelling real stock — that is a deliberate choice to keep the test's
+arrangement direct, and it is what the `Succeeding()` / `Failing()` naming documents.
 
 ---
 
@@ -249,14 +261,14 @@ that is usually a signal the interface is too big.
 ### Name the behaviour, not the method
 
 ```csharp
-Fine_below_threshold_does_not_enqueue_a_hold()
-Fine_crossing_threshold_enqueues_a_hold_for_the_student()
-Fine_when_already_over_threshold_does_not_enqueue_again()
-Create_with_dob_not_before_enrollment_throws()
+All_steps_succeeding_marks_the_request_ready()
+Equipment_step_failing_fails_the_request_with_nothing_to_compensate()
+Licence_step_failing_compensates_the_reserved_equipment()
+Access_step_failing_compensates_both_licence_and_equipment_in_reverse_order()
 ```
 
 Read them as sentences. When one fails in CI, the name alone tells you what broke — often
-enough to know the cause without opening the file. Compare `TestAssessFine2`.
+enough to know the cause without opening the file. Compare `TestApproveOnboarding2`.
 
 Underscores are used deliberately (the analyzer warning for them is suppressed in the test
 project), because at this length they are far more readable than camel case.
@@ -264,21 +276,33 @@ project), because at this length they are far more readable than camel case.
 ### Factor the arrangement
 
 ```csharp
-private static (AssessFine.Handler handler, FakeOutbox outbox, Loan loan) Build(decimal priorTotal)
+private static (
+    ApproveOnboardingInstant.Handler Handler,
+    OnboardingRequest Request,
+    FakeEquipmentReservationService Equipment,
+    FakeLicenceAllocationService Licences,
+    FakeAccessProvisioningService Access) Build(
+    FakeEquipmentReservationService? equipment = null,
+    FakeLicenceAllocationService? licences = null,
+    FakeAccessProvisioningService? access = null)
 {
-    var loan = Loan.Borrow(Guid.NewGuid(), Guid.NewGuid(), Today, Due);
-    var loans = new FakeLoanRepository { FineTotal = priorTotal };
-    loans.Seed(loan);
-    var outbox = new FakeOutbox();
-    return (new AssessFine.Handler(loans, outbox), outbox, loan);
+    var repository = new FakeOnboardingRequestRepository();
+    var request = Pending();
+    repository.Seed(request);
+    equipment ??= FakeEquipmentReservationService.Succeeding();
+    licences ??= FakeLicenceAllocationService.Succeeding();
+    access ??= FakeAccessProvisioningService.Succeeding();
+    var handler = new ApproveOnboardingInstant.Handler(repository, equipment, licences, access);
+    return (handler, request, equipment, licences, access);
 }
 ```
 
-One helper returning a named tuple of everything the tests need. Each test then starts with
-one line, and the parameter (`priorTotal`) is precisely the thing that varies between them.
+One helper returning a named tuple of everything the tests need, with every fake defaulting
+to "succeeds" so each test overrides only the one that matters to it — compare the four-line
+call in [chapter 4](#4-step-2--test-a-use-case) to constructing all three fakes by hand.
 
 **Why this matters:** when the handler gains a constructor parameter, you update one helper
-rather than fifteen tests. That is the difference between tests that get maintained and tests
+rather than six tests. That is the difference between tests that get maintained and tests
 that get deleted.
 
 ### The test project relaxes the rules
@@ -299,79 +323,118 @@ Happy paths are the least valuable tests. The bugs live at the edges.
 
 ### Transitions
 
-The `AssessFine` tests are a template. Three tests around one threshold:
+`ApproveOnboardingInstantHandlerTests` is a template. Four tests around one saga:
 
-| Test | Prior total | Asserts |
+| Test | What fails | Asserts |
 |---|---|---|
-| Below the limit | 0 | No hold |
-| **Crossing** the limit | 0 → 25 | Hold requested |
-| **Already over** | 25 → 35 | No *second* hold |
+| Nothing | — | Ready; every step `Completed`; nothing released |
+| Equipment (1st step) | No stock | Failed; equipment `Failed`; licence never attempted |
+| Licence (2nd step) | Pool exhausted | Failed; equipment `Compensated`; access never attempted |
+| Access (3rd step) | Unsupported level | Failed; **both** equipment and licence `Compensated`, in reverse order |
 
-The third is the one people forget, and it is the one that catches the real bug — publishing
-on state rather than on the transition, which floods the queue.
-[Guide 60](60-talking-across-modules.md#7-step-2--enqueue-it-atomically) explains why.
+The last two are the ones people forget. It is easy to test the happy path and the very
+first failure, and never check that a failure two steps in actually unwinds what already
+succeeded — which is the entire point of building a saga instead of trusting a single
+database transaction. [Guide 60](60-talking-across-modules.md#5-compensation--the-saga-pattern)
+explains why a transaction can't do this job across two databases.
 
 ### Idempotency
 
-Anything consuming an outbox message must handle redelivery. Test it by calling twice with
-the same message id:
+Anything a saga step can call more than once (a retried instant approval, a redelivered
+outbox message) must handle being called twice. This is `IEquipmentReservationService`'s own
+consuming-side implementation, tested against a **real** database — reserving is a stateful
+check against what's already in stock, so this is naturally an integration test, not a fake:
 
 ```csharp
 [Fact]
-public async Task Placing_the_same_hold_twice_records_it_once()
+public async Task Reserving_equipment_twice_for_the_same_onboarding_request_is_idempotent()
 {
-    var messageId = Guid.NewGuid();
+    using var scope = _provider.CreateScope();
+    var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+    await sender.Send(new CreateEquipment.Command("ThinkPad X1", EquipmentCategory.Laptop, "LAP-001"), default);
 
-    await service.PlaceHoldAsync(messageId, studentId, "reason", default);
-    await service.PlaceHoldAsync(messageId, studentId, "reason", default);
+    var reservations = scope.ServiceProvider.GetRequiredService<IEquipmentReservationService>();
+    var onboardingRequestId = Guid.NewGuid();
 
-    Assert.Single(holds.All);
+    var first = await reservations.ReserveAsync(onboardingRequestId, "Laptop", default);
+    var second = await reservations.ReserveAsync(onboardingRequestId, "Laptop", default);
+
+    Assert.True(first.Reserved);
+    Assert.True(second.Reserved);
+    Assert.Equal(first.EquipmentId, second.EquipmentId); // the same reservation, not a second one
 }
 ```
 
 If your consumer isn't idempotent, this is the only test that will tell you before production
-does.
+does — a redelivered message would otherwise reserve a second item, or double-charge, or
+double-anything.
 
 ### Boundaries and rejections
 
-Exactly at the limit. Zero. Empty collections. The state transition that should be a no-op —
-`Withdraw()` is documented as idempotent, so withdrawing twice is a test.
+Exactly at the limit. Zero. Empty collections. The state transition that should throw —
+`Approve()` on an already-decided request is documented as a one-way door, so approving twice
+is a test (`Approving_an_already_decided_request_throws`).
 
-And the rejection path in a saga: a hold for a withdrawn student must produce a
-`StudentHoldRejected`, not a hold. That branch is where compensation begins, and it is
-invisible on the happy path.
+And the rejection path in a saga: a step that fails must produce compensation, not a
+half-finished `Ready` request. That branch is where the saga actually earns its name, and it
+is invisible on the happy path.
 
 ---
 
 ## 9. Testing across modules
 
-You do not need both databases, or either. The seam between modules is an interface, so a
-test fakes it:
+You do not need both databases, or either. The seam between modules is a published contract,
+so a test fakes it — this is the real `FakeEquipmentReservationService`:
 
 ```csharp
-internal sealed class FakeStudentDirectory : IStudentDirectory
+internal sealed class FakeEquipmentReservationService : IEquipmentReservationService
 {
-    private readonly StudentSummary? _summary;
+    private readonly EquipmentReservationResult _result;
 
-    public FakeStudentDirectory(StudentSummary? summary) => _summary = summary;
+    public List<Guid> ReserveCalls { get; } = new();
+    public List<Guid> ReleaseCalls { get; } = new();
 
-    public Task<StudentSummary?> GetAsync(Guid studentId, CancellationToken cancellationToken) =>
-        Task.FromResult(_summary);
+    private FakeEquipmentReservationService(EquipmentReservationResult result) => _result = result;
+
+    public static FakeEquipmentReservationService Succeeding(Guid? equipmentId = null) =>
+        new(new EquipmentReservationResult(true, equipmentId ?? Guid.NewGuid(), null));
+
+    public static FakeEquipmentReservationService Failing(string reason) =>
+        new(new EquipmentReservationResult(false, null, reason));
+
+    public Task<EquipmentReservationResult> ReserveAsync(
+        Guid onboardingRequestId, string category, CancellationToken cancellationToken)
+    {
+        ReserveCalls.Add(onboardingRequestId);
+        return Task.FromResult(_result);
+    }
+
+    public Task ReleaseAsync(Guid onboardingRequestId, CancellationToken cancellationToken)
+    {
+        ReleaseCalls.Add(onboardingRequestId);
+        return Task.CompletedTask;
+    }
 }
 ```
 
-Constructed with `null`, it tests "what happens when the student doesn't exist" — a case that
-would otherwise need a second database in a specific state.
+Constructed with `Failing("No Laptop in stock.")`, it tests "what happens when nothing is in
+stock" — a case that would otherwise need a second database seeded into a specific state.
 
-For the two sides of a cross-module write:
+For the two sides of a cross-module call:
 
-- **The publishing side** — assert the right event, with the right payload, was enqueued
-  (`FakeOutbox`).
-- **The consuming side** — test the contract implementation directly: does it do the work,
-  is it idempotent, does it reject correctly?
+- **The calling side** (Onboarding) — assert the compensating call happens on failure, and
+  *only* on failure (`equipment.ReleaseCalls`), via the handler tests in
+  [chapter 4](#4-step-2--test-a-use-case).
+- **The implementing side** (Equipment) — test the contract implementation directly: does it
+  do the work, is it idempotent ([chapter 8](#8-testing-the-interesting-cases)), does it
+  reject correctly (the "unknown category" and "nothing in stock" branches)?
 
-The dispatcher in between is a `switch`. It is worth one test that an unknown type throws, so
-the dead-letter path stays intact.
+The dispatcher in between — `OnboardingOutboxDispatcher`, which drives the persisted saga's
+forward and compensating steps — is a `switch` over message type that touches its own
+`DbContext` directly, loading the request and saga state fresh on every call. Because of
+that, it's naturally an integration-test subject rather than a fake-based unit test: see
+`OnboardingSagaTests` in the next chapter, including the case where a step fails and enqueues
+its own compensation.
 
 ---
 
@@ -379,17 +442,29 @@ the dead-letter path stays intact.
 
 Reserve them for what unit tests structurally cannot see: **wiring**.
 
-`tests/CleanArch.Api.IntegrationTests/` currently holds one — the On-Behalf-Of token exchange
-flow, which spans an authentication handler, an HTTP message handler, a token cache and a
-downstream call. No unit test can tell you those are correctly connected in the real
-pipeline.
+`tests/CleanArch.Api.IntegrationTests/` holds two test classes. `OnBehalfOfFlowTests` covers
+the On-Behalf-Of token exchange flow, which spans an authentication handler, an HTTP message
+handler, a token cache and a downstream call — no unit test can tell you those are correctly
+connected in the real pipeline. `EquipmentModuleTests` and `OnboardingSagaTests` cover this
+codebase's own wiring the same way: real `AddEquipmentModule`/`AddOnboardingModule`
+registrations, a real (temp-file) SQLite database, real `HybridCache` — all through a bare
+`ServiceCollection`, **not** a full HTTP host (`WebApplicationFactory`). That's a deliberate
+choice, not a shortcut: it exercises every layer that matters (EF Core, the mediator
+pipeline, HybridCache, the outbox) while staying fast enough to run on every `dotnet test`,
+and it means the small number of things a real HTTP pipeline would add — routing, model
+binding, auth middleware — are exactly the things *not* covered here, because nothing else in
+this suite needs them proven twice.
 
-Good candidates:
+Good candidates, all real tests in this repo:
 
-- Authentication actually rejects an unauthenticated call to a protected endpoint
-- A request produces the `X-Correlation-ID` response header
-- Migrations apply cleanly from empty
-- The pipeline order is right — a rejected command is still audited
+- A second read is served from cache, not the database — proven by mutating the row with raw
+  SQL (bypassing the cache invalidator entirely) and asserting the *stale* value comes back
+  (`A_second_read_is_served_from_cache_not_the_database`)
+- The persisted saga converges to `Ready` after the real dispatcher drains every outbox
+  message it enqueues along the way (`Standard_saga_succeeding_converges_to_ready_after_draining_the_outbox`)
+- A cross-module compensation genuinely changed the *other* module's data, not just a local
+  flag (`Instant_saga_failing_on_access_releases_the_real_equipment_reservation`)
+- Reserving the same request twice only reserves once ([chapter 8](#8-testing-the-interesting-cases))
 
 Bad candidates — write these as unit tests instead:
 
@@ -419,8 +494,8 @@ Effort spent here buys nothing and costs maintenance:
 And the meta-rule: **a test that never fails is not protecting you.** If you cannot describe
 the bug a test would catch, don't write it.
 
-Coverage percentage is a poor target. 100% coverage of getters with no test for the threshold
-transition is worse than 60% with the edges covered.
+Coverage percentage is a poor target. 100% coverage of getters with no test for the
+compensation path is worse than 60% with the edges covered.
 
 ---
 
@@ -438,21 +513,21 @@ For a new **use case**:
 - [ ] Handler constructed directly with fakes — no mediator, no host
 - [ ] Assertions on outcomes, not on which methods were called
 - [ ] The not-found / rejection path
-- [ ] Any event enqueued is asserted, with its payload
+- [ ] Any compensating call is asserted, with what it was called with
 - [ ] A `Build(...)` helper if more than two tests share arrangement
 
 For anything **cross-module**:
 
-- [ ] The publishing side asserts the right event on the transition
-- [ ] The transition tested three ways: below, crossing, already over
-- [ ] The consuming side tested directly
-- [ ] **Called twice with the same message id** — idempotency
-- [ ] The rejection branch, if it can reject
+- [ ] The calling side asserts the compensating call happens on failure, and only then
+- [ ] The saga's transitions tested at every step: each one succeeding, and each one failing
+- [ ] The consuming side (the contract implementation) tested directly, against a real database
+- [ ] **Called twice with the same correlating id** — idempotency
+- [ ] The rejection/compensation branch, if it can reject
 
 Generally:
 
 - [ ] Test names read as sentences
-- [ ] New fake methods behave honestly — real filtering, real paging
+- [ ] New fake methods behave honestly — real filtering, real recording
 - [ ] `dotnet test` green before you push
 
 ---
@@ -464,7 +539,7 @@ Generally:
 | Test needs a database | Logic has leaked into infrastructure | Move the rule into the domain |
 | Test passes alone, fails in a run | Shared mutable state between tests | Fresh fakes per test; xUnit makes a new class instance per test |
 | Test failed today, passed yesterday | `DateTime.Now` somewhere | Fixed date constants |
-| Constructor change broke fifteen tests | No `Build` helper | Factor the arrangement |
+| Constructor change broke several tests | No `Build` helper | Factor the arrangement |
 | Assertion passes but the bug ships | Asserting on the return value, not the consequence | Assert on what the outside world observes |
 | Fake compiles but tests behave oddly | Fake returns defaults for something the handler relies on | Make the fake honest, or configure it per test |
 | Handler test needs a `DbContext` | It's depending on infrastructure | It should depend on an interface |
@@ -478,11 +553,11 @@ Generally:
 ### Commands
 
 ```bash
-dotnet test                                                    # everything
+dotnet test                                                        # everything
 dotnet test tests/CleanArch.UnitTests/CleanArch.UnitTests.csproj
-dotnet test --filter "FullyQualifiedName~StudentTests"         # one class
-dotnet test --filter "Name~threshold"                          # by name fragment
-dotnet test -v n                                               # per-test output
+dotnet test --filter "FullyQualifiedName~EquipmentAssetTests"      # one class
+dotnet test --filter "Name~compensat"                              # by name fragment
+dotnet test -v n                                                   # per-test output
 ```
 
 ### Shapes
@@ -504,11 +579,11 @@ public void Invalid_input_throws(string value) =>
 [Fact]
 public async Task Handler_does_the_thing()
 {
-    var (handler, outbox, thing) = Build();
+    var (handler, thing, fake) = Build();
 
     var result = await handler.Handle(new DoThing.Command(thing.Id), default);
 
-    Assert.Single(outbox.Events.OfType<ThingHappened>());
+    Assert.Equal(thing.Id, Assert.Single(fake.Calls));
 }
 
 // Fake: seed, record, configure
@@ -546,7 +621,7 @@ internal sealed class FakeThingRepository : IThingRepository
 | **Flaky** | Passes and fails without the code changing. Worse than no test |
 | **Handler test** | A test of one use case, with fakes for its dependencies |
 | **Idempotency test** | Calling twice with the same key and asserting one effect |
-| **Integration test** | A test through the real host. Reserved for wiring |
+| **Integration test** | A test against real infrastructure (here: EF Core + SQLite + HybridCache), not a full HTTP host. Reserved for wiring |
 | **Interaction test** | Asserts which methods were called. Brittle; prefer outcomes |
 | **Mock** | A framework-configured stand-in that records and verifies calls |
 | **Stub** | A stand-in returning canned values, with no assertions of its own |

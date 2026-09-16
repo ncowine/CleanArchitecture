@@ -12,33 +12,18 @@
     <Project Path="src/Api/CleanArch.Api.Authentication/CleanArch.Api.Authentication.csproj" />
   </Folder>
   <Folder Name="/src/Modules/" />
-  <Folder Name="/src/Modules/Students/">
-    <Project Path="src/Modules/Students/Students.Application/Students.Application.csproj" />
-    <Project Path="src/Modules/Students/Students.Domain/Students.Domain.csproj" />
-    <Project Path="src/Modules/Students/Students.Infrastructure/Students.Infrastructure.csproj" />
-    <Project Path="src/Modules/Students/Students.Presentation/Students.Presentation.csproj" />
-    <Project Path="src/Modules/Students/Students.Contracts/Students.Contracts.csproj" />
+  <Folder Name="/src/Modules/Equipment/">
+    <Project Path="src/Modules/Equipment/Equipment.Application/Equipment.Application.csproj" />
+    <Project Path="src/Modules/Equipment/Equipment.Contracts/Equipment.Contracts.csproj" />
+    <Project Path="src/Modules/Equipment/Equipment.Domain/Equipment.Domain.csproj" />
+    <Project Path="src/Modules/Equipment/Equipment.Infrastructure/Equipment.Infrastructure.csproj" />
+    <Project Path="src/Modules/Equipment/Equipment.Presentation/Equipment.Presentation.csproj" />
   </Folder>
-  <Folder Name="/src/Modules/Library/">
-    <Project Path="src/Modules/Library/Library.Application/Library.Application.csproj" />
-    <Project Path="src/Modules/Library/Library.Contracts/Library.Contracts.csproj" />
-    <Project Path="src/Modules/Library/Library.Domain/Library.Domain.csproj" />
-    <Project Path="src/Modules/Library/Library.Infrastructure/Library.Infrastructure.csproj" />
-    <Project Path="src/Modules/Library/Library.Presentation/Library.Presentation.csproj" />
-  </Folder>
-  <Folder Name="/src/Modules/TestPlans/">
-    <Project Path="src/Modules/TestPlans/TestPlans.Application/TestPlans.Application.csproj" />
-    <Project Path="src/Modules/TestPlans/TestPlans.Contracts/TestPlans.Contracts.csproj" />
-    <Project Path="src/Modules/TestPlans/TestPlans.Domain/TestPlans.Domain.csproj" />
-    <Project Path="src/Modules/TestPlans/TestPlans.Infrastructure/TestPlans.Infrastructure.csproj" />
-    <Project Path="src/Modules/TestPlans/TestPlans.Presentation/TestPlans.Presentation.csproj" />
-  </Folder>
-  <Folder Name="/src/Modules/TesterGuide/">
-    <Project Path="src/Modules/TesterGuide/TesterGuide.Application/TesterGuide.Application.csproj" />
-    <Project Path="src/Modules/TesterGuide/TesterGuide.Contracts/TesterGuide.Contracts.csproj" />
-    <Project Path="src/Modules/TesterGuide/TesterGuide.Domain/TesterGuide.Domain.csproj" />
-    <Project Path="src/Modules/TesterGuide/TesterGuide.Infrastructure/TesterGuide.Infrastructure.csproj" />
-    <Project Path="src/Modules/TesterGuide/TesterGuide.Presentation/TesterGuide.Presentation.csproj" />
+  <Folder Name="/src/Modules/Onboarding/">
+    <Project Path="src/Modules/Onboarding/Onboarding.Application/Onboarding.Application.csproj" />
+    <Project Path="src/Modules/Onboarding/Onboarding.Domain/Onboarding.Domain.csproj" />
+    <Project Path="src/Modules/Onboarding/Onboarding.Infrastructure/Onboarding.Infrastructure.csproj" />
+    <Project Path="src/Modules/Onboarding/Onboarding.Presentation/Onboarding.Presentation.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CleanArch.UnitTests/CleanArch.UnitTests.csproj" />

@@ -1,11 +1,7 @@
-using BuildingBlocks.Outbox;
 using CleanArch.Api.Authentication;
-using Library.Infrastructure.Persistence;
+using Equipment.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Students.Infrastructure.Persistence;
-using TestPlans.Infrastructure.Persistence;
-using TestPlans.Infrastructure.Seed;
-using TesterGuide.Infrastructure.Persistence;
+using Onboarding.Infrastructure.Persistence;
 
 namespace CleanArch.Api;
 
@@ -35,12 +31,10 @@ internal static class WebApplicationExtensions
         using var scope = app.Services.CreateScope();
 
         // Each database is migrated independently — they share nothing, not even a transaction.
-        await scope.ServiceProvider.GetRequiredService<StudentsDbContext>().Database.MigrateAsync();
-        await scope.ServiceProvider.GetRequiredService<LibraryDbContext>().Database.MigrateAsync();
-        await scope.ServiceProvider.GetRequiredService<TestPlansDbContext>().Database.MigrateAsync();
-        await scope.ServiceProvider.GetRequiredService<TesterGuideDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<EquipmentDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<OnboardingDbContext>().Database.MigrateAsync();
 
-        // The API-key store shares students.db but migrates on its own history table. The auth project
+        // The API-key store has its own database and migrates on its own history table. The auth project
         // owns the migration so the host needn't touch the internal context.
         await ApiKeyStoreSetup.MigrateAsync(scope.ServiceProvider);
     }
@@ -59,8 +53,8 @@ internal static class WebApplicationExtensions
 
         using var scope = app.Services.CreateScope();
 
-        // Seed a small Test Plans content tree so the stand-in system of record has something to reference.
-        await TestPlansSeeder.SeedAsync(scope.ServiceProvider);
+        // Modules seed their own sample data here, e.g.:
+        //   await EquipmentSeeder.SeedAsync(scope.ServiceProvider);
 
         // Well-known dev keys — convenience for local runs and the docs. Deliberately Development-only:
         // these values are published in the README, so seeding them anywhere reachable is a backdoor.
@@ -73,25 +67,9 @@ internal static class WebApplicationExtensions
             options.RoutePrefix = "swagger";
         });
 
-        // DEV-ONLY diagnostic: enqueue an unroutable outbox message. The dispatcher can't handle its
-        // type, so it fails every attempt and ends up dead-lettered — a way to exercise that path.
-        app.MapPost("/library/outbox/_dev/poison", async (
-            LibraryDbContext db,
-            CancellationToken cancellationToken) =>
-        {
-            var id = Guid.NewGuid();
-            db.Outbox.Add(new OutboxMessage
-            {
-                Id = id,
-                Type = "UnroutableTestMessage",
-                Content = "{}",
-                OccurredOnUtc = DateTime.UtcNow,
-            });
-            await db.SaveChangesAsync(cancellationToken);
-            return Results.Ok(new { id });
-        })
-        .WithName("InjectPoisonOutboxMessage")
-        .WithSummary("DEV ONLY: enqueue an unroutable message to exercise the retry + dead-letter path.")
-        .WithTags("Library — Outbox");
+        // DEV-ONLY diagnostic: enqueue an unroutable outbox message so the dispatcher fails every
+        // attempt and ends up dead-lettered — a way to exercise that path. Re-add per module once it
+        // has its own outbox-backed DbContext, e.g.:
+        //   app.MapPost("/equipment/outbox/_dev/poison", async (EquipmentDbContext db, ...) => { ... });
     }
 }
