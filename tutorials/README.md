@@ -5,8 +5,9 @@ read. Each one answers *"how do I do X, and why is it done this way?"* for one t
 uses this repository only as the worked example. The aim is that you could apply any of them
 to a different codebase.
 
-This folder is self-contained. The older material in [`../docs/`](../docs) is kept as-is for
-reference; where the two disagree, these guides are the current ones.
+This folder is self-contained and is the current documentation — the older `docs/` folder has
+been reduced to two operational guides with no home here:
+[build and packages](../docs/build-and-packages.md) and [deploying to IIS](../docs/deploy-iis.md).
 
 ---
 
@@ -21,8 +22,10 @@ Come back for the rest when you hit the problem it solves.
 | 20 | [Adding a feature](20-add-a-feature.md) | You're adding an endpoint or an operation to a module that already exists |
 | 30 | [Adding a new module](30-add-a-module.md) | The work needs its own boundary, its own database, its own vocabulary |
 | 40 | [Auditing — who changed what](40-auditing.md) | You need a defensible record of every write, separate from your logs |
+| 45 | [Caching — cache-aside with HybridCache](45-caching.md) | A hot read is hitting the database every time and doesn't need to |
 | 50 | [Instrumenting an application](50-instrumenting-an-application.md) | The app is a black box anywhere but your machine |
 | 60 | [Talking across modules](60-talking-across-modules.md) | You need data — or a write — from another module, and found out you can't just do it |
+| 65 | [Real-time notifications](65-real-time-notifications.md) | Connected clients need to see a change the moment it happens, without polling |
 | 70 | [Authentication and the audit actor](70-authentication.md) | You need to know who is calling, and they don't all authenticate the same way |
 | 80 | [Testing](80-testing.md) | You want tests that catch bugs and survive refactoring |
 | 90 | [Observability server on Ubuntu](90-observability-server-ubuntu.md) | You're building the box that collects telemetry, from a blank Ubuntu install |
@@ -37,10 +40,12 @@ Come back for the rest when you hit the problem it solves.
 | Add a paged list endpoint | [20 §11](20-add-a-feature.md#11-paged-lists) |
 | Create a whole new area of the system | [30](30-add-a-module.md) |
 | Record who changed what | [40](40-auditing.md) |
+| Cache a hot read, and invalidate it correctly | [45](45-caching.md) |
 | Add a metric for my own module | [50 §7](50-instrumenting-an-application.md#7-step-4--add-your-own-metric) |
 | Read another module's data, or trigger a simple action in it | [60 §3](60-talking-across-modules.md#3-reads-and-simple-actions--published-contracts) |
 | Build a multi-step process that survives a restart | [60 §4](60-talking-across-modules.md#4-why-a-multi-step-process-needs-the-outbox) onward |
 | Undo a step when a later one fails | [60 §12](60-talking-across-modules.md#12-compensation--the-saga-unwinding-itself) |
+| Push a live update to connected clients | [65](65-real-time-notifications.md) |
 | Issue an API key | [70 §4](70-authentication.md#4-step-1--api-keys) |
 | Protect an endpoint | [70 §8](70-authentication.md#8-step-4--protect-an-endpoint) |
 | Test a rule, or a handler | [80](80-testing.md) |
@@ -71,6 +76,10 @@ than one place:
 - **One follow-up message per outcome** — never publish twice, never publish nothing — is
   stated in [60](60-talking-across-modules.md) and the saga's transitions (each step
   succeeding, each step failing) are tested in [80](80-testing.md).
+- **The caching decorator shape** shows up twice — over a database read in
+  [45](45-caching.md) and over API key validation in
+  [70](70-authentication.md#4-step-1--api-keys). Same pattern, two different reasons to
+  reach for it.
 
 ---
 
@@ -110,11 +119,6 @@ module with an outbox.
 
 Honest gaps, so you don't go looking:
 
-- **Caching.** `HybridCache` decorates the hottest read and is invalidated on writes. The
-  decorator pattern shows up in [70](70-authentication.md#4-step-1--api-keys) if you want the
-  shape.
-- **Real-time / SignalR.** `BuildingBlocks.RealTime` and the presence hub exist and work;
-  there is no guide yet.
 - **Deploying the API itself.** [`../docs/deploy-iis.md`](../docs/deploy-iis.md) covers IIS.
 - **Build and package plumbing.** [`../docs/build-and-packages.md`](../docs/build-and-packages.md)
   covers `Directory.*.props`, Central Package Management and NU1507.

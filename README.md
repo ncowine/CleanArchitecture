@@ -9,9 +9,10 @@ instant in-process version and a persisted, resumable one — plus a derived rea
 > Status: POC. The architecture and patterns are production-shaped; some operational pieces are
 > deliberately stubbed (see [Production notes](#production-notes)).
 
-📚 **New here?** Start with **[tutorials/](tutorials/README.md)** — ten task-oriented guides covering
-the patterns this codebase is built from (foundations, adding a feature, adding a module, auditing,
-instrumentation, cross-module sagas, auth, testing, and running/reading the observability stack).
+📚 **New here?** Start with **[tutorials/](tutorials/README.md)** — twelve task-oriented guides
+covering the patterns this codebase is built from (foundations, adding a feature, adding a module,
+auditing, caching, instrumentation, cross-module sagas, real-time notifications, auth, testing, and
+running/reading the observability stack).
 For the build/version plumbing, see **[docs/build-and-packages.md](docs/build-and-packages.md)** —
 the `Directory.*.props` files, Central Package Management, and the "multiple NuGet sources"
 (NU1507) fix. For hosting the API itself, see **[docs/deploy-iis.md](docs/deploy-iis.md)**; for the
