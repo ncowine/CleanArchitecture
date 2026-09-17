@@ -29,14 +29,27 @@ public sealed class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRe
         LoggingBehaviorLog.Handling(_logger, Request);
 
         var startedAt = Stopwatch.GetTimestamp();
-        var response = await next();
 
-        // Hoisted out of the log call: a timestamp delta is trivial to compute, and doing it here keeps
-        // the analyzer honest about arguments that would be expensive when the level is disabled.
-        var elapsedMs = (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
-        LoggingBehaviorLog.Handled(_logger, Request, elapsedMs);
+        try
+        {
+            var response = await next();
 
-        return response;
+            // Hoisted out of the log call: a timestamp delta is trivial to compute, and doing it here
+            // keeps the analyzer honest about arguments that would be expensive when the level is disabled.
+            var elapsedMs = (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+            LoggingBehaviorLog.Handled(_logger, Request, elapsedMs);
+
+            return response;
+        }
+        catch (OperationCanceledException)
+        {
+            // Without this, a cancelled request logs "Handling X" and nothing else — it just vanishes
+            // from the log stream mid-flight, which reads as the log pipeline dropping something rather
+            // than as what actually happened.
+            var elapsedMs = (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+            LoggingBehaviorLog.Cancelled(_logger, Request, elapsedMs);
+            throw;
+        }
     }
 }
 
@@ -48,4 +61,8 @@ internal static partial class LoggingBehaviorLog
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Handled {Request} in {ElapsedMs}ms")]
     public static partial void Handled(ILogger logger, string request, long elapsedMs);
+
+    // Information, not Error/Warning: a cancelled request is the caller giving up, not the system failing.
+    [LoggerMessage(Level = LogLevel.Information, Message = "Cancelled {Request} after {ElapsedMs}ms")]
+    public static partial void Cancelled(ILogger logger, string request, long elapsedMs);
 }

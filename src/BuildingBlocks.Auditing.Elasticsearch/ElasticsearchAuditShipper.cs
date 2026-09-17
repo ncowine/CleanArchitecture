@@ -106,7 +106,7 @@ internal sealed class ElasticsearchAuditShipper : BackgroundService
         foreach (var entry in documents)
         {
             AuditLogEvents.Unshipped(
-                _logger, entry.CorrelationId, entry.Action, entry.Actor, entry.Succeeded, entry.Changes.Count);
+                _logger, entry.CorrelationId, entry.Action, entry.Actor, entry.Outcome, entry.Changes.Count);
         }
     }
 }

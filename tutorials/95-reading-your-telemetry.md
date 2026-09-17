@@ -563,7 +563,7 @@ Verified from a real line in this app:
 | `_OriginalFormat_` | `Handled {Request} in {ElapsedMs}ms` | The message *template* — groups all instances of one message regardless of values |
 
 Plus every placeholder in the message template, as its own field. `LoggingBehavior` gives you
-`Request` and `ElapsedMs`; the audit fallback gives you `Action`, `Actor`, `Succeeded`,
+`Request` and `ElapsedMs`; the audit fallback gives you `Action`, `Actor`, `Outcome`,
 `ChangeCount`; EF Core gives you `commandText`, `elapsed`, `parameters`.
 
 That last point is the payoff of structured logging, and why
@@ -773,7 +773,7 @@ Kibana → **Discover**, data view `cleanarch-audit-*`, time field `occurredOnUt
 
 ```
 actor : "integration-service"
-action : "DeleteEquipment" and succeeded : false
+action : "DeleteEquipment" and outcome : "Failed"
 category : "Read" and resource : "OnboardingRequest/bd0034a3-832a-4399-b106-54d03a223898"
 resource : "OnboardingRequest/bd0034a3-*"
 category : "Security"
@@ -789,7 +789,7 @@ audit trail.** One id, four stores.
 | `action` | What operation |
 | `resource` | Whose record |
 | `category` | `Write` / `Read` / `External` / `Security` / `Custom` |
-| `succeeded`, `error` | Outcome |
+| `outcome`, `error` | `Succeeded` / `Failed` / `Cancelled`, and for `Failed`, why |
 | `changes[]` | The before → after values, per property |
 | `correlationId` | The link to logs and traces |
 
@@ -1267,6 +1267,14 @@ is a garbage collection; five minutes is an incident. Every rule waits.
 for. "CPU above 80%" is not — it is often entirely fine, and when it is not, the error-rate or
 latency rule fires anyway. Cause-based alerts are how teams end up ignoring their pager.
 
+**A client that gave up is not a symptom either.** A closed tab or a dropped connection mid-request
+throws the same `OperationCanceledException` shape a real bug would, but nothing here failed —
+[`GlobalExceptionHandler`](../src/Api/CleanArch.Api/GlobalExceptionHandler.cs) answers it with
+**499**, not a 5xx, so it never enters the `http_response_status_code=~"5.."` count this rule
+sums. Without that split, a slow page that makes people bail reads as an outage on this dashboard,
+which is the same "alerts cried wolf" failure as the two above — just triggered by users instead
+of infrastructure.
+
 **`noDataState` is a real decision, not boilerplate.** Three of these rules use `OK` when there
 is no data, because no data means no traffic, and a quiet service is not a broken one. **Service
 down** uses `Alerting` instead, and the reasoning is worth following: `up` is written by
@@ -1414,7 +1422,7 @@ Labels: **`service_name`, `service_instance_id`. Nothing else.** Everything else
 ```
 resource : "OnboardingRequest/<id>"           # everything that touched this person's onboarding
 category : "Read" and not actor : "system"    # who looked
-action : "*" and succeeded : false            # what failed
+action : "*" and outcome : "Failed"           # what failed
 correlationId : "<guid>"                      # the bridge to logs and traces
 ```
 Fields camelCase · category values PascalCase · time field `occurredOnUtc` · widen the range.

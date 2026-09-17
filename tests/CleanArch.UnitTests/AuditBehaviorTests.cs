@@ -82,8 +82,31 @@ public class AuditBehaviorTests
         }, default));
 
         var entry = Assert.Single(sink.Entries);
-        Assert.False(entry.Succeeded);
+        Assert.Equal(AuditOutcome.Failed, entry.Outcome);
         Assert.Equal("nope", entry.Error);
+        Assert.Empty(entry.Changes);
+        Assert.Equal("vendor-call", entry.Details!["stage"]);
+    }
+
+    [Fact]
+    public async Task A_cancelled_request_is_audited_as_cancelled_not_failed()
+    {
+        var (behavior, sink, scope) = BehaviorFor<Save>();
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => behavior.Handle(new Save(Guid.NewGuid()), () =>
+        {
+            scope.Annotate("stage", "vendor-call");
+            return Task.FromCanceled<string>(cancellation.Token);
+        }, cancellation.Token));
+
+        // The caller giving up is not the same fact as the system failing — and the record must still be
+        // written even though the token that caused the cancellation is the same one the sink write would
+        // otherwise be cancelled with.
+        var entry = Assert.Single(sink.Entries);
+        Assert.Equal(AuditOutcome.Cancelled, entry.Outcome);
+        Assert.Null(entry.Error);
         Assert.Empty(entry.Changes);
         Assert.Equal("vendor-call", entry.Details!["stage"]);
     }

@@ -52,23 +52,41 @@ public sealed class AuditBehavior<TRequest, TResponse> : IPipelineBehavior<TRequ
             // annotated on the way through (via IAuditRecorder.Annotate) rides along on the same record.
             await _sink.RecordAsync(
                 new AuditEntry(
-                    _correlation.CorrelationId, actor, action, occurredOnUtc, Succeeded: true,
+                    _correlation.CorrelationId, actor, action, occurredOnUtc, AuditOutcome.Succeeded,
                     stopwatch.ElapsedMilliseconds, Error: null, _scope.Changes.ToArray(),
                     category, Source: null, resource, Details(_scope)),
                 cancellationToken);
             return response;
+        }
+        catch (OperationCanceledException)
+        {
+            stopwatch.Stop();
+            // The caller went away (or the host is shutting down) — not a system failure, so it gets its
+            // own outcome rather than being folded into Failed. Its transaction rolled back the same as a
+            // failure's, so no changes to report either. CancellationToken.None: `cancellationToken` is
+            // the one that just fired, and the record of "who gave up, and when" matters precisely because
+            // the operation was abandoned.
+            await _sink.RecordAsync(
+                new AuditEntry(
+                    _correlation.CorrelationId, actor, action, occurredOnUtc, AuditOutcome.Cancelled,
+                    stopwatch.ElapsedMilliseconds, Error: null, [],
+                    category, Source: null, resource, Details(_scope)),
+                CancellationToken.None);
+            throw;
         }
         catch (Exception exception)
         {
             stopwatch.Stop();
             // Failed command: its transaction rolled back, so report no changes (nothing was committed).
             // The annotations still stand — they say how far the request got before it failed.
+            // CancellationToken.None so a token that is cancelled for an unrelated reason (a client
+            // disconnect that raced the handler's own exception) can't also swallow the failure record.
             await _sink.RecordAsync(
                 new AuditEntry(
-                    _correlation.CorrelationId, actor, action, occurredOnUtc, Succeeded: false,
+                    _correlation.CorrelationId, actor, action, occurredOnUtc, AuditOutcome.Failed,
                     stopwatch.ElapsedMilliseconds, exception.Message, [],
                     category, Source: null, resource, Details(_scope)),
-                cancellationToken);
+                CancellationToken.None);
             throw;
         }
     }

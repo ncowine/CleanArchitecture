@@ -15,7 +15,7 @@
         "actor":         { "type": "keyword" },
         "action":        { "type": "keyword" },
         "occurredOnUtc": { "type": "date" },
-        "succeeded":     { "type": "boolean" },
+        "outcome":       { "type": "keyword" },
         "elapsedMs":     { "type": "long" },
         "error":         { "type": "text" },
         "category":      { "type": "keyword" },

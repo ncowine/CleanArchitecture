@@ -34,7 +34,7 @@ internal sealed class LoggingAuditSink : IAuditSink
                 entry.CorrelationId,
                 entry.Action,
                 entry.Actor,
-                entry.Succeeded,
+                entry.Outcome,
                 entry.ElapsedMs,
                 entry.Source,
                 entry.Resource,
@@ -60,7 +60,7 @@ internal static partial class AuditLog
     [LoggerMessage(
         EventId = 1000,
         Level = LogLevel.Information,
-        Message = "AUDIT({Category}) [{CorrelationId}] {Action} by {Actor} succeeded={Succeeded} " +
+        Message = "AUDIT({Category}) [{CorrelationId}] {Action} by {Actor} outcome={Outcome} " +
                   "in {ElapsedMs}ms source={Source} resource={Resource} details=[{Details}] {Error}")]
     public static partial void Recorded(
         ILogger logger,
@@ -68,7 +68,7 @@ internal static partial class AuditLog
         string correlationId,
         string action,
         string actor,
-        bool succeeded,
+        AuditOutcome outcome,
         long elapsedMs,
         string? source,
         string? resource,

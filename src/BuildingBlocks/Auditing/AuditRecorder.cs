@@ -37,9 +37,20 @@ internal sealed class AuditRecorder : IAuditRecorder
             var result = await operation(cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             await _sink.RecordAsync(
-                Entry(fact with { Succeeded = true, Error = null, ElapsedMs = stopwatch.ElapsedMilliseconds }, occurredOnUtc),
+                Entry(fact with { Outcome = AuditOutcome.Succeeded, Error = null, ElapsedMs = stopwatch.ElapsedMilliseconds }, occurredOnUtc),
                 cancellationToken).ConfigureAwait(false);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            stopwatch.Stop();
+            // The caller gave up, not the system — a different outcome from Failed, and one worth its own
+            // record even when the cancellation that caused it would otherwise abort the sink write too,
+            // hence CancellationToken.None here.
+            await _sink.RecordAsync(
+                Entry(fact with { Outcome = AuditOutcome.Cancelled, Error = null, ElapsedMs = stopwatch.ElapsedMilliseconds }, occurredOnUtc),
+                CancellationToken.None).ConfigureAwait(false);
+            throw;
         }
         catch (Exception exception)
         {
@@ -47,7 +58,7 @@ internal sealed class AuditRecorder : IAuditRecorder
             // The failure is the thing most worth auditing, so record it even when the cancellation that
             // caused it would abort the sink write — hence CancellationToken.None here.
             await _sink.RecordAsync(
-                Entry(fact with { Succeeded = false, Error = exception.Message, ElapsedMs = stopwatch.ElapsedMilliseconds }, occurredOnUtc),
+                Entry(fact with { Outcome = AuditOutcome.Failed, Error = exception.Message, ElapsedMs = stopwatch.ElapsedMilliseconds }, occurredOnUtc),
                 CancellationToken.None).ConfigureAwait(false);
             throw;
         }
@@ -68,7 +79,7 @@ internal sealed class AuditRecorder : IAuditRecorder
         _actor.Current,
         fact.Action,
         occurredOnUtc,
-        fact.Succeeded,
+        fact.Outcome,
         fact.ElapsedMs,
         fact.Error,
         // Standalone records describe access, not a committed change-set; the entity changes of the

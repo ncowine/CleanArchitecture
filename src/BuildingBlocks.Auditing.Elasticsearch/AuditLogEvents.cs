@@ -9,9 +9,9 @@ internal static partial class AuditLogEvents
         EventId = 1100,
         Level = LogLevel.Warning,
         Message = "Audit buffer full — Elasticsearch shipping is behind. Logging record instead: " +
-                  "[{CorrelationId}] {Action} by {Actor} succeeded={Succeeded} changes={ChangeCount}")]
+                  "[{CorrelationId}] {Action} by {Actor} outcome={Outcome} changes={ChangeCount}")]
     public static partial void BufferFull(
-        ILogger logger, string correlationId, string action, string actor, bool succeeded, int changeCount);
+        ILogger logger, string correlationId, string action, string actor, AuditOutcome outcome, int changeCount);
 
     [LoggerMessage(
         EventId = 1101,
@@ -23,7 +23,7 @@ internal static partial class AuditLogEvents
     [LoggerMessage(
         EventId = 1102,
         Level = LogLevel.Warning,
-        Message = "AUDIT(unshipped) [{CorrelationId}] {Action} by {Actor} succeeded={Succeeded} changes={ChangeCount}")]
+        Message = "AUDIT(unshipped) [{CorrelationId}] {Action} by {Actor} outcome={Outcome} changes={ChangeCount}")]
     public static partial void Unshipped(
-        ILogger logger, string correlationId, string action, string actor, bool succeeded, int changeCount);
+        ILogger logger, string correlationId, string action, string actor, AuditOutcome outcome, int changeCount);
 }

@@ -8,10 +8,17 @@ namespace CleanArch.Api;
 /// Translates expected exceptions into RFC 7807 problem responses. Validation failures from the
 /// pipeline become a 400 with per-field errors; domain rule violations become a plain 400; a failed
 /// On-Behalf-Of token exchange becomes a 401 (the caller's token was rejected) or 502 (the provider was
-/// unavailable). Anything else falls through to the framework's default 500 handling.
+/// unavailable); a client disconnect becomes a 499. Anything else falls through to the framework's
+/// default 500 handling.
 /// </summary>
 internal sealed class GlobalExceptionHandler : IExceptionHandler
 {
+    // Not a registered .NET status code — it's nginx's long-standing convention for "the client closed
+    // the connection before we could respond" — but it's the right number here for the same reason it
+    // caught on there: it keeps this case out of every 5xx-based alert and dashboard without inventing a
+    // second, incompatible convention of our own.
+    private const int ClientClosedRequest = 499;
+
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext,
         Exception exception,
@@ -19,6 +26,15 @@ internal sealed class GlobalExceptionHandler : IExceptionHandler
     {
         switch (exception)
         {
+            // The caller went away mid-request (closed the tab, the connection dropped) — RequestAborted
+            // is what actually fired. This is not a server failure: nothing was wrong with the handler,
+            // there is just no one left to answer. Guarded on RequestAborted specifically so a future
+            // server-imposed deadline (a request timeout we set) — which IS our failure to answer in
+            // time — keeps falling through to the default 5xx below instead of being hidden here.
+            case OperationCanceledException when httpContext.RequestAborted.IsCancellationRequested:
+                httpContext.Response.StatusCode = ClientClosedRequest;
+                return true;
+
             case ValidationException validationException:
                 var errors = validationException.Errors
                     .GroupBy(failure => failure.PropertyName)

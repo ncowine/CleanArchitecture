@@ -25,10 +25,11 @@ public sealed record AuditFact(string Action)
     /// <summary>What was accessed, as a searchable identifier. See <see cref="AuditEntry.Resource"/>.</summary>
     public string? Resource { get; init; }
 
-    /// <summary>Outcome. <c>TrackAsync</c> sets this for you from whether the operation threw.</summary>
-    public bool Succeeded { get; init; } = true;
+    /// <summary>Outcome. <c>TrackAsync</c> sets this for you from whether the operation threw, was
+    /// cancelled, or ran to completion.</summary>
+    public AuditOutcome Outcome { get; init; } = AuditOutcome.Succeeded;
 
-    /// <summary>Failure reason when <see cref="Succeeded"/> is false.</summary>
+    /// <summary>Failure reason when <see cref="Outcome"/> is <see cref="AuditOutcome.Failed"/>.</summary>
     public string? Error { get; init; }
 
     /// <summary>How long it took. <c>TrackAsync</c> measures this for you.</summary>

@@ -94,6 +94,27 @@ public class LoggingBehaviorTests
     }
 
     [Fact]
+    public async Task A_cancelled_request_logs_Cancelled_not_a_dangling_Handling_line()
+    {
+        var logger = new CapturingLogger<LoggingBehavior<WithdrawStudent.Command, string>>();
+        var behavior = new LoggingBehavior<WithdrawStudent.Command, string>(logger);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => behavior.Handle(
+            new WithdrawStudent.Command(),
+            () => Task.FromCanceled<string>(cancellation.Token),
+            cancellation.Token));
+
+        // Without this, "Handling X" is the last anyone sees of the request — it just vanishes from the
+        // log stream, which reads as the pipeline dropping something rather than the caller giving up.
+        Assert.Collection(
+            logger.Messages,
+            handling => Assert.Equal("Handling WithdrawStudent.Command", handling),
+            cancelled => Assert.StartsWith("Cancelled WithdrawStudent.Command after ", cancelled, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task The_response_is_passed_through_untouched()
     {
         var logger = new CapturingLogger<LoggingBehavior<WithdrawStudent.Command, string>>();

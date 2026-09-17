@@ -60,7 +60,7 @@ public class AuditRecorderTests
 
         Assert.Equal("payload", result);
         var entry = Assert.Single(sink.Entries);
-        Assert.True(entry.Succeeded);
+        Assert.Equal(AuditOutcome.Succeeded, entry.Outcome);
         Assert.Null(entry.Error);
         Assert.True(entry.ElapsedMs >= 0);
     }
@@ -77,12 +77,12 @@ public class AuditRecorderTests
 
         Assert.Equal("vendor timed out", thrown.Message);
         var entry = Assert.Single(sink.Entries);
-        Assert.False(entry.Succeeded);
+        Assert.Equal(AuditOutcome.Failed, entry.Outcome);
         Assert.Equal("vendor timed out", entry.Error);
     }
 
     [Fact]
-    public async Task Track_records_the_failure_even_when_the_operation_was_cancelled()
+    public async Task Track_records_a_cancellation_as_cancelled_not_failed()
     {
         var (recorder, sink, _) = Build();
         using var cancellation = new CancellationTokenSource();
@@ -94,9 +94,11 @@ public class AuditRecorderTests
             cancellation.Token));
 
         // The write to the sink must not be cancelled along with the operation — the abandoned attempt
-        // is precisely what the audit trail needs to show.
+        // is precisely what the audit trail needs to show, and as its own outcome: the caller gave up,
+        // the vendor call didn't fail.
         var entry = Assert.Single(sink.Entries);
-        Assert.False(entry.Succeeded);
+        Assert.Equal(AuditOutcome.Cancelled, entry.Outcome);
+        Assert.Null(entry.Error);
     }
 
     [Fact]

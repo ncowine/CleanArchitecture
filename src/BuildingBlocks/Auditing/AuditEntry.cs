@@ -4,6 +4,7 @@ namespace BuildingBlocks.Auditing;
 /// A single audit record: who did what, when, and how it turned out. Structured so that, once shipped
 /// to a log store (e.g. Elasticsearch/Kibana), each field is independently searchable.
 /// </summary>
+/// <param name="Outcome">Succeeded / Failed / Cancelled — see <see cref="AuditOutcome"/>.</param>
 /// <param name="Category">Write / Read / External / Security / Custom — see <see cref="AuditCategory"/>.</param>
 /// <param name="Source">
 /// Where the data lived, when it wasn't this module's own database: <c>"Api:CreditBureau"</c>,
@@ -19,7 +20,7 @@ public sealed record AuditEntry(
     string Actor,
     string Action,
     DateTime OccurredOnUtc,
-    bool Succeeded,
+    AuditOutcome Outcome,
     long ElapsedMs,
     string? Error,
     IReadOnlyList<EntityChange> Changes,

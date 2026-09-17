@@ -99,7 +99,7 @@ A real record, exactly as stored:
   "actor": "integration-service",
   "action": "CreateEquipment",
   "occurredOnUtc": "2026-07-21T19:14:05Z",
-  "succeeded": true,
+  "outcome": "Succeeded",
   "elapsedMs": 106,
   "error": null,
   "category": "Write",
@@ -129,7 +129,7 @@ Read it as a sentence: *integration-service ran CreateEquipment at 19:14, it suc
 | `actor` | **Who** — the authenticated user or service |
 | `action` | **What** — the command name |
 | `occurredOnUtc` | **When** — UTC |
-| `succeeded` / `error` | Outcome, and why not |
+| `outcome` / `error` | `Succeeded`, `Failed`, or `Cancelled` — and, for `Failed`, why |
 | `elapsedMs` | How long it took |
 | `correlationId` | Ties this record to the logs and traces of the same request |
 | `category` | `Write` / `Read` / `External` / `Security` / `Custom` — what *kind* of activity this was |
@@ -151,7 +151,7 @@ A read record for the same trail, produced by the query in
   "actor": "it-admin@corp",
   "action": "GetOnboardingSummary",
   "occurredOnUtc": "2026-08-30T09:02:11Z",
-  "succeeded": true,
+  "outcome": "Succeeded",
   "elapsedMs": 14,
   "error": null,
   "category": "Read",
@@ -226,14 +226,21 @@ Two design decisions in there are worth understanding, because they explain beha
 looks wrong at first:
 
 **The behaviour sits *outside* validation.** So a command rejected by its validator is
-still audited, with `succeeded: false` and the error. That is deliberate — an audit trail
+still audited, with `outcome: "Failed"` and the error. That is deliberate — an audit trail
 that only records successes cannot answer "what did they *try* to do?", which is exactly
 the question asked after a security incident.
 
 **The interceptor sits *inside* the transaction.** So it only reports changes that actually
-committed. A command that throws produces an audit record with `succeeded: false` and an
+committed. A command that throws produces an audit record with `outcome: "Failed"` and an
 empty `changes` array — the attempt is recorded, the rolled-back data is not, because it
 never existed.
+
+**A request the caller abandoned is `outcome: "Cancelled"`, not `"Failed"`.** If the client
+disconnects mid-request, the handler unwinds the same way a thrown exception does — the
+transaction rolls back, `changes` is empty — but nothing was wrong with the handler. Folding
+that into `Failed` would make every "someone closed their laptop" indistinguishable from an
+actual bug, which is exactly the mistake that also shows up as a false alarm on the error-rate
+alert (see [95 §8](95-reading-your-telemetry.md#8-the-audit-trail--reading-kibana)).
 
 ---
 
@@ -400,7 +407,7 @@ _audit.Annotate("missingRequirements", string.Join(",", summary.MissingRequireme
 ```
 
 Those arrive under `details` on the same entry the behaviour writes. Annotations survive
-failure, too: if the handler throws afterwards, the record is `succeeded: false` and still
+failure, too: if the handler throws afterwards, the record is `outcome: "Failed"` and still
 carries the annotations — they say how far the request got before it broke.
 
 ### The five categories
@@ -505,7 +512,7 @@ event. Fields arrive as queryable properties rather than interpolated text, so a
 structured log store can search them.
 
 > **An honest limitation you need to know about.** The logging sink records the summary —
-> category, correlation id, action, actor, succeeded, elapsed, source, resource, details,
+> category, correlation id, action, actor, outcome, elapsed, source, resource, details,
 > error. It does **not** write the `changes` array. So the fallback path gives you
 > accountability but not forensics. If before/after values matter to you, the logging sink
 > is not sufficient on its own, and you should treat a silent fall-back to it as an incident
@@ -664,7 +671,7 @@ that module's `DbContext` — go back to [chapter 8](#8-step-4--capture-before-a
 This is the single most common problem, and nothing anywhere reports it as an error.
 
 **4. Check a failure is recorded too.** Send the same request again to trigger a duplicate;
-you should get a new record with `succeeded: false`, an `error`, and empty `changes`.
+you should get a new record with `outcome: "Failed"`, an `error`, and empty `changes`.
 
 **5. Check redaction**, if you have any sensitive field: confirm it reads `***REDACTED***`
 rather than the value.
@@ -696,7 +703,7 @@ Useful searches:
 ```
 actor : "integration-service"
 action : "DeleteEquipment"
-succeeded : false
+outcome : "Failed"
 action : "Delete*" and not actor : "system"
 ```
 
@@ -706,7 +713,7 @@ turn it into an investigation tool:
 ```
 category : "Read" and resource : "OnboardingRequest/bd0034a3-832a-4399-b106-54d03a223898"
 resource : "OnboardingRequest/bd0034a3-*"
-category : "External" and succeeded : false
+category : "External" and outcome : "Failed"
 category : "Security"
 category : "Read" and not actor : "system"
 ```
@@ -972,8 +979,9 @@ curl "http://localhost:9200/cleanarch-audit-*/_search?q=resource:%22OnboardingRe
 |---|---|
 | Data view pattern | `cleanarch-audit-*` |
 | Time field | `occurredOnUtc` |
-| Field casing | **camelCase** — `actor`, `action`, `succeeded`, `category`, `resource`, `changes` |
+| Field casing | **camelCase** — `actor`, `action`, `outcome`, `category`, `resource`, `changes` |
 | Category values | PascalCase — `Write`, `Read`, `External`, `Security`, `Custom` |
+| Outcome values | PascalCase — `Succeeded`, `Failed`, `Cancelled` |
 | First thing to check when empty | The time range, then the casing |
 
 ---
