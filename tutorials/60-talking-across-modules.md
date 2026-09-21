@@ -83,6 +83,18 @@ That second point is the hard constraint. Everything in this guide follows from 
 And one route that is never sanctioned: referencing another module's `Infrastructure` or
 `Domain` project, injecting its `DbContext`, or querying its tables.
 
+> **Neither of these is the right fit for data that isn't owned by any module at all.**
+> If two (or more) modules both need the same small, read-only, rarely-changing lookup
+> data — office locations, currency codes — a published contract would force one module
+> to pretend it "owns" data it has no actual business logic around, just to hand it to a
+> sibling. This repo's answer is `SharedKernel/`: a plain project (`Site` reference data),
+> a peer of `BuildingBlocks`, that any module takes a direct project reference to — no
+> contract, no owning module, just a shared dependency both sides agree to, behind a
+> long-lived cache (`IReferenceDataService`). See [`Equipment.Infrastructure/Caching/EquipmentDirectory.cs`](../src/Modules/Equipment/Equipment.Infrastructure/Caching/EquipmentDirectory.cs)
+> for the consuming side. The discipline that keeps this from turning into a backdoor:
+> `SharedKernel` never carries one module's data to another — only data that belongs to
+> neither.
+
 **How to tell which you need.** Ask whether the *whole operation* can safely live inside one
 method call, in memory, for its entire duration. "Is this equipment reserved?" — yes, one
 call, one answer, done. "Reserve equipment, then allocate a licence, then provision access,
@@ -859,6 +871,7 @@ POST /onboarding/outbox/dead-letter/{id}/replay   # requeue one, after fixing th
 | **Replay** | Clearing the dead-letter flag so a message is retried |
 | **Reverse leg** | The compensating half of a saga |
 | **Saga** | A multi-step process, coordinated by durable state rather than a single transaction |
+| **Shared kernel** | Small, read-only, rarely-changing data owned by *no* module, referenced directly by any that need it — `SharedKernel/` in this repo. Not a contract, not a module |
 | **Step message** | An outbox row instructing the saga's own dispatcher to run one specific step next |
 | **System of record** | The authoritative owner of a piece of data |
 | **Transactional outbox** | The full pattern: atomic enqueue, background delivery, retries |

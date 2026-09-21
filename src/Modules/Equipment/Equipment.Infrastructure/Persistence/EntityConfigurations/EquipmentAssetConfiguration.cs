@@ -31,6 +31,10 @@ internal sealed class EquipmentAssetConfiguration : IEntityTypeConfiguration<Equ
         // ReserveAsync's redelivery check (find the reservation already made for this request) is fast.
         builder.HasIndex(asset => asset.ReservedForOnboardingRequestId);
 
+        // Resolved against SharedKernel's Sites at read time (see EquipmentDirectory) — not an EF
+        // relationship, since Sites live in a different database entirely.
+        builder.Property(asset => asset.SiteId);
+
         builder.Property(asset => asset.CreatedOnUtc).IsRequired();
     }
 }

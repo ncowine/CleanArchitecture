@@ -11,6 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Onboarding.Application.Requests;
 using Onboarding.Infrastructure;
 using Onboarding.Infrastructure.Persistence;
+using SharedKernel.Data;
+using SharedKernel.DataService;
 using Xunit;
 
 namespace CleanArch.Api.IntegrationTests;
@@ -28,6 +30,7 @@ public sealed class OnboardingSagaTests : IAsyncLifetime
 {
     private readonly string _equipmentDbPath = Path.Combine(Path.GetTempPath(), $"equipment-saga-{Guid.NewGuid():N}.db");
     private readonly string _onboardingDbPath = Path.Combine(Path.GetTempPath(), $"onboarding-saga-{Guid.NewGuid():N}.db");
+    private readonly string _referenceDbPath = Path.Combine(Path.GetTempPath(), $"reference-saga-{Guid.NewGuid():N}.db");
     private ServiceProvider _provider = null!;
 
     public async Task InitializeAsync()
@@ -37,12 +40,14 @@ public sealed class OnboardingSagaTests : IAsyncLifetime
         services.AddHybridCache();
         services.AddMediator();
         services.AddRealtimeDispatch();
+        services.AddSharedKernelReferenceData($"Data Source={_referenceDbPath}");
         services.AddEquipmentModule($"Data Source={_equipmentDbPath}");
         services.AddOnboardingModule($"Data Source={_onboardingDbPath}");
 
         _provider = services.BuildServiceProvider();
 
         using var scope = _provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ReferenceDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<EquipmentDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<OnboardingDbContext>().Database.MigrateAsync();
     }
@@ -56,6 +61,7 @@ public sealed class OnboardingSagaTests : IAsyncLifetime
         SqliteConnection.ClearAllPools();
         TryDeleteDatabaseFiles(_equipmentDbPath);
         TryDeleteDatabaseFiles(_onboardingDbPath);
+        TryDeleteDatabaseFiles(_referenceDbPath);
     }
 
     [Fact]

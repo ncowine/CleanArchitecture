@@ -29,6 +29,8 @@
     <ProjectReference Include="..\..\Modules\Equipment\Equipment.Presentation\Equipment.Presentation.csproj" />
     <ProjectReference Include="..\..\Modules\Onboarding\Onboarding.Infrastructure\Onboarding.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Onboarding\Onboarding.Presentation\Onboarding.Presentation.csproj" />
+    <ProjectReference Include="..\..\SharedKernel\SharedKernel.DataService\SharedKernel.DataService.csproj" />
+    <ProjectReference Include="..\..\SharedKernel\SharedKernel.Presentation\SharedKernel.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

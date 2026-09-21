@@ -70,6 +70,16 @@ Two modules that constantly need each other's data in the same transaction were 
 modules. If your first three features all need a cross-module write, the boundary is in
 the wrong place — move it before you have migrations to unpick.
 
+Also don't add one for data that's genuinely **shared, read-only, and small** — a lookup
+list used by more than one module (office locations, currency codes, that kind of thing)
+that nobody writes to through this app and that changes rarely enough to live behind a
+long-lived cache. That isn't a bounded context — it has no vocabulary of its own and no
+reason to change on its own schedule — so giving it a full five-project module (its own
+`Domain`, its own write side) is ceremony with nothing behind it. This repo has one:
+`SharedKernel/` (`Site` reference data, consumed directly by `Equipment`'s read side). See
+[Talking Across Modules, chapter 2](60-talking-across-modules.md#2-two-sanctioned-routes)
+for how it differs from a published contract.
+
 > **The worked example in this guide** is `Equipment`. It's a good specimen because it does
 > almost everything a module can: its own database, plain CRUD, real-time notifications, a
 > cache-aside read, a published contract that another module (`Onboarding`) calls into, and

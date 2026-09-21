@@ -25,8 +25,9 @@ Docker) or, from a bare Ubuntu box with no Docker knowledge,
 
 | Concern | Approach |
 |---|---|
-| Multiple databases | Each module owns its own DB (SQLite here): `equipment.db`, `onboarding.db`. No cross-DB joins. |
+| Multiple databases | Each module owns its own DB (SQLite here): `equipment.db`, `onboarding.db`, plus a small shared `reference.db`. No cross-DB joins. |
 | Cross-module calls | A published contract (`Equipment.Contracts.IEquipmentReservationService`), never by reaching into another module's repository/DbContext. |
+| Shared reference data | Small, read-only, rarely-changing data used by more than one module (`Site`) lives in `SharedKernel/` — not a module (no bounded context, no write side) and not owned by either consumer. Modules take a plain project reference to it, the same tier as `BuildingBlocks`, and get a 24h-cached read via `IReferenceDataService`. |
 | Mediator | Hand-rolled `BuildingBlocks` mediator (no MediatR) with pipeline behaviors: logging, audit, validation, per-module transaction. |
 | Saga — instant | `ApproveOnboardingInstant` runs all three provisioning steps synchronously in one handler, compensating in reverse on the first failure. No crash recovery — the tradeoff the persisted version exists to fix. |
 | Saga — persisted/resumable | `ApproveOnboardingStandard` enqueues the first step and returns; a background outbox dispatcher drives each step (and compensation) from durable state, so a process restart mid-saga resumes exactly where it left off. |
@@ -47,6 +48,8 @@ src/
   BuildingBlocks/            Mediator, behaviors, auditing, correlation, pagination (EF-free)
   BuildingBlocks.Outbox/     Reusable outbox: message, writer, processor, dispatcher, admin, metrics
   Api/CleanArch.Api/         Host: composition root, auth, observability, middleware, endpoints map
+  SharedKernel/              Shared, read-only reference data — not a module, owned by neither consumer
+    SharedKernel.Models / .Data / .DataService / .Presentation
   Modules/
     Equipment/               Inventory: CRUD, cache-aside lookup, file-backed catalogue
       Equipment.Domain / .Application / .Infrastructure / .Contracts / .Presentation
@@ -68,7 +71,7 @@ Prerequisites: .NET 10 SDK.
 dotnet run --project src/Api/CleanArch.Api
 ```
 
-In Development the app applies EF migrations to both SQLite databases on startup and serves Swagger at
+In Development the app applies EF migrations to all SQLite databases on startup and serves Swagger at
 `/swagger`. Health at `/health`. (No Redis required — caching runs in-memory until you wire Redis.)
 
 ### Calling protected endpoints
@@ -102,6 +105,8 @@ The **live, complete list is in Swagger**, grouped by area.
 | POST | `/onboarding/{id}/approve` | ✅ | start the persisted saga; returns immediately, resumes after a restart |
 | POST | `/onboarding/outbox/dead-letter/search` | — | inspect saga steps that exhausted their delivery attempts (paging in body) |
 | POST | `/onboarding/outbox/dead-letter/{id}/replay` | ✅ | requeue a dead-lettered saga step |
+| GET | `/reference/sites` | — | company office sites — shared reference data, long-lived (24h) cache |
+| GET | `/reference/sites/{id}` | — | a single site by id |
 | GET | `/health`, `/health/live` | — | readiness / liveness |
 
 ## Databases & migrations
@@ -118,21 +123,22 @@ committed-secret changes:
 | Local dev (real password) | `dotnet user-secrets set "ConnectionStrings:Equipment" "…"` | No (per-dev, off-repo) |
 | Production (IIS) | Env var `ConnectionStrings__Equipment` on the app pool (or `web.config` `<environmentVariables>`) | No (lives on the server) |
 
-The runtime reads these via `Configuration.GetConnectionString("Equipment" | "Onboarding")` in `Program.cs`.
-Key names map by replacing `:` with `__` in env vars (`ConnectionStrings__Equipment`).
+The runtime reads these via `Configuration.GetConnectionString("Equipment" | "Onboarding" | "Reference")`
+in `Program.cs`. Key names map by replacing `:` with `__` in env vars (`ConnectionStrings__Equipment`).
 
 ### Design-time factories (for `dotnet ef`)
 
-Each module has an `IDesignTimeDbContextFactory` (`EquipmentDbContextFactory`, `OnboardingDbContextFactory`,
-`ApiKeyDbContextFactory`). EF's CLI uses these to build the context for migration commands **without
-booting the API host or reading any secret**. They read the connection string from an environment
-variable when present, falling back to a throwaway local SQLite file so a fresh clone can scaffold
-migrations with zero setup:
+Each module (and `SharedKernel`) has an `IDesignTimeDbContextFactory` (`EquipmentDbContextFactory`,
+`OnboardingDbContextFactory`, `ReferenceDbContextFactory`, `ApiKeyDbContextFactory`). EF's CLI uses these
+to build the context for migration commands **without booting the API host or reading any secret**. They
+read the connection string from an environment variable when present, falling back to a throwaway local
+SQLite file so a fresh clone can scaffold migrations with zero setup:
 
 | Factory | Env var override | Local fallback |
 |---|---|---|
 | Equipment | `ConnectionStrings__Equipment` | `equipment-design.db` |
 | Onboarding | `ConnectionStrings__Onboarding` | `onboarding-design.db` |
+| Reference (SharedKernel) | `ConnectionStrings__Reference` | `reference-design.db` |
 | ApiKey | `ConnectionStrings__ApiKeys` | `apikeys-design.db` |
 
 > The fallback is a local file path, not a secret, and never runs in production — it only gives
@@ -149,6 +155,7 @@ dotnet ef migrations add <Name> `
   --startup-project src/Api/CleanArch.Api `
   --context EquipmentDbContext
 # Onboarding: --project src/Modules/Onboarding/Onboarding.Infrastructure --context OnboardingDbContext
+# SharedKernel: --project src/SharedKernel/SharedKernel.Data --context ReferenceDbContext
 ```
 
 Remove a migration created but **not yet applied**: `dotnet ef migrations remove --context EquipmentDbContext`.

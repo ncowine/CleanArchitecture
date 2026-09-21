@@ -11,6 +11,12 @@
     <Project Path="src/Api/CleanArch.Api/CleanArch.Api.csproj" />
     <Project Path="src/Api/CleanArch.Api.Authentication/CleanArch.Api.Authentication.csproj" />
   </Folder>
+  <Folder Name="/src/SharedKernel/">
+    <Project Path="src/SharedKernel/SharedKernel.Models/SharedKernel.Models.csproj" />
+    <Project Path="src/SharedKernel/SharedKernel.Data/SharedKernel.Data.csproj" />
+    <Project Path="src/SharedKernel/SharedKernel.DataService/SharedKernel.DataService.csproj" />
+    <Project Path="src/SharedKernel/SharedKernel.Presentation/SharedKernel.Presentation.csproj" />
+  </Folder>
   <Folder Name="/src/Modules/" />
   <Folder Name="/src/Modules/Equipment/">
     <Project Path="src/Modules/Equipment/Equipment.Application/Equipment.Application.csproj" />

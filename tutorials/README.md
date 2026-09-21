@@ -43,6 +43,7 @@ Come back for the rest when you hit the problem it solves.
 | Cache a hot read, and invalidate it correctly | [45](45-caching.md) |
 | Add a metric for my own module | [50 §7](50-instrumenting-an-application.md#7-step-4--add-your-own-metric) |
 | Read another module's data, or trigger a simple action in it | [60 §3](60-talking-across-modules.md#3-reads-and-simple-actions--published-contracts) |
+| Share small, read-only data across modules without making it a module | [30 §1](30-add-a-module.md#when-not-to) / [60 §2](60-talking-across-modules.md#2-two-sanctioned-routes) |
 | Build a multi-step process that survives a restart | [60 §4](60-talking-across-modules.md#4-why-a-multi-step-process-needs-the-outbox) onward |
 | Undo a step when a later one fails | [60 §12](60-talking-across-modules.md#12-compensation--the-saga-unwinding-itself) |
 | Push a live update to connected clients | [65](65-real-time-notifications.md) |
