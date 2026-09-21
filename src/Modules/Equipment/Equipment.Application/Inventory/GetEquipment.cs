@@ -13,7 +13,7 @@ public static class GetEquipment
     public sealed record Query(Guid EquipmentId) : IRequest<Response?>;
 
     public sealed record Response(
-        Guid Id, string Name, string Category, string AssetTag, string Status, DateTime CreatedOnUtc);
+        Guid Id, string Name, string Category, string AssetTag, string Status, string? SiteName, DateTime CreatedOnUtc);
 
     public sealed class Handler : IRequestHandler<Query, Response?>
     {

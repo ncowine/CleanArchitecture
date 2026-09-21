@@ -2,6 +2,7 @@ using CleanArch.Api.Authentication;
 using Equipment.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Onboarding.Infrastructure.Persistence;
+using SharedKernel.Data;
 
 namespace CleanArch.Api;
 
@@ -31,6 +32,7 @@ internal static class WebApplicationExtensions
         using var scope = app.Services.CreateScope();
 
         // Each database is migrated independently — they share nothing, not even a transaction.
+        await scope.ServiceProvider.GetRequiredService<ReferenceDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<EquipmentDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<OnboardingDbContext>().Database.MigrateAsync();
 

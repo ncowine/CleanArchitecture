@@ -8,6 +8,8 @@ using Equipment.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Data;
+using SharedKernel.DataService;
 using Xunit;
 
 namespace CleanArch.Api.IntegrationTests;
@@ -22,6 +24,7 @@ namespace CleanArch.Api.IntegrationTests;
 public sealed class EquipmentModuleTests : IAsyncLifetime
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"equipment-tests-{Guid.NewGuid():N}.db");
+    private readonly string _referenceDbPath = Path.Combine(Path.GetTempPath(), $"reference-tests-{Guid.NewGuid():N}.db");
     private ServiceProvider _provider = null!;
     private RecordingRealtimeNotifier _notifier = null!;
 
@@ -33,12 +36,14 @@ public sealed class EquipmentModuleTests : IAsyncLifetime
         services.AddMediator();
         services.AddRealtimeDispatch();
         services.AddSingleton<IRealtimeNotifier, RecordingRealtimeNotifier>();
+        services.AddSharedKernelReferenceData($"Data Source={_referenceDbPath}");
         services.AddEquipmentModule($"Data Source={_dbPath}");
 
         _provider = services.BuildServiceProvider();
         _notifier = (RecordingRealtimeNotifier)_provider.GetRequiredService<IRealtimeNotifier>();
 
         using var scope = _provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ReferenceDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<EquipmentDbContext>().Database.MigrateAsync();
     }
 
@@ -50,6 +55,7 @@ public sealed class EquipmentModuleTests : IAsyncLifetime
         // doesn't close them, so the temp file stays locked until the pool is cleared.
         SqliteConnection.ClearAllPools();
         TryDeleteDatabaseFiles(_dbPath);
+        TryDeleteDatabaseFiles(_referenceDbPath);
     }
 
     [Fact]

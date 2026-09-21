@@ -14,28 +14,34 @@ public sealed class EquipmentAsset
     public string AssetTag { get; private set; } = null!;
     public EquipmentStatus Status { get; private set; }
     public Guid? ReservedForOnboardingRequestId { get; private set; }
+
+    // References SharedKernel.Models.Site by id — not a foreign key EF can join across databases, just a
+    // plain value resolved at read time via IReferenceDataService. Set once at creation; Update() leaves
+    // it untouched, so assigning/reassigning a site isn't part of this exercise's scope.
+    public Guid? SiteId { get; private set; }
     public DateTime CreatedOnUtc { get; private set; }
 
     private EquipmentAsset() { }
 
-    private EquipmentAsset(Guid id, string name, EquipmentCategory category, string assetTag, DateTime createdOnUtc)
+    private EquipmentAsset(Guid id, string name, EquipmentCategory category, string assetTag, Guid? siteId, DateTime createdOnUtc)
     {
         Id = id;
         Name = name;
         Category = category;
         AssetTag = assetTag;
         Status = EquipmentStatus.Available;
+        SiteId = siteId;
         CreatedOnUtc = createdOnUtc;
     }
 
-    public static EquipmentAsset Create(string name, EquipmentCategory category, string assetTag)
+    public static EquipmentAsset Create(string name, EquipmentCategory category, string assetTag, Guid? siteId = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("Name is required.");
         if (string.IsNullOrWhiteSpace(assetTag))
             throw new DomainException("Asset tag is required.");
 
-        return new EquipmentAsset(Guid.NewGuid(), name.Trim(), category, assetTag.Trim(), DateTime.UtcNow);
+        return new EquipmentAsset(Guid.NewGuid(), name.Trim(), category, assetTag.Trim(), siteId, DateTime.UtcNow);
     }
 
     public void Update(string name, EquipmentCategory category, string assetTag)

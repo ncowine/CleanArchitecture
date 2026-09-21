@@ -9,7 +9,7 @@ namespace Equipment.Application.Inventory;
 /// <summary>Add a piece of hardware to inventory. Starts <see cref="EquipmentStatus.Available"/>.</summary>
 public static class CreateEquipment
 {
-    public sealed record Command(string Name, EquipmentCategory Category, string AssetTag)
+    public sealed record Command(string Name, EquipmentCategory Category, string AssetTag, Guid? SiteId = null)
         : IRequest<Guid>, IEquipmentCommand, IAuditableRequest;
 
     public sealed class Validator : AbstractValidator<Command>
@@ -35,7 +35,7 @@ public static class CreateEquipment
 
         public async Task<Guid> Handle(Command command, CancellationToken cancellationToken)
         {
-            var asset = EquipmentAsset.Create(command.Name, command.Category, command.AssetTag);
+            var asset = EquipmentAsset.Create(command.Name, command.Category, command.AssetTag, command.SiteId);
             await _equipment.AddAsync(asset, cancellationToken);
 
             _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentCreated", new

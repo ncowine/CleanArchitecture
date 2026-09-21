@@ -11,6 +11,8 @@ using Equipment.Presentation;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Onboarding.Infrastructure;
 using Onboarding.Presentation;
+using SharedKernel.DataService;
+using SharedKernel.Presentation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +25,7 @@ string RequireConnectionString(string name) =>
 
 var equipmentConnectionString = RequireConnectionString("Equipment");
 var onboardingConnectionString = RequireConnectionString("Onboarding");
+var referenceConnectionString = RequireConnectionString("Reference");
 
 builder.Services
     .AddApiServices()
@@ -39,6 +42,9 @@ builder.Services
     // Registered after the mediator and before the modules, so the post-commit realtime dispatch behavior
     // sits outside each module's transaction behavior (its flush runs after the commit).
     .AddRealtimeDispatch()
+    // Shared, read-only reference data (not a module) — registered before the modules that consume it
+    // directly from their Reads layer (e.g. Equipment resolving a site name).
+    .AddSharedKernelReferenceData(referenceConnectionString)
     .AddEquipmentModule(equipmentConnectionString)
     .AddOnboardingModule(onboardingConnectionString);
 
@@ -127,6 +133,7 @@ ApiVersionSet versionSet = app.NewApiVersionSet()
 
 app.MapEquipmentEndpoints(versionSet);
 app.MapOnboardingEndpoints(versionSet);
+app.MapReferenceEndpoints(versionSet);
 
 // Real-time presence + notifications hub (live view + "someone actioned this"). Exempt from the rate
 // limiter — connections are long-lived and share a source.
