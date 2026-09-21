@@ -15,12 +15,18 @@ public static class DeleteEquipment
     {
         private readonly IEquipmentRepository _equipment;
         private readonly IEquipmentCacheInvalidator _cache;
+        private readonly IEquipmentChangeNotifier _changeNotifier;
         private readonly IRealtimeDispatch _realtime;
 
-        public Handler(IEquipmentRepository equipment, IEquipmentCacheInvalidator cache, IRealtimeDispatch realtime)
+        public Handler(
+            IEquipmentRepository equipment,
+            IEquipmentCacheInvalidator cache,
+            IEquipmentChangeNotifier changeNotifier,
+            IRealtimeDispatch realtime)
         {
             _equipment = equipment;
             _cache = cache;
+            _changeNotifier = changeNotifier;
             _realtime = realtime;
         }
 
@@ -34,6 +40,7 @@ public static class DeleteEquipment
 
             _equipment.Remove(asset);
             await _cache.RemoveAsync(asset.Id, cancellationToken);
+            _changeNotifier.Notify(asset.Id);
 
             _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentDeleted", new
             {

@@ -79,6 +79,18 @@ public static class EquipmentEndpoints
         .WithName("SearchEquipment")
         .WithSummary("Paged inventory search by category and/or status (paging/filters in the body).");
 
+        equipment.MapGet("/equipment/sites/{siteId:guid}/summary", async (
+            Guid siteId,
+            ISender sender,
+            CancellationToken cancellationToken) =>
+        {
+            var response = await sender.Send(new GetSiteEquipmentSummary.Query(siteId), cancellationToken);
+            return response is null ? Results.NotFound() : Results.Ok(response);
+        })
+        .WithName("GetSiteEquipmentSummary")
+        .WithSummary("Per-site equipment rollup (counts by status/category). A computed/merged cache, " +
+            "refreshed on equipment CRUD events rather than recomputed per request.");
+
         equipment.MapGet("/equipment/catalogue", async (
             ISender sender,
             CancellationToken cancellationToken) =>

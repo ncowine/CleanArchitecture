@@ -13,6 +13,7 @@ using Equipment.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Equipment.Infrastructure;
 
@@ -38,6 +39,15 @@ public static class DependencyInjection
             provider.GetRequiredService<EquipmentDirectory>(),
             provider.GetRequiredService<HybridCache>()));
         services.AddScoped<IEquipmentCacheInvalidator, EquipmentCacheInvalidator>();
+
+        // Computed/merged cache: per-site equipment rollup, aggregated across many rows plus a
+        // cross-database site name. Registered twice under the same singleton instance — once as itself
+        // so the directory below can call it, once as IHostedService so its InitAsync pre-warms every
+        // known site's summary before the app starts accepting requests.
+        services.AddSingleton<SiteEquipmentSummaryCache>();
+        services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<SiteEquipmentSummaryCache>());
+        services.AddSingleton<ISiteEquipmentSummaryDirectory, SiteEquipmentSummaryDirectory>();
+        services.AddSingleton<IEquipmentChangeNotifier, EquipmentChangeNotifier>();
 
         // Plain paged search — no caching (too many distinct filter/paging shapes to be worth it).
         services.AddScoped<IEquipmentReadService, EquipmentReadService>();

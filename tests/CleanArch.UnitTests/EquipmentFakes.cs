@@ -41,6 +41,13 @@ internal sealed class FakeEquipmentCacheInvalidator : IEquipmentCacheInvalidator
     }
 }
 
+internal sealed class FakeEquipmentChangeNotifier : IEquipmentChangeNotifier
+{
+    public List<(Guid EquipmentId, Guid? SiteId)> Notified { get; } = new();
+
+    public void Notify(Guid equipmentId, Guid? siteId = null) => Notified.Add((equipmentId, siteId));
+}
+
 internal sealed class FakeRealtimeDispatch : IRealtimeDispatch
 {
     public List<(string Group, RealtimeEvent Event)> Published { get; } = new();

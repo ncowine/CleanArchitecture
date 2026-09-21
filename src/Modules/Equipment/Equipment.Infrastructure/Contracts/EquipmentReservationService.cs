@@ -1,3 +1,4 @@
+using Equipment.Application.Abstractions;
 using Equipment.Contracts;
 using Equipment.Domain;
 using Equipment.Infrastructure.Persistence;
@@ -14,10 +15,12 @@ namespace Equipment.Infrastructure.Contracts;
 internal sealed class EquipmentReservationService : IEquipmentReservationService
 {
     private readonly EquipmentDbContext _db;
+    private readonly IEquipmentChangeNotifier _changeNotifier;
 
-    public EquipmentReservationService(EquipmentDbContext db)
+    public EquipmentReservationService(EquipmentDbContext db, IEquipmentChangeNotifier changeNotifier)
     {
         _db = db;
+        _changeNotifier = changeNotifier;
     }
 
     public async Task<EquipmentReservationResult> ReserveAsync(
@@ -49,6 +52,7 @@ internal sealed class EquipmentReservationService : IEquipmentReservationService
 
         candidate.Reserve(onboardingRequestId);
         await _db.SaveChangesAsync(cancellationToken);
+        _changeNotifier.Notify(candidate.Id);
 
         return new EquipmentReservationResult(true, candidate.Id, null);
     }
@@ -64,5 +68,6 @@ internal sealed class EquipmentReservationService : IEquipmentReservationService
 
         reserved.Release();
         await _db.SaveChangesAsync(cancellationToken);
+        _changeNotifier.Notify(reserved.Id);
     }
 }

@@ -25,11 +25,13 @@ public static class CreateEquipment
     public sealed class Handler : IRequestHandler<Command, Guid>
     {
         private readonly IEquipmentRepository _equipment;
+        private readonly IEquipmentChangeNotifier _changeNotifier;
         private readonly IRealtimeDispatch _realtime;
 
-        public Handler(IEquipmentRepository equipment, IRealtimeDispatch realtime)
+        public Handler(IEquipmentRepository equipment, IEquipmentChangeNotifier changeNotifier, IRealtimeDispatch realtime)
         {
             _equipment = equipment;
+            _changeNotifier = changeNotifier;
             _realtime = realtime;
         }
 
@@ -37,6 +39,7 @@ public static class CreateEquipment
         {
             var asset = EquipmentAsset.Create(command.Name, command.Category, command.AssetTag, command.SiteId);
             await _equipment.AddAsync(asset, cancellationToken);
+            _changeNotifier.Notify(asset.Id, command.SiteId);
 
             _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentCreated", new
             {

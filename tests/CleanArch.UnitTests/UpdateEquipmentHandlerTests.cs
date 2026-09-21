@@ -19,8 +19,9 @@ public class UpdateEquipmentHandlerTests
         var repository = new FakeEquipmentRepository();
         var asset = Seeded(repository);
         var cache = new FakeEquipmentCacheInvalidator();
+        var changeNotifier = new FakeEquipmentChangeNotifier();
         var realtime = new FakeRealtimeDispatch();
-        var handler = new UpdateEquipment.Handler(repository, cache, realtime);
+        var handler = new UpdateEquipment.Handler(repository, cache, changeNotifier, realtime);
 
         var updated = await handler.Handle(
             new UpdateEquipment.Command(asset.Id, "ThinkPad X1 Carbon", EquipmentCategory.Other, "LAP-002"), default);
@@ -30,6 +31,7 @@ public class UpdateEquipmentHandlerTests
         Assert.Equal(EquipmentCategory.Other, asset.Category);
         Assert.Equal("LAP-002", asset.AssetTag);
         Assert.Equal(asset.Id, Assert.Single(cache.Invalidated));
+        Assert.Equal(asset.Id, Assert.Single(changeNotifier.Notified).EquipmentId);
 
         var (group, evt) = Assert.Single(realtime.Published);
         Assert.Equal("equipment", group);
@@ -41,14 +43,16 @@ public class UpdateEquipmentHandlerTests
     {
         var repository = new FakeEquipmentRepository();
         var cache = new FakeEquipmentCacheInvalidator();
+        var changeNotifier = new FakeEquipmentChangeNotifier();
         var realtime = new FakeRealtimeDispatch();
-        var handler = new UpdateEquipment.Handler(repository, cache, realtime);
+        var handler = new UpdateEquipment.Handler(repository, cache, changeNotifier, realtime);
 
         var updated = await handler.Handle(
             new UpdateEquipment.Command(Guid.NewGuid(), "Name", EquipmentCategory.Laptop, "TAG"), default);
 
         Assert.False(updated);
         Assert.Empty(cache.Invalidated);
+        Assert.Empty(changeNotifier.Notified);
         Assert.Empty(realtime.Published);
     }
 }

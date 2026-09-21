@@ -152,6 +152,62 @@ public sealed class EquipmentModuleTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Site_summary_aggregates_equipment_and_refreshes_after_a_change_event()
+    {
+        // Seeded by SharedKernel.Data's SiteConfiguration migration (SiteIds.London) — id is internal to
+        // that assembly, so it's reproduced here rather than referenced.
+        var london = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+        using var scope = _provider.CreateScope();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+
+        var laptopId = await sender.Send(
+            new CreateEquipment.Command("ThinkPad X1", EquipmentCategory.Laptop, "LAP-100", london), default);
+        await sender.Send(
+            new CreateEquipment.Command("Dell Monitor", EquipmentCategory.Monitor, "MON-100", london), default);
+
+        var summary = await sender.Send(new GetSiteEquipmentSummary.Query(london), default);
+        Assert.NotNull(summary);
+        Assert.Equal("London HQ", summary!.SiteName);
+        Assert.Equal(2, summary.TotalCount);
+        Assert.Equal(2, summary.AvailableCount);
+        Assert.Equal(0, summary.ReservedCount);
+        Assert.Equal(1, summary.CountByCategory["Laptop"]);
+        Assert.Equal(1, summary.CountByCategory["Monitor"]);
+
+        await sender.Send(new DeleteEquipment.Command(laptopId), default);
+
+        // The delete's Notify goes through the cache's background change channel, not inline — so the
+        // refreshed summary lands asynchronously. Poll rather than assert immediately.
+        var refreshed = await WaitForAsync(async () =>
+        {
+            var current = await sender.Send(new GetSiteEquipmentSummary.Query(london), default);
+            return current!.TotalCount == 1 ? current : null;
+        });
+
+        Assert.NotNull(refreshed);
+        Assert.Equal(1, refreshed!.AvailableCount);
+        Assert.False(refreshed.CountByCategory.ContainsKey("Laptop"));
+        Assert.Equal(1, refreshed.CountByCategory["Monitor"]);
+    }
+
+    private static async Task<T?> WaitForAsync<T>(Func<Task<T?>> probe, int timeoutMs = 2000, int pollMs = 25)
+        where T : class
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            var result = await probe();
+            if (result is not null)
+                return result;
+
+            await Task.Delay(pollMs);
+        }
+
+        return null;
+    }
+
+    [Fact]
     public async Task The_catalogue_endpoint_reads_the_bundled_file_not_the_database()
     {
         using var scope = _provider.CreateScope();
