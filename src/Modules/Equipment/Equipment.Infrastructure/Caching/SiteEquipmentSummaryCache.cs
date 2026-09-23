@@ -69,7 +69,7 @@ public sealed class SiteEquipmentSummaryCache : DataCache<Guid, GetSiteEquipment
         if (sites.Count == 0)
             return;
 
-        await GetAsync(sites.Select(site => site.Id).ToHashSet());
+        await GetAsync(sites.Select(site => site.Id).ToHashSet(), cancellationToken);
     }
 
     protected override async Task<IReadOnlyDictionary<Guid, GetSiteEquipmentSummary.Response>> FetchAsync(

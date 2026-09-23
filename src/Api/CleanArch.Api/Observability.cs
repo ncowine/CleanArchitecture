@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using BuildingBlocks.Caching;
 using BuildingBlocks.Outbox;
 using CleanArch.Api.Authentication;
 using Equipment.Infrastructure.Persistence;
@@ -103,6 +104,10 @@ internal static class ObservabilityExtensions
                 // Built-in .NET runtime metrics (GC, heap, thread pool, CPU) — no extra package needed.
                 .AddMeter("System.Runtime")
                 .AddMeter(OutboxDiagnostics.MeterName)
+                // Every DataCache<,> publishes on this one shared meter, tagged with which cache it is
+                // (see CacheMetrics.cs) — so a new cache is covered automatically, with no wildcard and
+                // nothing to keep in sync here.
+                .AddMeter(CachingDiagnostics.MeterName)
                 // Metrics are PULLED by Prometheus from /metrics (see MapPrometheusScrapingEndpoint).
                 .AddPrometheusExporter())
             .WithLogging(logging => logging

@@ -28,7 +28,13 @@ namespace BuildingBlocks.Caching;
 /// <see cref="IHostedService"/> — e.g. <c>services.AddSingleton&lt;IHostedService&gt;(sp =>
 /// sp.GetRequiredService&lt;MyCache&gt;())</c> — so the host awaits it during startup, before accepting
 /// requests. Without that second registration <see cref="InitAsync"/> is simply never called and the
-/// cache starts empty, which is also a perfectly fine default (see <see cref="GetAsync(TKey)"/>).
+/// cache starts empty, which is also a perfectly fine default (see <see cref="GetAsync(TKey, CancellationToken)"/>).
+/// </para>
+/// <para>
+/// <see cref="GetAsync(TKey, CancellationToken)"/> and <see cref="GetAsync(HashSet{TKey}, CancellationToken)"/>
+/// accept a <see cref="CancellationToken"/>, but it only cancels that caller's own wait (via
+/// <see cref="Task.WaitAsync(CancellationToken)"/>) — never the underlying fetch, which may be shared
+/// with other concurrent callers via the coalescing described above and must run to completion for them.
 /// </para>
 /// </summary>
 public abstract class DataCache<TKey, TValue> : IDataCache<TKey, TValue>, IHostedService, IDisposable
@@ -70,16 +76,16 @@ public abstract class DataCache<TKey, TValue> : IDataCache<TKey, TValue>, IHoste
         _purgeTask = PurgeLoopAsync(_cts.Token);
     }
 
-    public async Task<TValue?> GetAsync(TKey key)
+    public async Task<TValue?> GetAsync(TKey key, CancellationToken cancellationToken = default)
     {
         if (TryGetFromStore(key, out var value))
             return value;
 
-        _metrics.Misses.Add(1);
-        return await FetchAndCacheAsync(key).ConfigureAwait(false);
+        _metrics.RecordMisses(1);
+        return await FetchAndCacheAsync(key).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyDictionary<TKey, TValue>> GetAsync(HashSet<TKey> keys)
+    public async Task<IReadOnlyDictionary<TKey, TValue>> GetAsync(HashSet<TKey> keys, CancellationToken cancellationToken = default)
     {
         var result = new Dictionary<TKey, TValue>(keys.Count);
         var keysToFetch = new HashSet<TKey>();
@@ -98,7 +104,7 @@ public abstract class DataCache<TKey, TValue> : IDataCache<TKey, TValue>, IHoste
 
         var missCount = alreadyInflight.Count + keysToFetch.Count;
         if (missCount > 0)
-            _metrics.Misses.Add(missCount);
+            _metrics.RecordMisses(missCount);
 
         // Batch-fetch all truly missing keys in ONE db call.
         //
@@ -155,7 +161,7 @@ public abstract class DataCache<TKey, TValue> : IDataCache<TKey, TValue>, IHoste
             }
         });
 
-        foreach (var (key, value) in await Task.WhenAll(pendingTasks).ConfigureAwait(false))
+        foreach (var (key, value) in await Task.WhenAll(pendingTasks).WaitAsync(cancellationToken).ConfigureAwait(false))
         {
             if (value is not null)
                 result[key] = value;
@@ -353,7 +359,7 @@ public abstract class DataCache<TKey, TValue> : IDataCache<TKey, TValue>, IHoste
                 }
 
                 if (removedCount > 0)
-                    _metrics.Evictions.Add(removedCount);
+                    _metrics.RecordEvictions(removedCount);
             }
         }
         catch (OperationCanceledException)
@@ -369,7 +375,7 @@ public abstract class DataCache<TKey, TValue> : IDataCache<TKey, TValue>, IHoste
         {
             entry.Touch();
             value = entry.Value;
-            _metrics.Hits.Add(1);
+            _metrics.RecordHit();
             return true;
         }
 
@@ -404,7 +410,6 @@ public abstract class DataCache<TKey, TValue> : IDataCache<TKey, TValue>, IHoste
         }
 
         _cts.Dispose();
-        _metrics.Dispose();
         _store.Clear();
         _inflightFetches.Clear();
 

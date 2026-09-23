@@ -12,9 +12,8 @@ internal sealed class SiteEquipmentSummaryDirectory : ISiteEquipmentSummaryDirec
         _cache = cache;
     }
 
-    // DataCache has no per-call cancellation of its own — a fetch it starts may be shared by other
-    // concurrent callers, so one caller giving up can't cancel it out from under them. cancellationToken
-    // is accepted for interface symmetry with IEquipmentDirectory but isn't forwarded.
+    // Cancelling only stops this caller's own wait, never the underlying fetch — see the
+    // DataCache<,> class remarks for why (a fetch may be shared by other concurrent callers).
     public Task<GetSiteEquipmentSummary.Response?> GetAsync(Guid siteId, CancellationToken cancellationToken) =>
-        _cache.GetAsync(siteId);
+        _cache.GetAsync(siteId, cancellationToken);
 }

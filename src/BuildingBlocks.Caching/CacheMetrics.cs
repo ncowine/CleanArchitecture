@@ -2,29 +2,38 @@ using System.Diagnostics.Metrics;
 
 namespace BuildingBlocks.Caching;
 
-internal sealed class CacheMetrics : IDisposable
+/// <summary>
+/// Records hits/misses/evictions/item-count for one <see cref="DataCache{TKey,TValue}"/> instance onto
+/// the single shared <see cref="CachingDiagnostics.MeterName"/> meter, tagged with "cache.name" (the
+/// concrete cache type, e.g. "SiteEquipmentSummaryCache") so per-cache series stay just the cache's own
+/// name in Prometheus/Grafana rather than a meter name repeating "BuildingBlocks.Caching." on every row.
+/// </summary>
+internal sealed class CacheMetrics
 {
-    private readonly Meter _meter;
+    private static readonly Meter Meter = new(CachingDiagnostics.MeterName);
 
-    public Counter<long> Hits { get; }
-
-    public Counter<long> Misses { get; }
-
-    public Counter<long> Evictions { get; }
+    private readonly KeyValuePair<string, object?> _cacheNameTag;
+    private readonly Counter<long> _hits;
+    private readonly Counter<long> _misses;
+    private readonly Counter<long> _evictions;
 
     public CacheMetrics(string cacheTypeName, Func<int> itemCountCallback)
     {
-        _meter = new Meter($"BuildingBlocks.Caching.{cacheTypeName}");
+        _cacheNameTag = new KeyValuePair<string, object?>("cache.name", cacheTypeName);
 
-        Hits = _meter.CreateCounter<long>("cache.hits", description: "Cache hit (served from store)");
-        Misses = _meter.CreateCounter<long>("cache.misses", description: "Cache miss (triggered a fetch)");
-        Evictions = _meter.CreateCounter<long>("cache.evictions", description: "Entry removed by purge loop");
+        _hits = Meter.CreateCounter<long>("cache.hits", description: "Cache hit (served from store)");
+        _misses = Meter.CreateCounter<long>("cache.misses", description: "Cache miss (triggered a fetch)");
+        _evictions = Meter.CreateCounter<long>("cache.evictions", description: "Entry removed by purge loop");
 
-        _meter.CreateObservableGauge(
+        Meter.CreateObservableGauge(
             "cache.item_count",
-            itemCountCallback,
+            () => new Measurement<int>(itemCountCallback(), _cacheNameTag),
             description: "Current number of items in the cache");
     }
 
-    public void Dispose() => _meter.Dispose();
+    public void RecordHit() => _hits.Add(1, _cacheNameTag);
+
+    public void RecordMisses(long count) => _misses.Add(count, _cacheNameTag);
+
+    public void RecordEvictions(long count) => _evictions.Add(count, _cacheNameTag);
 }
