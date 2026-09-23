@@ -64,6 +64,19 @@
     <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.17.0-beta.1" />
   </ItemGroup>
 
+  <ItemGroup Label="Messaging">
+    <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
+    <!-- The full package, not just .Abstractions — IHealthChecksBuilder/AddCheck live here, not in Abstractions.
+         Pinned to 10.0.8 to match every other Microsoft.Extensions.* package below, not its own latest patch —
+         a mismatched patch line is what was conflicting with DependencyInjection.Abstractions 10.0.8. -->
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.8" />
+    <!-- ADO.NET provider only (not EF Core, which doesn't support net472) — backs Common.RabbitMQ's
+         durable local publish queue for hosts with no database-backed outbox of their own (WPF). -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.8" />
+    <!-- net472 only; net10.0 already ships this in the shared framework. -->
+    <PackageVersion Include="System.Text.Json" Version="10.0.12" />
+  </ItemGroup>
+
   <ItemGroup Label="EntityFrameworkCore">
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.8" />

@@ -4,7 +4,8 @@
     <IsPackable>false</IsPackable>
     <!-- Test code shouldn't be held to the production analyzer bar. -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <NoWarn>$(NoWarn);CA1707;CA2007;CA1861</NoWarn>
+    <!-- CA2263 flagged deliberately: a couple of tests exercise both the generic and Type-based overloads on purpose. -->
+    <NoWarn>$(NoWarn);CA1707;CA2007;CA1861;CA2263</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BuildingBlocks\BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\src\BuildingBlocks.RealTime\BuildingBlocks.RealTime.csproj" />
+    <ProjectReference Include="..\..\src\Common.RabbitMQ\Common.RabbitMQ.csproj" />
     <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Domain\Equipment.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Application\Equipment.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Contracts\Equipment.Contracts.csproj" />

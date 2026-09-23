@@ -8,6 +8,9 @@
     <Project Path="src/BuildingBlocks.Persistence/BuildingBlocks.Persistence.csproj" />
     <Project Path="src/BuildingBlocks.RealTime/BuildingBlocks.RealTime.csproj" />
   </Folder>
+  <Folder Name="/src/Common.RabbitMQ/">
+    <Project Path="src/Common.RabbitMQ/Common.RabbitMQ.csproj" />
+  </Folder>
   <Folder Name="/src/Api/">
     <Project Path="src/Api/CleanArch.Api/CleanArch.Api.csproj" />
     <Project Path="src/Api/CleanArch.Api.Authentication/CleanArch.Api.Authentication.csproj" />

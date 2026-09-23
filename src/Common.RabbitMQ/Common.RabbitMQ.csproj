@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup Label="Multi-targeting">
+    <!-- Shared by the ASP.NET Core host (net10.0, via Directory.Build.props) and the WPF client
+         (net472). Nothing in this project may depend on either app's framework. -->
+    <TargetFramework />
+    <TargetFrameworks>net472;net10.0</TargetFrameworks>
+    <!-- ArgumentNullException.ThrowIfNull doesn't exist on net472's BCL and can't be polyfilled (it would
+         need adding a method to the actual sealed System.ArgumentNullException type), so guard clauses
+         here are written out by hand on purpose — CA1510 would otherwise flag every one of them on the
+         net10.0 leg alone, which is more noise than signal for code that has to look the same on both. -->
+    <NoWarn>$(NoWarn);CA1510</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The unit tests drive the internal registries, backoff math, and envelope serialization directly. -->
+    <InternalsVisibleTo Include="CleanArch.UnitTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="RabbitMQ.Client" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <!-- Built into the shared framework from net5.0 onward; net472 needs it as an explicit package. -->
+    <PackageReference Include="System.Text.Json" />
+  </ItemGroup>
+
+</Project>

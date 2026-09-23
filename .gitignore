@@ -26,6 +26,9 @@ artifacts/
 .DS_Store
 Thumbs.db
 
+# Scratch output from the /code-review skill
+.scratch_review/
+
 # Compose secrets — never commit these. Templates live next to them as
 # .env.example (observability/dev/, observability/prod/).
 **/.env
