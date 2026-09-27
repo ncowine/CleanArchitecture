@@ -602,6 +602,12 @@ A modern desktop app uses the .NET Generic Host, `Messaging.Hosting` and the sam
 classes as the API. It registers **no routes**, so it never publishes. Full walk-through:
 recipe C in the [messaging guide](../docs/messaging/README.md#c-a-modern-wpf-app-without-prism-net-8).
 
+> **Runnable comparison.** [`samples/MessagingPocs`](../samples/MessagingPocs/README.md) has three
+> small WPF apps side by side — RabbitMQ through Prism's `IEventAggregator`, RabbitMQ without it,
+> and **SignalR from the API** — with the right approach and the pitfalls commented in the code.
+> For apps whose events all come from the API, SignalR is the simpler default: no broker account or
+> broker access on each desktop.
+
 ```csharp
 // App.xaml.cs
 builder.Services.AddMessaging(messaging => messaging

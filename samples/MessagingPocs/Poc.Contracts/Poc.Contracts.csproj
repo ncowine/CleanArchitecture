@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The message the RabbitMQ POCs receive. A plain class that references only Messaging.Abstractions (no
+    dependencies) for [Message]. In the real solution it would live in the sending module's *.Contracts project.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Messaging\Messaging.Abstractions\Messaging.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

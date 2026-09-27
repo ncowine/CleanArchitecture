@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    POC 1: a modern (.NET 8) WPF app that keeps Prism and receives RabbitMQ messages as Prism events.
+    Uses Messaging.Hosting for the connection and Messaging.Prism to raise each message as MessageEvent<T>.
+
+    Note what it does NOT reference: Common.RabbitMQ (the legacy adapter). That is for the .NET Framework apps only.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Prism.DryIoc" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Poc.Contracts\Poc.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\src\Messaging\Messaging.Prism\Messaging.Prism.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

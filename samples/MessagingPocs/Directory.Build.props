@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Settings for the messaging proof-of-concept apps only.
+
+    Deliberately does NOT import the repository root's Directory.Build.props: that one sets net10.0 and
+    warnings-as-errors for the API. These are small, readable demo apps that target net8.0-windows, like the modern
+    WPF apps they stand in for.
+  -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

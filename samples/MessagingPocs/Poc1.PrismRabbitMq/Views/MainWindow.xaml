@@ -1,0 +1,30 @@
+<Window x:Class="Poc1.PrismRabbitMq.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding Title}" Height="480" Width="720">
+    <DockPanel Margin="12">
+        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap">
+            <Run FontWeight="SemiBold" Text="RabbitMQ: " /><Run Text="{Binding Connection, Mode=OneWay}" />
+        </TextBlock>
+        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" Foreground="Gray" TextWrapping="Wrap"
+                   Text="Receive-only. Run Poc.ServerSimulator and press Enter there to send events. Start several copies of this window: each gets every event." />
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="2*" />
+            </Grid.RowDefinitions>
+            <TextBlock Text="Current status" FontWeight="SemiBold" />
+            <DataGrid Grid.Row="1" ItemsSource="{Binding Assets}" AutoGenerateColumns="False" IsReadOnly="True" Margin="0,4,0,8">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Asset" Binding="{Binding AssetTag}" Width="*" />
+                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+                    <DataGridTextColumn Header="Changed (UTC)" Binding="{Binding ChangedAtUtc, StringFormat=HH:mm:ss}" Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Grid.Row="2" Text="Log" FontWeight="SemiBold" />
+            <ListBox Grid.Row="3" ItemsSource="{Binding Log}" FontFamily="Consolas" Margin="0,4,0,0" />
+        </Grid>
+    </DockPanel>
+</Window>
