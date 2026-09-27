@@ -373,6 +373,15 @@ A client calling `JoinGroup("equipment")` both subscribes to that group's Signal
 was in (`GroupsFor`) so a dropped connection is cleaned out of all of them, not just the
 last one it joined.
 
+**The hub requires an authenticated caller.** `PresenceHub` carries `[Authorize]` with no scheme
+list, so it accepts exactly what the API's write endpoints accept: the default scheme's selector
+picks API key (`X-Api-Key`), Okta bearer token (when configured) or AD Basic from the request's
+headers. Without valid credentials the negotiate request gets **401** and no connection is made.
+Every equipment change goes to everyone in the group, so an anonymous connection would be a data
+leak; `RealtimeHubSecurityTests` fails if the attribute is ever removed or bypassed with
+`[AllowAnonymous]`. Presence lists the authenticated caller's name (for an API key, the key's
+subject), so every connection using the same key counts as one user.
+
 `IPresenceTracker`'s default implementation, `InMemoryPresenceTracker`, is exactly what it
 sounds like — two `ConcurrentDictionary`s, one from group to members, one from connection to
 the groups it's in, so a disconnect can find and clean up every group in one pass without
@@ -383,10 +392,11 @@ scanning all of them. It's process-local, which is exactly the limitation
 
 ## 9. Step 6 — A client, minimally
 
-There's no consuming client checked into this repository today — the desktop client this kit
-used to ship was built against the modules this rewrite replaced, and a new one hasn't been
-built yet. What follows is the minimal shape any client needs, using Microsoft's
-`@microsoft/signalr` package, so you have something to point a real client at:
+A complete .NET desktop client is in the repository: **POC 3** in
+[`samples/MessagingPocs`](../samples/MessagingPocs/README.md) (`Poc3.SignalR/EquipmentLiveUpdates.cs`)
+— authentication with the API key header, reconnecting forever, re-joining the group after a
+reconnect, and loading over HTTP. What follows is the minimal shape of a *browser* client, using
+Microsoft's `@microsoft/signalr` package:
 
 ```javascript
 import * as signalR from "@microsoft/signalr";
@@ -408,6 +418,13 @@ connection.on("presence", ({ group, users }) => {
 await connection.start();
 await connection.invoke("JoinGroup", "equipment");
 ```
+
+> **Authentication in a browser.** As written, this gets **401**: the hub requires an
+> authenticated caller, and browsers can't set headers (such as `X-Api-Key`) on a WebSocket. A
+> browser client passes an Okta token instead — `withUrl("/hubs/presence", { accessTokenFactory:
+> () => token })` sends it as the `access_token` query parameter — and the API's JWT bearer options
+> need an `OnMessageReceived` hook that reads that parameter for `/hubs` paths. That hook is the
+> standard ASP.NET Core SignalR set-up, but it isn't added yet, because nothing uses Okta today.
 
 Two things to get right, both easy to miss the first time:
 

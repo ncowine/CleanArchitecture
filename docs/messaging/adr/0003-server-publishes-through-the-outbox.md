@@ -68,8 +68,11 @@ The Equipment module is the worked example, sending the same event over both cha
 - **Guard:** `TransportIndependenceTests` fails if a domain or application assembly, or the message contract,
   references RabbitMQ, the messaging engine or hosting, the outbox relay or SignalR.
 
-Not done: Onboarding publishing to RabbitMQ; the API receiving messages; `[Authorize]` on the SignalR hub; per-module
-outbox admin endpoints (the admin services are non-keyed like `IOutbox`).
+Since then: the SignalR hub requires an authenticated caller (`[Authorize]`, the same schemes as the API's write
+endpoints).
+
+Not done: Onboarding publishing to RabbitMQ; the API receiving messages; per-module outbox admin endpoints (the admin
+services are non-keyed like `IOutbox`); the `access_token` hook browser clients would need for Okta on the hub.
 
 ## Consequences
 

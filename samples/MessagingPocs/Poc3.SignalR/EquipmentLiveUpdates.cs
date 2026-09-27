@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using Equipment.Messages;
 using Microsoft.AspNetCore.SignalR.Client;
 using Poc.Shared;
@@ -23,10 +25,9 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
         _connection = new HubConnectionBuilder()
             .WithUrl(new Uri(new Uri(options.BaseUrl), "hubs/presence"), http =>
             {
-                // ✅ DO authenticate the hub connection with the same key as the HTTP calls. The .NET client sends these
-                //    headers on the negotiate request and on the WebSocket itself.
-                //    ⚠ Today the API's hub doesn't require authentication (PresenceHub has no [Authorize]), so this
-                //    header isn't checked yet. Anyone who can reach the API can listen. That's on the server to fix.
+                // ✅ DO authenticate the hub connection with the same key as the HTTP calls. The hub has [Authorize], so
+                //    without a valid key the negotiate request gets 401 and no connection is made. The .NET client sends
+                //    these headers on the negotiate request and on the WebSocket itself.
                 http.Headers["X-Api-Key"] = options.ApiKey;
             })
             .WithAutomaticReconnect(new ForeverRetryPolicy())
@@ -39,8 +40,8 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
         _connection.On<EquipmentCreated>(nameof(EquipmentCreated), e => Created?.Invoke(e));
         _connection.On<EquipmentUpdated>(nameof(EquipmentUpdated), e => Updated?.Invoke(e));
         _connection.On<EquipmentDeleted>(nameof(EquipmentDeleted), e => Deleted?.Invoke(e));
-        // Presence lists distinct USER NAMES, not connections. While the hub is anonymous every client is "anonymous",
-        // so this shows 1 however many windows are open. It becomes meaningful once the hub authenticates callers.
+        // Presence lists distinct USER NAMES, not connections: the authenticated caller's name, which for an API key is
+        // the key's subject. Every window using the same key counts as one user.
         _connection.On<PresenceDto>("presence", dto => PresenceChanged?.Invoke(dto.Users.Count));
 
         _connection.Reconnecting += error =>
@@ -84,7 +85,8 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
     public event Action? Reconnected;
 
     /// <summary>Connects (retrying until the API is reachable) and joins the equipment group.</summary>
-    public async Task ConnectAsync(CancellationToken cancellationToken)
+    /// <returns>False when the API rejected the credentials: retrying won't help, so it stops.</returns>
+    public async Task<bool> ConnectAsync(CancellationToken cancellationToken)
     {
         // ❌ DON'T expect WithAutomaticReconnect to cover the FIRST connection. It only reconnects a connection that was
         //    once up. If the API isn't running when the app starts, StartAsync throws, and you have to retry yourself.
@@ -96,6 +98,13 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
                 await _connection.StartAsync(cancellationToken);
                 break;
             }
+            catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                // ❌ DON'T retry a rejected credential forever. An unreachable API comes back by itself; a wrong or
+                //    revoked key doesn't. Stop, and say what to fix.
+                StatusChanged?.Invoke($"The API rejected the API key ({(int)ex.StatusCode.Value}). Check Api:ApiKey in appsettings.json.");
+                return false;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 StatusChanged?.Invoke($"API not reachable ({ex.Message}). Retrying in 5 s…");
@@ -105,6 +114,7 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
 
         await JoinAsync();
         StatusChanged?.Invoke("Connected");
+        return true;
     }
 
     public ValueTask DisposeAsync() => _connection.DisposeAsync();
