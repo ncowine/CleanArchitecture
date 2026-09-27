@@ -1,3 +1,4 @@
+using System.Globalization;
 using BuildingBlocks.Caching;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -23,6 +24,6 @@ public class DataCacheDisposeTests
     private sealed class NumberCache() : DataCache<int, string>(NullLogger.Instance)
     {
         protected override Task<IReadOnlyDictionary<int, string>> FetchAsync(HashSet<int> keys, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyDictionary<int, string>>(keys.ToDictionary(key => key, key => key.ToString()));
+            Task.FromResult<IReadOnlyDictionary<int, string>>(keys.ToDictionary(key => key, key => key.ToString(CultureInfo.InvariantCulture)));
     }
 }

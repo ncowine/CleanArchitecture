@@ -62,4 +62,11 @@
     <Project Path="tests/Fixtures/LegacyModel/AppB.Events/AppB.Events.csproj" />
     <Project Path="tests/Fixtures/LegacyModel/Shared.Events/Shared.Events.csproj" />
   </Folder>
+  <Folder Name="/samples/" />
+  <Folder Name="/samples/MessagingPocs/">
+    <Project Path="samples/MessagingPocs/Poc.Shared/Poc.Shared.csproj" />
+    <Project Path="samples/MessagingPocs/Poc1.PrismRabbitMq/Poc1.PrismRabbitMq.csproj" />
+    <Project Path="samples/MessagingPocs/Poc2.PlainRabbitMq/Poc2.PlainRabbitMq.csproj" />
+    <Project Path="samples/MessagingPocs/Poc3.SignalR/Poc3.SignalR.csproj" />
+  </Folder>
 </Solution>

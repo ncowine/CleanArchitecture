@@ -67,7 +67,7 @@ tests/
   Common.RabbitMQ.Tests/          Messaging: golden wire bytes, legacy public API, real-broker tests (net472 + net8.0)
   Fixtures/                       Test-only: frozen original library, legacy model, demo events for golden tests
 samples/
-  MessagingPocs/                  Three WPF POCs — RabbitMQ via Prism, RabbitMQ without Prism, SignalR — own solution
+  MessagingPocs/                  Three WPF POCs — RabbitMQ via Prism, RabbitMQ without Prism, SignalR (Windows-only; own build settings)
 ```
 
 The messaging folders build with their **own** `Directory.Build.props` / `Directory.Packages.props` (in

@@ -13,7 +13,9 @@ in three different ways. They all talk to the **real `CleanArch.Api`**, and they
 In all three, **changes go to the API over HTTP** (the Add / Delete buttons) and loading is over HTTP. Only the way
 each app *listens* differs — which is the point of comparing them. Read the comments marked ✅ DO and ❌ DON'T.
 
-This is a separate solution (`MessagingPocs.slnx`) with its own build settings, so it never affects the API's build.
+They're in the main solution under **samples/MessagingPocs**, and also have their own `MessagingPocs.slnx` if you want
+to open just them. Their own `Directory.Build.props` / `Directory.Packages.props` keep the API's strict build settings
+and package versions away from them. Being WPF apps, they build on Windows only, so the main solution now does too.
 
 ---
 
