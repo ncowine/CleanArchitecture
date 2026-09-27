@@ -140,6 +140,8 @@ Each is explained where it happens in the code.
   updating. Use a policy that keeps trying.
 - ❌ Expecting automatic reconnect to cover the first connection. It doesn't; retry `StartAsync` yourself.
 - ❌ Forgetting that a reconnect is a new connection. Group membership is lost; join again.
+- ❌ Retrying a rejected credential (401) forever. An unreachable API comes back by itself; a wrong key doesn't. Stop
+  and say what to fix.
 
 ---
 
@@ -147,12 +149,15 @@ Each is explained where it happens in the code.
 
 | Gap | Today | Needed |
 |---|---|---|
-| Hub authentication | `PresenceHub` accepts anyone; the POC's `X-Api-Key` isn't checked | `[Authorize]` on the hub with the API-key scheme |
-| Presence | Counts distinct user names; everyone is "anonymous" | Meaningful once the hub authenticates |
+| Browser clients | The hub needs a header a browser can't send on a WebSocket | An `access_token` hook for Okta tokens on `/hubs` paths ([tutorial 65 §9](../../tutorials/65-real-time-notifications.md#9-step-6--a-client-minimally)) |
 | IIS | — | Enable the **WebSocket Protocol** Windows feature on the server |
 | Scale-out | One server (fine for now) | Redis backplane before a second API instance ([tutorial 65 §12](../../tutorials/65-real-time-notifications.md#12-scaling-past-one-instance)) |
 
-(Named event contracts, previously on this list, are done: the hub now sends the `Equipment.Messages` classes.)
+Done since this list was written: **named event contracts** (the hub sends the `Equipment.Messages` classes) and
+**hub authentication** — `PresenceHub` has `[Authorize]`, accepting the same schemes as the API's write endpoints
+(API key, Okta when configured, AD Basic). Without valid credentials the connection gets 401; POC 3 then stops and
+says so, rather than retrying a rejected key forever. Presence now lists the key's subject, so windows sharing one
+key count as one user.
 
 ---
 

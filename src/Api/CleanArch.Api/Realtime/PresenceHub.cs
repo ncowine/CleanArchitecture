@@ -1,4 +1,5 @@
 using BuildingBlocks.RealTime;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace CleanArch.Api.Realtime;
@@ -9,7 +10,19 @@ namespace CleanArch.Api.Realtime;
 /// group's activity; while subscribed it receives that group's events (e.g. <c>EquipmentCreated</c>) and
 /// <c>presence</c> updates (who is currently connected to the group). Presence is best-effort and tracked
 /// per connection.
+/// <para>
+/// <b>Callers must be authenticated</b>, exactly as for the API's write endpoints: the default scheme picks API key,
+/// Okta bearer token (when configured) or AD Basic from the request's headers. Without valid credentials the
+/// negotiate request is refused with 401 and no connection is made. The .NET SignalR client (the desktop apps) sends
+/// its headers on the negotiate request and on the WebSocket itself.
+/// </para>
+/// <para>
+/// Browsers can't set headers on a WebSocket. A browser client using Okta would pass its token as the
+/// <c>access_token</c> query parameter, and the JWT bearer options would need an <c>OnMessageReceived</c> hook that
+/// reads it for <c>/hubs</c> paths — the standard ASP.NET Core SignalR set-up, not added yet.
+/// </para>
 /// </summary>
+[Authorize]
 public sealed class PresenceHub : Hub
 {
     private readonly IPresenceTracker _presence;

@@ -56,8 +56,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public async Task StartAsync()
     {
         // ✅ DO connect and join FIRST, then load (see EquipmentList.LoadAsync for why).
-        await _live.ConnectAsync(CancellationToken.None);
-        await List.LoadAsync();
+        if (await _live.ConnectAsync(CancellationToken.None))
+        {
+            await List.LoadAsync();
+        }
     }
 
     [RelayCommand]
