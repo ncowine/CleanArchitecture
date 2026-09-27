@@ -1,3 +1,4 @@
+using BuildingBlocks.Correlation;
 using BuildingBlocks.Messaging;
 using BuildingBlocks.Outbox;
 using BuildingBlocks.Outbox.Messaging;
@@ -8,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using MessagingCorrelation = Messaging.Hosting.CorrelationContext;
 
 namespace CleanArch.Api.IntegrationTests;
 
@@ -66,11 +68,15 @@ public sealed class OutboxMessagingTests : IAsyncLifetime
             Assert.Equal(1, row.Attempts);
             Assert.Null(row.Error);
 
-            var (message, messageId) = Assert.Single(_publisher.Published);
+            var (message, messageId, correlationId) = Assert.Single(_publisher.Published);
             var retired = Assert.IsType<EmployeeRetired>(message);
             Assert.Equal(7, retired.EmployeeId);
             Assert.Equal("Ada", retired.Name);
             Assert.Equal(rowId.ToString("N"), messageId);
+
+            // The request's correlation ID, stored on the row by the writer, is what the message is sent under.
+            Assert.NotNull(row.CorrelationId);
+            Assert.Equal(row.CorrelationId, correlationId);
         }
         finally
         {
@@ -91,6 +97,19 @@ public sealed class OutboxMessagingTests : IAsyncLifetime
             dispatcher.DispatchAsync(Guid.NewGuid(), nameof(EmployeeRetired), """{"EmployeeId":1,"Name":"x"}""", default));
 
         Assert.IsType<BrokerUnavailableException>(deferred.InnerException);
+    }
+
+    [Fact]
+    public async Task Dispatcher_publishes_under_the_scopes_correlation_id_and_then_restores_the_previous_one()
+    {
+        using var scope = _provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ICorrelationContext>().Set("req-42");
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IOutboxDispatcher<OutboxTestDbContext>>();
+
+        await dispatcher.DispatchAsync(Guid.NewGuid(), nameof(EmployeeRetired), """{"EmployeeId":1,"Name":"x"}""", default);
+
+        Assert.Equal("req-42", Assert.Single(_publisher.Published).CorrelationId);
+        Assert.Null(MessagingCorrelation.Current);
     }
 
     [Fact]
@@ -115,7 +134,7 @@ public sealed class OutboxMessagingTests : IAsyncLifetime
     }
 
     private MessagingOutboxDispatcher<OutboxTestDbContext> CreateDispatcher() =>
-        new(_publisher, new OutboxMessageTypes<OutboxTestDbContext>([typeof(EmployeeRetired)]));
+        new(_publisher, new OutboxMessageTypes<OutboxTestDbContext>([typeof(EmployeeRetired)]), new FixedCorrelation("req-1"));
 
     private async Task<Guid> EnqueueAsync<TEvent>(TEvent integrationEvent) where TEvent : class
     {
@@ -167,7 +186,8 @@ public sealed class OutboxMessagingTests : IAsyncLifetime
             set => _unavailableTimes = value;
         }
 
-        public List<(object Message, string? MessageId)> Published { get; } = [];
+        /// <summary>Each publish, with the messaging library's correlation ID in effect at the time.</summary>
+        public List<(object Message, string? MessageId, string? CorrelationId)> Published { get; } = [];
 
         public Task PublishConfirmedAsync(object message, string? messageId, CancellationToken cancellationToken = default)
         {
@@ -178,11 +198,18 @@ public sealed class OutboxMessagingTests : IAsyncLifetime
 
             lock (Published)
             {
-                Published.Add((message, messageId));
+                Published.Add((message, messageId, MessagingCorrelation.Current));
             }
 
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FixedCorrelation(string correlationId) : ICorrelationContext
+    {
+        public string CorrelationId { get; private set; } = correlationId;
+
+        public void Set(string correlationId) => CorrelationId = correlationId;
     }
 }
 

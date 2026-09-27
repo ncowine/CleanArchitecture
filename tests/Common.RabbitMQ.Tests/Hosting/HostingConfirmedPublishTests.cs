@@ -35,6 +35,28 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
+        public async Task ConfirmedPublisher_WithTelemetry_SendsTheCurrentCorrelationId()
+        {
+            await using (TestBus bus = await TestBus.Create())
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>().And().AddTelemetry()))
+            {
+                await host.WaitUntilConnected();
+                WireCapture capture = await bus.Capture();
+
+                using (CorrelationContext.Begin("corr-from-outbox"))
+                {
+                    await host.Services.GetRequiredService<IConfirmedMessagePublisher>()
+                        .PublishConfirmedAsync(GoldenMessage(), "outbox-row-9", TestContext.Current.CancellationToken);
+                }
+
+                CapturedMessage message = await capture.Next(TestBus.Timeout);
+                Assert.NotNull(message);
+                Assert.Equal("corr-from-outbox", message.Headers["correlation-id"]);
+                Assert.Equal("outbox-row-9", message.MessageId);
+            }
+        }
+
+        [Fact]
         public async Task ConfirmedPublisher_MessageWithoutARoute_Throws()
         {
             await using (TestBus bus = await TestBus.Create())

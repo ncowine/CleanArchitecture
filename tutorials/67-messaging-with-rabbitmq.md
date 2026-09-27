@@ -360,7 +360,7 @@ if (messagingSection.Exists())
 {
     builder.Services.AddMessaging(messaging => messaging
         .AddBus("Main", messagingSection)
-        .Route<EquipmentRetired>()        // chapter 10 — one line per message the API sends
+        .Route<EquipmentRetired>().And()  // chapter 10 — one line per message the API sends
         .AddTelemetry());                 // traces, metrics and logs; chapter 12
 }
 ```
@@ -531,11 +531,11 @@ meter to the existing OpenTelemetry setup in `src/Api/CleanArch.Api/Observabilit
 Alongside them, the outbox's own counters (`outbox_delivered_total`, `outbox_failed_total`,
 `outbox_dead_lettered_total`) already cover the sending side.
 
-> **Known gap.** A message sent through the outbox carries the outbox *row's* ID as its
-> `correlation-id` header, not the correlation ID of the request that produced it. The outbox
-> processor restores the request's ID into the API's `ICorrelationContext`, but the messaging
-> library reads its own `CorrelationContext`, and the relay doesn't copy one into the other
-> yet. The fix is a few lines in `MessagingOutboxDispatcher`.
+**Correlation.** A message sent through the outbox carries the correlation ID of the request
+that wrote the row, in its `correlation-id` header. The outbox processor restores that ID into
+the API's `ICorrelationContext`; the relay carries it into the messaging library's own
+`CorrelationContext` for the publish. So one ID follows the flow from the HTTP request, through
+the audit record and the outbox, to the receiving application.
 
 ### Health
 
@@ -837,7 +837,7 @@ When connecting a new event:
 // Program.cs — only when "Messaging:Buses:Main" is configured
 builder.Services.AddMessaging(m => m
     .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
-    .Route<EquipmentRetired>()
+    .Route<EquipmentRetired>().And()
     .AddTelemetry());
 
 // Module registration

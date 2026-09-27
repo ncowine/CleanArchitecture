@@ -36,7 +36,9 @@ limits").
 4. **The outbox relay.** `BuildingBlocks.Outbox.Messaging` (its own project, so the generic outbox doesn't depend on
    RabbitMQ) provides `MessagingOutboxDispatcher<TContext>`. It turns an outbox row back into its message class and
    calls `IConfirmedMessagePublisher`, passing the row's ID as the AMQP message-id. A row is marked delivered only
-   after the broker has it.
+   after the broker has it. The correlation ID the processor restores from the row (the originating request's) is
+   carried into the messaging library's `CorrelationContext` for the publish, so it becomes the message's
+   `correlation-id` header.
 5. **A broker outage doesn't use up attempts.** The processor retries a row 3 times, 2 seconds apart, then dead-letters
    it, so an outage of a few seconds would have parked good messages. A dispatcher now throws
    `OutboxDeliveryDeferredException` for failures that aren't the message's fault. The processor doesn't count it as
