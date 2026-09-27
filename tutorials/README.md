@@ -26,6 +26,7 @@ Come back for the rest when you hit the problem it solves.
 | 50 | [Instrumenting an application](50-instrumenting-an-application.md) | The app is a black box anywhere but your machine |
 | 60 | [Talking across modules](60-talking-across-modules.md) | You need data — or a write — from another module, and found out you can't just do it |
 | 65 | [Real-time notifications](65-real-time-notifications.md) | Connected clients need to see a change the moment it happens, without polling |
+| 67 | [Messaging with RabbitMQ](67-messaging-with-rabbitmq.md) | Another *application* — a legacy or modern desktop app, another service — needs to know something happened |
 | 70 | [Authentication and the audit actor](70-authentication.md) | You need to know who is calling, and they don't all authenticate the same way |
 | 80 | [Testing](80-testing.md) | You want tests that catch bugs and survive refactoring |
 | 90 | [Observability server on Ubuntu](90-observability-server-ubuntu.md) | You're building the box that collects telemetry, from a blank Ubuntu install |
@@ -47,6 +48,9 @@ Come back for the rest when you hit the problem it solves.
 | Build a multi-step process that survives a restart | [60 §4](60-talking-across-modules.md#4-why-a-multi-step-process-needs-the-outbox) onward |
 | Undo a step when a later one fails | [60 §12](60-talking-across-modules.md#12-compensation--the-saga-unwinding-itself) |
 | Push a live update to connected clients | [65](65-real-time-notifications.md) |
+| Tell another application something happened, without losing it on a restart | [67 §5](67-messaging-with-rabbitmq.md#5-how-an-event-leaves-the-api) onward |
+| Send an event a legacy desktop app will receive | [67 §15](67-messaging-with-rabbitmq.md#how-the-api-reaches-a-legacy-app) |
+| Receive events in a modern WPF app | [67 §14](67-messaging-with-rabbitmq.md#14-modern-wpf-apps-subscribe-only) |
 | Issue an API key | [70 §4](70-authentication.md#4-step-1--api-keys) |
 | Protect an endpoint | [70 §8](70-authentication.md#8-step-4--protect-an-endpoint) |
 | Test a rule, or a handler | [80](80-testing.md) |
@@ -77,6 +81,9 @@ than one place:
 - **One follow-up message per outcome** — never publish twice, never publish nothing — is
   stated in [60](60-talking-across-modules.md) and the saga's transitions (each step
   succeeding, each step failing) are tested in [80](80-testing.md).
+- **The outbox** is built in [60](60-talking-across-modules.md) to carry a saga between
+  modules, and reused in [67](67-messaging-with-rabbitmq.md) to reach other applications
+  through RabbitMQ — same table, same processor, a different dispatcher at the end.
 - **The caching decorator shape** shows up twice — over a database read in
   [45](45-caching.md) and over API key validation in
   [70](70-authentication.md#4-step-1--api-keys). Same pattern, two different reasons to

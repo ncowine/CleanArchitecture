@@ -515,12 +515,16 @@ waits for the broker's confirm:
 
 ```csharp
 // Module registration: the outbox sends these classes to RabbitMQ. Each needs [Message] and a Route<T>() above.
-services.AddOutboxWriter<EquipmentDbContext>();
+// The module's own outbox writer: NOT a second AddOutboxWriter/IOutbox, which Onboarding already registers.
+services.AddScoped<IEquipmentOutbox, EquipmentOutbox>();
 services.AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentRetired));
 
 // In a handler, inside the unit of work:
 outbox.Enqueue(new EquipmentRetired { Id = asset.Id });
 ```
+
+The step-by-step version, including the outbox table and the writer, is in
+[tutorial 67](../../tutorials/67-messaging-with-rabbitmq.md#11-step-4--send-it-through-the-modules-outbox).
 
 - A row is marked delivered only after the broker confirms it. The row's ID travels as the message-id.
 - While the broker is unreachable, rows wait without using up their 3 attempts, and go out in order afterwards.
