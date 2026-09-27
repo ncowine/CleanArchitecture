@@ -47,6 +47,7 @@ Docker) or, from a bare Ubuntu box with no Docker knowledge,
 src/
   BuildingBlocks/            Mediator, behaviors, auditing, correlation, pagination (EF-free)
   BuildingBlocks.Outbox/     Reusable outbox: message, writer, processor, dispatcher, admin, metrics
+  BuildingBlocks.Outbox.Messaging/  Sends outbox rows to RabbitMQ with a confirmed publish (docs/messaging/adr/0003)
   Messaging/                 RabbitMQ messaging shared with legacy .NET Framework apps (docs/messaging/)
     Messaging.Abstractions / .RabbitMQ (engine) / .Hosting (server DI) / .Prism (optional bridge)
   Common.RabbitMQ/           Legacy Prism adapter over the engine; public API is additions-only

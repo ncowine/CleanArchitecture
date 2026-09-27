@@ -66,5 +66,12 @@ The root `Directory.Packages.props` no longer pins any messaging package.
 
 ## Changes since the copy
 
-None yet. Record each change to the copied code here (what and why), so a later comparison with the source
-repository is easy.
+Record each change to the copied code here (what and why), so a later comparison with the source repository is easy.
+
+| Date | Where | Change | Why |
+|---|---|---|---|
+| 2026-09-27 | `Messaging.RabbitMQ`: `RabbitMQBus.PublishConfirmedAsync`, `BrokerUnavailableException` (new) | A publish that sends at once and completes on the broker's confirm, with nothing buffered | The server's outbox needs to know the broker has the message ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md)). Additive; the buffered path is unchanged. |
+| 2026-09-27 | `Messaging.RabbitMQ`: `RabbitMQBus.DeclareSharedQueue` | A changed shared-queue setting is reported with the queue name and what to do, instead of a bare PRECONDITION_FAILED | Shared queues only (server); no behaviour change beyond the log text. |
+| 2026-09-27 | `Messaging.Hosting`: `IConfirmedMessagePublisher` (new), `MessagePublisher` | Exposes the confirmed publish, using the message's route | ADR 0003. |
+
+`src/Common.RabbitMQ`, `src/Common.RabbitMQ.Configuration`, the wire format and the golden files are unchanged.

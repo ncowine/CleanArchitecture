@@ -168,6 +168,64 @@ namespace Messaging.RabbitMQ
             outstandingMessages.Enqueue(new PendingMessage(context, body));
         }
 
+        /// <summary>
+        /// Publishes <paramref name="message"/> now and completes once the broker has confirmed it (ADR 0003). Unlike
+        /// <see cref="Enqueue(string, object, string)"/>, nothing is buffered: the caller keeps the message until this
+        /// succeeds, which is what an outbox needs. Legacy apps never call it; the buffered path is unchanged.
+        /// </summary>
+        /// <param name="routingKey">Null or empty for the wire name.</param>
+        /// <param name="messageId">
+        /// Sent as the message-id property. Null for a new one; an outbox passes its row's ID so that a message sent again
+        /// after a failure keeps the same ID.
+        /// </param>
+        /// <exception cref="BrokerUnavailableException">
+        /// The bus isn't connected, or the connection dropped during the publish. Try again later.
+        /// </exception>
+        public async Task PublishConfirmedAsync(string wireName, object message, string routingKey, string messageId, CancellationToken cancellationToken)
+        {
+            EnsureNotDisposed();
+
+            if (string.IsNullOrWhiteSpace(wireName))
+            {
+                throw new ArgumentException("A wire name is required.", nameof(wireName));
+            }
+
+            byte[] body = serializer.Serialize(message);
+
+            string key = string.IsNullOrEmpty(routingKey) ? wireName : routingKey;
+            string id = string.IsNullOrEmpty(messageId) ? Guid.NewGuid().ToString("N") : messageId;
+            PublishContext context = new PublishContext(wireName, options.BusName, id, message?.GetType(), key);
+            Observe(o => o.OnPublishing(context), nameof(IMessagingObserver.OnPublishing));
+
+            // RabbitMQ.Client 7 serializes publishes on a channel itself and waits for each confirm separately, so this
+            // shares the publisher channel with the outgoing buffer's loop safely.
+            IChannel channel = publisherChannel;
+            if (channel == null || !channel.IsOpen)
+            {
+                BrokerUnavailableException unavailable = new BrokerUnavailableException($"Bus '{options.BusName}' is not connected to the broker.");
+                Observe(o => o.OnPublishFailed(context, unavailable), nameof(IMessagingObserver.OnPublishFailed));
+                throw unavailable;
+            }
+
+            try
+            {
+                await PublishMessage(channel, new PendingMessage(context, body), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!(ex is OperationCanceledException))
+            {
+                Observe(o => o.OnPublishFailed(context, ex), nameof(IMessagingObserver.OnPublishFailed));
+
+                if (ex is OperationInterruptedException || !channel.IsOpen)
+                {
+                    throw new BrokerUnavailableException($"Bus '{options.BusName}' lost its connection while publishing.", ex);
+                }
+
+                throw;
+            }
+
+            Observe(o => o.OnPublished(context), nameof(IMessagingObserver.OnPublished));
+        }
+
         /// <summary>Starts receiving <paramref name="registration"/>. Does nothing when already subscribed.</summary>
         public async Task Subscribe(MessageRegistration registration)
         {
@@ -346,20 +404,16 @@ namespace Messaging.RabbitMQ
         /// </summary>
         private async Task<QueueDeclareOk> DeclareSharedQueue(IChannel channel, CancellationToken token)
         {
-            await channel.QueueDeclareAsync(
-                queue: DeadLetterQueueName,
-                durable: true,
-                exclusive: false,
-                autoDelete: false,
-                arguments: new Dictionary<string, object> { ["x-queue-type"] = "quorum" },
-                cancellationToken: token).ConfigureAwait(false);
+            await DeclareDurableQueue(
+                channel,
+                DeadLetterQueueName,
+                new Dictionary<string, object> { ["x-queue-type"] = "quorum" },
+                token).ConfigureAwait(false);
 
-            return await channel.QueueDeclareAsync(
-                queue: queueName,
-                durable: true,
-                exclusive: false,
-                autoDelete: false,
-                arguments: new Dictionary<string, object>
+            return await DeclareDurableQueue(
+                channel,
+                queueName,
+                new Dictionary<string, object>
                 {
                     ["x-queue-type"] = "quorum",
                     ["x-delivery-limit"] = options.DeliveryLimit,
@@ -370,7 +424,34 @@ namespace Messaging.RabbitMQ
                     ["x-dead-letter-strategy"] = "at-least-once",
                     ["x-overflow"] = "reject-publish",
                 },
-                cancellationToken: token).ConfigureAwait(false);
+                token).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// A queue's arguments can't change after it's created, so a changed setting such as
+        /// <see cref="RabbitMQBusOptions.DeliveryLimit"/> makes the broker refuse the declaration (PRECONDITION_FAILED).
+        /// This says what to do about it instead of passing on the broker's bare reply.
+        /// </summary>
+        private static async Task<QueueDeclareOk> DeclareDurableQueue(IChannel channel, string name, Dictionary<string, object> arguments, CancellationToken token)
+        {
+            try
+            {
+                return await channel.QueueDeclareAsync(
+                    queue: name,
+                    durable: true,
+                    exclusive: false,
+                    autoDelete: false,
+                    arguments: arguments,
+                    cancellationToken: token).ConfigureAwait(false);
+            }
+            catch (OperationInterruptedException ex) when (ex.ShutdownReason?.ReplyCode == 406)
+            {
+                throw new InvalidOperationException(
+                    $"Queue '{name}' already exists with different settings ({ex.ShutdownReason.ReplyText}). A queue's settings " +
+                    "can't change after it's created. Put the setting (for example DeliveryLimit) back to the value the queue was " +
+                    "created with, or delete the queue so it's created again. Deleting it loses the messages in it.",
+                    ex);
+            }
         }
 
         private async Task CloseConsumer()

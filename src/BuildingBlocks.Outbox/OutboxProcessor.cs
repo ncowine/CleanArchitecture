@@ -10,7 +10,9 @@ namespace BuildingBlocks.Outbox;
 /// Generic outbox dispatcher for a single <typeparamref name="TContext"/>. On a timer it pulls
 /// undelivered, not-dead-lettered messages and hands each to the module's
 /// <see cref="IOutboxDispatcher{TContext}"/>. Reliability properties (identical for every module):
-/// at-least-once delivery (consumers must be idempotent), capped retries, then dead-letter.
+/// at-least-once delivery (consumers must be idempotent), capped retries, then dead-letter. A dispatcher
+/// that throws <see cref="OutboxDeliveryDeferredException"/> (e.g. the broker is down) doesn't use up an
+/// attempt: the batch stops there and the message is tried again on the next poll.
 /// </summary>
 internal sealed class OutboxProcessor<TContext> : BackgroundService where TContext : DbContext
 {
@@ -81,6 +83,15 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
                 message.Error = null;
                 OutboxDiagnostics.Delivered.Add(1, new KeyValuePair<string, object?>("db", context));
             }
+            catch (OutboxDeliveryDeferredException exception)
+            {
+                // Not the message's fault (e.g. the broker is down): don't spend an attempt on it, and stop here so
+                // the rest of the batch keeps its order and isn't tried against the same outage.
+                message.Attempts--;
+                message.Error = exception.Message;
+                OutboxLog.DeliveryDeferred(_logger, exception, message.Id, message.Type, context);
+                break;
+            }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 message.Error = exception.Message;
@@ -110,6 +121,9 @@ internal static partial class OutboxLog
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to deliver outbox message {MessageId} ({MessageType}) for {Context} on attempt {Attempts}; will retry.")]
     public static partial void DeliveryFailed(ILogger logger, Exception exception, Guid messageId, string messageType, string context, int attempts);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deferred outbox message {MessageId} ({MessageType}) for {Context}; it will be retried on the next poll without using up an attempt.")]
+    public static partial void DeliveryDeferred(ILogger logger, Exception exception, Guid messageId, string messageType, string context);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Dead-lettering outbox message {MessageId} ({MessageType}) for {Context} after {Attempts} failed attempts.")]
     public static partial void DeadLettered(ILogger logger, Exception exception, Guid messageId, string messageType, string context, int attempts);

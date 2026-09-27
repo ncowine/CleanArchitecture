@@ -21,6 +21,9 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
 > - `Common.Events` and `Employees.Contracts` are test fixtures here (`tests/Fixtures/`), not messages to use. This
 >   solution's messages go in each module's `*.Contracts` project.
 > - There's no messaging CI workflow here yet, and the build settings are isolated as described in PROVENANCE.md.
+> - **The API publishes only through its outbox**, with a publish that waits for the broker's confirm
+>   ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md), and [recipe D](#d-a-server-aspnet-handlers) step 4).
+>   Legacy apps are unchanged. Modern WPF apps only subscribe.
 
 ---
 
@@ -170,6 +173,7 @@ Two ideas explain almost everything:
 |---|---|
 | [`adr/0001-decouple-messaging-from-prism.md`](adr/0001-decouple-messaging-from-prism.md) | You want to know **why** the layers exist, and the compatibility rules. |
 | [`adr/0002-exchange-per-owner-and-configurable-routing.md`](adr/0002-exchange-per-owner-and-configurable-routing.md) | You want the topology: exchange per app, routing keys, events found by assembly, modern clients. |
+| [`adr/0003-server-publishes-through-the-outbox.md`](adr/0003-server-publishes-through-the-outbox.md) | You're publishing from the API: why it goes through the outbox, and what legacy apps keep. |
 | [`legacy-baseline-assumptions.md`](legacy-baseline-assumptions.md) | You're checking this code against the real legacy library. |
 
 ---
@@ -207,8 +211,9 @@ In plain words:
 4. A background loop sends buffered messages to your app's exchange. A message is removed from the buffer only
    when RabbitMQ confirms it has it. If RabbitMQ is down, messages wait and go out after reconnecting.
 
-**The one thing to know:** if your **process crashes**, messages still in the buffer are lost. An "outbox" would
-fix that; it's an optional future step (see [known limits](#design-decisions-and-known-limits)).
+**The one thing to know:** if your **process crashes**, messages still in the buffer are lost. Legacy apps accept
+that. The API avoids it by publishing through its outbox with a confirmed publish (see
+[recipe D](#d-a-server-aspnet-handlers) step 4).
 
 ### Receiving
 
@@ -502,6 +507,28 @@ using (CorrelationContext.Begin(requestId)) { ... }                             
 Configuration mistakes stop the app at startup with a clear list of what's wrong, for example a route to a bus that
 doesn't exist or a class without `[Message]`.
 
+**4. In CleanArchitecture: publish events through the outbox** ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md)).
+
+`PublishAsync` only buffers, so a restart can lose a message. Events other applications rely on go through the
+module's outbox instead. The event is saved in the same transaction as the change, and delivered with a publish that
+waits for the broker's confirm:
+
+```csharp
+// Module registration: the outbox sends these classes to RabbitMQ. Each needs [Message] and a Route<T>() above.
+services.AddOutboxWriter<EquipmentDbContext>();
+services.AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentRetired));
+
+// In a handler, inside the unit of work:
+outbox.Enqueue(new EquipmentRetired { Id = asset.Id });
+```
+
+- A row is marked delivered only after the broker confirms it. The row's ID travels as the message-id.
+- While the broker is unreachable, rows wait without using up their 3 attempts, and go out in order afterwards.
+- Delivery is at least once, so receivers must tolerate a duplicate.
+- A module whose outbox also drives in-process steps (like Onboarding's saga) keeps its own dispatcher and hands the
+  rows it doesn't recognise to `MessagingOutboxDispatcher<TContext>` (`CanDispatch`, then `DispatchAsync`).
+- `IConfirmedMessagePublisher` is the publish underneath. Use it directly only where an outbox doesn't fit.
+
 ### E. Choosing between them
 
 | You have | Use |
@@ -700,7 +727,7 @@ The full reasoning is in the two ADRs. The short version:
 
 | Limit | Why | Workaround |
 |---|---|---|
-| Messages still in the outgoing buffer are lost if the process crashes. | Sending is fire-and-forget. | An outbox (optional, future). |
+| Messages still in the outgoing buffer are lost if the process crashes. | Sending is fire-and-forget. | Legacy apps: accepted. The API: publish through the outbox (recipe D, step 4). |
 | Custom routing keys don't reach legacy apps. | Legacy apps bind exact wire names. | Use the default key for anything legacy apps must receive. |
 | A non-`topic` exchange locks out legacy subscribers. | Legacy apps re-declare exchanges they subscribe to as `topic` (assumption A16). | Keep `topic` where legacy apps subscribe. |
 | Running more than one API instance makes its in-memory cache drift. | A shared queue gives each message to one instance. | Use an external cache, or add per-instance delivery for cache handlers (not built yet). |
@@ -715,6 +742,8 @@ The full reasoning is in the two ADRs. The short version:
 | Tests show as **skipped** | No broker reachable. | Start RabbitMQ, or set `RABBITMQ_HOST`. Use `RABBITMQ_TESTS_REQUIRED=1` to make this an error. |
 | Log: *Exchange 'X' does not exist yet; waiting for its owner* | The app that owns exchange X hasn't started. | Start the owner. The subscriber connects on its own afterwards. |
 | Log: *PRECONDITION_FAILED ... inequivalent arg 'type'* | Two apps declared the same exchange with different types. | Make them agree. Usually that means keeping `topic`. |
+| Log: *Queue 'X' already exists with different settings* | A shared-queue setting such as `DeliveryLimit` changed after the queue was created. Queue settings can't change. | Put the setting back, or delete the queue so it's created again (its messages are lost). |
+| Log: *Deferred outbox message …* | The API couldn't reach the broker. | Nothing to do once the broker is back: the message goes out on the next poll, without using an attempt. |
 | Log: *NOT_ALLOWED - vhost X not found* | The vhost doesn't exist. | Create it (see [broker setup](#3-one-time-broker-setup-for-the-demo-apps)) or use `/`. |
 | An app receives nothing | No matching binding, or a different vhost. | In the management UI, check the queue's bindings and the vhost. Check the routing key the sender used. |
 | Messages pile up in `*.dead-letter` | A handler keeps failing, or the body can't be read. | Read the message in the management UI (`x-first-death-reason` says why), fix the cause, then move it back. |

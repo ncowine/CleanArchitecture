@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Connects the outbox to RabbitMQ (docs/messaging/adr/0003). Separate from BuildingBlocks.Outbox so modules whose
+       outbox never reaches the broker don't carry a messaging dependency. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\BuildingBlocks.Outbox\BuildingBlocks.Outbox.csproj" />
+    <ProjectReference Include="..\Messaging\Messaging.Hosting\Messaging.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>

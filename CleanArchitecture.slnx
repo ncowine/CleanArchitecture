@@ -5,6 +5,7 @@
     <Project Path="src/BuildingBlocks.Auditing.Elasticsearch/BuildingBlocks.Auditing.Elasticsearch.csproj" />
     <Project Path="src/BuildingBlocks.Caching/BuildingBlocks.Caching.csproj" />
     <Project Path="src/BuildingBlocks.Outbox/BuildingBlocks.Outbox.csproj" />
+    <Project Path="src/BuildingBlocks.Outbox.Messaging/BuildingBlocks.Outbox.Messaging.csproj" />
     <Project Path="src/BuildingBlocks.Persistence/BuildingBlocks.Persistence.csproj" />
     <Project Path="src/BuildingBlocks.RealTime/BuildingBlocks.RealTime.csproj" />
   </Folder>
