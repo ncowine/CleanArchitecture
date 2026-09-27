@@ -56,6 +56,7 @@ public abstract class DataCache<TKey, TValue> : IDataCache<TKey, TValue>, IHoste
     private readonly ILogger _logger;
     private readonly Channel<CacheChangeNotification<TKey>> _changeChannel;
     private readonly CancellationTokenSource _cts = new();
+    private int _disposed;
     private readonly Task _changeProcessorTask;
     private readonly Task _purgeTask;
 
@@ -387,6 +388,15 @@ public abstract class DataCache<TKey, TValue> : IDataCache<TKey, TValue>, IHoste
 
     public void Dispose()
     {
+        // Safe to call more than once, as IDisposable requires. It IS called twice in practice: a cache registered as
+        // itself AND as an IHostedService (the pre-warm pattern described above) is one instance tracked by both
+        // registrations, so the container disposes it once per registration. The second call used to throw
+        // ObjectDisposedException from _cts.Cancel().
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
         _cts.Cancel();
 
         _changeChannel.Writer.TryComplete();

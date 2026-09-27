@@ -5,6 +5,7 @@
     <ProjectReference Include="..\Equipment.Contracts\Equipment.Contracts.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks.Caching\BuildingBlocks.Caching.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks.Persistence\BuildingBlocks.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks.Outbox.Messaging\BuildingBlocks.Outbox.Messaging.csproj" />
     <ProjectReference Include="..\..\..\SharedKernel\SharedKernel.DataService\SharedKernel.DataService.csproj" />
   </ItemGroup>
 

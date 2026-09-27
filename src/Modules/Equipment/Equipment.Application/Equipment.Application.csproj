@@ -12,6 +12,7 @@
     <ProjectReference Include="..\..\..\BuildingBlocks\BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks.RealTime\BuildingBlocks.RealTime.csproj" />
     <ProjectReference Include="..\Equipment.Domain\Equipment.Domain.csproj" />
+    <ProjectReference Include="..\Equipment.Messages\Equipment.Messages.csproj" />
   </ItemGroup>
 
 </Project>

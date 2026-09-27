@@ -2,6 +2,7 @@ using BuildingBlocks.Messaging;
 using BuildingBlocks.RealTime;
 using Equipment.Application.Abstractions;
 using Equipment.Domain;
+using Equipment.Messages;
 using FluentValidation;
 
 namespace Equipment.Application.Inventory;
@@ -31,17 +32,20 @@ public static class UpdateEquipment
         private readonly IEquipmentCacheInvalidator _cache;
         private readonly IEquipmentChangeNotifier _changeNotifier;
         private readonly IRealtimeDispatch _realtime;
+        private readonly IEquipmentOutbox _outbox;
 
         public Handler(
             IEquipmentRepository equipment,
             IEquipmentCacheInvalidator cache,
             IEquipmentChangeNotifier changeNotifier,
-            IRealtimeDispatch realtime)
+            IRealtimeDispatch realtime,
+            IEquipmentOutbox outbox)
         {
             _equipment = equipment;
             _cache = cache;
             _changeNotifier = changeNotifier;
             _realtime = realtime;
+            _outbox = outbox;
         }
 
         public async Task<bool> Handle(Command command, CancellationToken cancellationToken)
@@ -56,14 +60,17 @@ public static class UpdateEquipment
             await _cache.RemoveAsync(asset.Id, cancellationToken);
             _changeNotifier.Notify(asset.Id);
 
-            _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentUpdated", new
+            // Same event to both channels; both wait for the commit (see CreateEquipment for the full picture).
+            var updated = new EquipmentUpdated
             {
-                id = asset.Id,
-                name = asset.Name,
-                category = asset.Category.ToString(),
-                assetTag = asset.AssetTag,
-                status = asset.Status.ToString(),
-            }));
+                Id = asset.Id,
+                Name = asset.Name,
+                Category = asset.Category.ToString(),
+                AssetTag = asset.AssetTag,
+                Status = asset.Status.ToString(),
+            };
+            _outbox.Enqueue(updated);
+            _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentUpdated), updated));
 
             return true;
         }

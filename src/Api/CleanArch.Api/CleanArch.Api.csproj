@@ -24,6 +24,8 @@
     <ProjectReference Include="..\..\BuildingBlocks\BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks.Auditing.Elasticsearch\BuildingBlocks.Auditing.Elasticsearch.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks.Outbox\BuildingBlocks.Outbox.csproj" />
+    <ProjectReference Include="..\..\Messaging\Messaging.Hosting\Messaging.Hosting.csproj" />
+    <ProjectReference Include="..\..\Modules\Equipment\Equipment.Messages\Equipment.Messages.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks.RealTime\BuildingBlocks.RealTime.csproj" />
     <ProjectReference Include="..\..\Modules\Equipment\Equipment.Infrastructure\Equipment.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Equipment\Equipment.Presentation\Equipment.Presentation.csproj" />

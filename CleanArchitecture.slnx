@@ -35,6 +35,7 @@
     <Project Path="src/Modules/Equipment/Equipment.Contracts/Equipment.Contracts.csproj" />
     <Project Path="src/Modules/Equipment/Equipment.Domain/Equipment.Domain.csproj" />
     <Project Path="src/Modules/Equipment/Equipment.Infrastructure/Equipment.Infrastructure.csproj" />
+    <Project Path="src/Modules/Equipment/Equipment.Messages/Equipment.Messages.csproj" />
     <Project Path="src/Modules/Equipment/Equipment.Presentation/Equipment.Presentation.csproj" />
   </Folder>
   <Folder Name="/src/Modules/Onboarding/">
@@ -60,5 +61,12 @@
     <Project Path="tests/Fixtures/LegacyModel/AppA.Events/AppA.Events.csproj" />
     <Project Path="tests/Fixtures/LegacyModel/AppB.Events/AppB.Events.csproj" />
     <Project Path="tests/Fixtures/LegacyModel/Shared.Events/Shared.Events.csproj" />
+  </Folder>
+  <Folder Name="/samples/" />
+  <Folder Name="/samples/MessagingPocs/">
+    <Project Path="samples/MessagingPocs/Poc.Shared/Poc.Shared.csproj" />
+    <Project Path="samples/MessagingPocs/Poc1.PrismRabbitMq/Poc1.PrismRabbitMq.csproj" />
+    <Project Path="samples/MessagingPocs/Poc2.PlainRabbitMq/Poc2.PlainRabbitMq.csproj" />
+    <Project Path="samples/MessagingPocs/Poc3.SignalR/Poc3.SignalR.csproj" />
   </Folder>
 </Solution>

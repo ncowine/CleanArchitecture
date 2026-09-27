@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Apps/">
+    <Project Path="Poc1.PrismRabbitMq/Poc1.PrismRabbitMq.csproj" />
+    <Project Path="Poc2.PlainRabbitMq/Poc2.PlainRabbitMq.csproj" />
+    <Project Path="Poc3.SignalR/Poc3.SignalR.csproj" />
+    <Project Path="Poc.Shared/Poc.Shared.csproj" />
+  </Folder>
+  <Folder Name="/From the API (referenced)/">
+    <Project Path="../../src/Modules/Equipment/Equipment.Messages/Equipment.Messages.csproj" />
+    <Project Path="../../src/Messaging/Messaging.Abstractions/Messaging.Abstractions.csproj" />
+    <Project Path="../../src/Messaging/Messaging.RabbitMQ/Messaging.RabbitMQ.csproj" />
+    <Project Path="../../src/Messaging/Messaging.Hosting/Messaging.Hosting.csproj" />
+    <Project Path="../../src/Messaging/Messaging.Prism/Messaging.Prism.csproj" />
+  </Folder>
+</Solution>

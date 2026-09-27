@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    POC 2: a modern (.NET 8) WPF app that receives RabbitMQ messages with no Prism: the .NET Generic Host for startup,
+    DI and configuration, CommunityToolkit.Mvvm for the view model, and IMessageSubscriber from Messaging.Hosting.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Poc.Shared\Poc.Shared.csproj" />
+    <ProjectReference Include="..\..\..\src\Messaging\Messaging.Hosting\Messaging.Hosting.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -7,7 +7,9 @@ using CleanArch.Api;
 using CleanArch.Api.Authentication;
 using CleanArch.Api.Realtime;
 using Equipment.Infrastructure;
+using Equipment.Messages;
 using Equipment.Presentation;
+using Messaging.Hosting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Onboarding.Infrastructure;
 using Onboarding.Presentation;
@@ -51,6 +53,27 @@ builder.Services
 // Real-time transport (SignalR) — overrides the kit's no-op notifier and hosts the presence hub.
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
+
+// Integration events for other applications, over RabbitMQ (docs/messaging/adr/0003). Only when a broker is
+// configured: without a "Messaging" section none of this runs, modules record no outbox events, and everything
+// else — SignalR included — works exactly as before. The modules say WHICH events they publish; this is the one
+// place that says WHERE they go. Handlers never see a transport.
+var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
+if (messagingBus.Exists())
+{
+    builder.Services.AddMessaging(messaging => messaging
+        .AddBus("Main", messagingBus)
+        .Route<EquipmentCreated>().And()
+        .Route<EquipmentUpdated>().And()
+        .Route<EquipmentDeleted>().And()
+        .AddTelemetry());
+
+    // Equipment's outbox now records its events, and its processor relays them with a confirmed publish.
+    builder.Services.AddEquipmentIntegrationEvents();
+
+    // Deliberately no messaging health check on /health: it reports Unhealthy while the broker is down, which would
+    // take the API out of service for an outage the outbox already absorbs (events wait and go out afterwards).
+}
 
 // Example: downstream API clients that call AS the authenticated user (OAuth2 On-Behalf-Of). AddOnBehalfOf
 // exchanges the caller's OIDC token for one scoped to THAT downstream and attaches it. One line per

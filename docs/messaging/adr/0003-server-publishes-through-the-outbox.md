@@ -49,6 +49,28 @@ limits").
    changing `DeliveryLimit` made the broker refuse the queue with a bare PRECONDITION_FAILED. The bus now logs which
    queue, and what to do: put the setting back, or delete the queue (losing its messages).
 
+## As built: the first event (2026-09-27)
+
+The Equipment module is the worked example, sending the same event over both channels:
+
+- **Contract:** `Equipment.Messages` (netstandard2.0, references only `Messaging.Abstractions`) holds
+  `EquipmentCreated`, `EquipmentUpdated` and `EquipmentDeleted`, wire names `Equipment.<Name>`. The same classes are the
+  SignalR payloads, replacing the anonymous objects the handlers used to push.
+- **Handlers** (`CreateEquipment`, `UpdateEquipment`, `DeleteEquipment`) build the event once and make two calls:
+  `IEquipmentOutbox.Enqueue` (RabbitMQ, guaranteed, ~2 s after the commit) and `IRealtimeDispatch.Publish` (SignalR,
+  best effort, right after the commit). Neither sends before the commit; a rolled-back change sends nothing.
+- **`IEquipmentOutbox : IOutbox`** is the module's own interface, because the shared `IOutbox` is non-keyed and owned
+  by Onboarding. Its implementation wraps `OutboxWriter<EquipmentDbContext>` (made public for this) so every outbox
+  writes the same row format. When messaging isn't configured, `NoBrokerEquipmentOutbox` records nothing.
+- **Host:** `Program.cs` calls `AddMessaging` (one bus, exchange `CleanArch`, three routes, telemetry) and
+  `AddEquipmentIntegrationEvents()` only when `Messaging:Buses:Main` is configured. Development configures it. The
+  messaging health check is not added to `/health`: the outbox absorbs broker outages.
+- **Guard:** `TransportIndependenceTests` fails if a domain or application assembly, or the message contract,
+  references RabbitMQ, the messaging engine or hosting, the outbox relay or SignalR.
+
+Not done: Onboarding publishing to RabbitMQ; the API receiving messages; `[Authorize]` on the SignalR hub; per-module
+outbox admin endpoints (the admin services are non-keyed like `IOutbox`).
+
 ## Consequences
 
 - An event reaches the broker if and only if its business change was committed, even across restarts and crashes.

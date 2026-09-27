@@ -58,6 +58,7 @@ src/
   Modules/
     Equipment/               Inventory: CRUD, cache-aside lookup, file-backed catalogue
       Equipment.Domain / .Application / .Infrastructure / .Contracts / .Presentation
+      Equipment.Messages       Its events for other applications (RabbitMQ + SignalR), netstandard2.0
     Onboarding/               Provisioning saga (instant + persisted engines) and its readiness summary
       Onboarding.Domain / .Application / .Infrastructure / .Presentation
 tests/
@@ -65,6 +66,8 @@ tests/
   CleanArch.Api.IntegrationTests/ Real EF Core + SQLite + HybridCache against the module DI, no HTTP host
   Common.RabbitMQ.Tests/          Messaging: golden wire bytes, legacy public API, real-broker tests (net472 + net8.0)
   Fixtures/                       Test-only: frozen original library, legacy model, demo events for golden tests
+samples/
+  MessagingPocs/                  Three WPF POCs — RabbitMQ via Prism, RabbitMQ without Prism, SignalR (Windows-only; own build settings)
 ```
 
 The messaging folders build with their **own** `Directory.Build.props` / `Directory.Packages.props` (in
@@ -84,6 +87,12 @@ dotnet run --project src/Api/CleanArch.Api
 
 In Development the app applies EF migrations to all SQLite databases on startup and serves Swagger at
 `/swagger`. Health at `/health`. (No Redis required — caching runs in-memory until you wire Redis.)
+
+Development also turns on **RabbitMQ** (the `Messaging` section of `appsettings.Development.json`): equipment
+changes are sent to other applications through Equipment's outbox, as well as over SignalR. It needs a local broker
+([tutorials/67](tutorials/67-messaging-with-rabbitmq.md)); **without one, delete that section** and the API behaves
+exactly as before. With it but no broker running, the API still starts, and events wait in the outbox until the
+broker is reachable.
 
 ### Calling protected endpoints
 
