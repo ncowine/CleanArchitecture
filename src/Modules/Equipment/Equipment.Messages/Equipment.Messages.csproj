@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Equipment module's integration events: what it tells OTHER APPLICATIONS about. Plain data, shared with them.
+
+    - Separate from Equipment.Contracts (in-process interfaces other modules call): this project is consumed by desktop
+      apps, so it targets netstandard2.0 instead of the API's net10.0.
+    - The same classes travel over both channels: RabbitMQ (through the module's outbox) and SignalR (the real-time
+      hub). One contract per event, whichever way a client listens.
+    - Its only reference is Messaging.Abstractions (no dependencies), for the [Message("wire name")] attribute.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Messaging\Messaging.Abstractions\Messaging.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

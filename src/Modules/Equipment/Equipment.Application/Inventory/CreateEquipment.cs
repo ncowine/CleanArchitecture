@@ -2,6 +2,7 @@ using BuildingBlocks.Messaging;
 using BuildingBlocks.RealTime;
 using Equipment.Application.Abstractions;
 using Equipment.Domain;
+using Equipment.Messages;
 using FluentValidation;
 
 namespace Equipment.Application.Inventory;
@@ -27,12 +28,18 @@ public static class CreateEquipment
         private readonly IEquipmentRepository _equipment;
         private readonly IEquipmentChangeNotifier _changeNotifier;
         private readonly IRealtimeDispatch _realtime;
+        private readonly IEquipmentOutbox _outbox;
 
-        public Handler(IEquipmentRepository equipment, IEquipmentChangeNotifier changeNotifier, IRealtimeDispatch realtime)
+        public Handler(
+            IEquipmentRepository equipment,
+            IEquipmentChangeNotifier changeNotifier,
+            IRealtimeDispatch realtime,
+            IEquipmentOutbox outbox)
         {
             _equipment = equipment;
             _changeNotifier = changeNotifier;
             _realtime = realtime;
+            _outbox = outbox;
         }
 
         public async Task<Guid> Handle(Command command, CancellationToken cancellationToken)
@@ -41,14 +48,20 @@ public static class CreateEquipment
             await _equipment.AddAsync(asset, cancellationToken);
             _changeNotifier.Notify(asset.Id, command.SiteId);
 
-            _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentCreated", new
+            // One event, two promises. Neither call sends anything yet; both wait for the transaction to commit:
+            // - the outbox row is saved WITH the change, and relayed to RabbitMQ afterwards (guaranteed, ~2 s later);
+            // - the real-time event is buffered, and pushed over SignalR right after the commit (best effort).
+            // The handler doesn't know either transport. The host decides (docs/messaging/adr/0003).
+            var created = new EquipmentCreated
             {
-                id = asset.Id,
-                name = asset.Name,
-                category = asset.Category.ToString(),
-                assetTag = asset.AssetTag,
-                status = asset.Status.ToString(),
-            }));
+                Id = asset.Id,
+                Name = asset.Name,
+                Category = asset.Category.ToString(),
+                AssetTag = asset.AssetTag,
+                Status = asset.Status.ToString(),
+            };
+            _outbox.Enqueue(created);
+            _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentCreated), created));
 
             return asset.Id;
         }

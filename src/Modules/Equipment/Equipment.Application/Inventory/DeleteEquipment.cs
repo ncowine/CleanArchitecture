@@ -1,6 +1,7 @@
 using BuildingBlocks.Messaging;
 using BuildingBlocks.RealTime;
 using Equipment.Application.Abstractions;
+using Equipment.Messages;
 
 namespace Equipment.Application.Inventory;
 
@@ -17,17 +18,20 @@ public static class DeleteEquipment
         private readonly IEquipmentCacheInvalidator _cache;
         private readonly IEquipmentChangeNotifier _changeNotifier;
         private readonly IRealtimeDispatch _realtime;
+        private readonly IEquipmentOutbox _outbox;
 
         public Handler(
             IEquipmentRepository equipment,
             IEquipmentCacheInvalidator cache,
             IEquipmentChangeNotifier changeNotifier,
-            IRealtimeDispatch realtime)
+            IRealtimeDispatch realtime,
+            IEquipmentOutbox outbox)
         {
             _equipment = equipment;
             _cache = cache;
             _changeNotifier = changeNotifier;
             _realtime = realtime;
+            _outbox = outbox;
         }
 
         public async Task<bool> Handle(Command command, CancellationToken cancellationToken)
@@ -42,10 +46,10 @@ public static class DeleteEquipment
             await _cache.RemoveAsync(asset.Id, cancellationToken);
             _changeNotifier.Notify(asset.Id);
 
-            _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentDeleted", new
-            {
-                id = asset.Id,
-            }));
+            // Same event to both channels; both wait for the commit (see CreateEquipment for the full picture).
+            var deleted = new EquipmentDeleted { Id = asset.Id };
+            _outbox.Enqueue(deleted);
+            _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentDeleted), deleted));
 
             return true;
         }

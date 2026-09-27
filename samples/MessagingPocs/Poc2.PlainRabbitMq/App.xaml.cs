@@ -1,8 +1,10 @@
 using System.Windows;
 using Messaging.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Poc.Contracts;
+using Equipment.Messages;
+using Poc.Shared;
 using Poc2.PlainRabbitMq.ViewModels;
 using Poc2.PlainRabbitMq.Views;
 
@@ -18,8 +20,10 @@ namespace Poc2.PlainRabbitMq;
 //   If the events all come from the API, prefer POC 3 (SignalR): no broker account or broker access on each desktop.
 //
 // HOW IT'S WIRED
-//   The .NET Generic Host gives DI, appsettings.json and logging, and runs messaging as a hosted service.
-//   View models inject IMessageSubscriber and subscribe to message classes directly.
+//   The API publishes Equipment's events (Equipment.Messages) to its exchange "CleanArch" through its outbox; this
+//   app binds a queue to it. The .NET Generic Host gives DI, appsettings.json and logging, and runs messaging as a
+//   hosted service. View models inject IMessageSubscriber and subscribe to message classes directly. Loading and
+//   changes go to the API over HTTP (Poc.Shared.EquipmentApi).
 //
 // ❌ DON'T publish from here (no Route<T>(), no IMessagePublisher). Modern apps only listen; changes go to the API.
 // ❌ DON'T put broker credentials that can publish or configure the server's exchange in a desktop app's config. Give
@@ -48,7 +52,10 @@ public partial class App : Application
             // ✅ DO register what you receive. IMessageSubscriber only sees message types the bus is bound for:
             //    AddMessages(assembly) receives every [Message] class in it. Subscribing to a type that isn't
             //    registered compiles and runs, and simply never fires.
-            .AddMessages(typeof(EquipmentStatusChanged).Assembly));
+            .AddMessages(typeof(EquipmentCreated).Assembly));
+
+        ApiOptions api = builder.Configuration.GetSection(ApiOptions.SectionName).Get<ApiOptions>() ?? new ApiOptions();
+        builder.Services.AddSingleton(EquipmentApi.Create(api));
 
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Poc.Shared;
 
 namespace Poc3.SignalR.ViewModels;
 
@@ -14,10 +15,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly EquipmentLiveUpdates _live;
     private readonly SynchronizationContext _ui;
 
-    // Events that arrive while a reload is in flight wait here, and are applied after it (see ReloadAsync).
-    private readonly List<Action> _arrivedDuringLoad = [];
-    private bool _loading;
-
     [ObservableProperty]
     private string _connection = "Starting…";
 
@@ -26,165 +23,71 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeleteSelectedCommand))]
-    private EquipmentDto? _selected;
+    private EquipmentRow? _selected;
 
     public MainWindowViewModel(EquipmentApi api, EquipmentLiveUpdates live)
     {
         _api = api;
         _live = live;
+        List = new EquipmentList(api);
+        List.Logged += AddLog;
         _ui = SynchronizationContext.Current ?? throw new InvalidOperationException("Create the view model on the UI thread.");
 
         // SignalR raises these on thread-pool threads.
-        // ❌ DON'T update Items straight from them: WPF throws when a bound collection changes off the UI thread.
-        // ✅ DO post every one to the UI thread. That also serialises them: they're handled one at a time, in order.
-        _live.EquipmentChanged += dto => _ui.Post(_ => OnEvent(() => Upsert(dto), $"changed  {dto.AssetTag} ({dto.Status})"), null);
-        _live.EquipmentDeleted += id => _ui.Post(_ => OnEvent(() => Remove(id), $"deleted  {id}"), null);
+        // ❌ DON'T update the list straight from them: WPF throws when a bound collection changes off the UI thread.
+        // ✅ DO post every one to the UI thread. That also serialises them: they're applied one at a time, in order.
+        _live.Created += e => _ui.Post(_ => List.Apply(e), null);
+        _live.Updated += e => _ui.Post(_ => List.Apply(e), null);
+        _live.Deleted += e => _ui.Post(_ => List.Apply(e), null);
         _live.PresenceChanged += count => _ui.Post(_ => Watchers = count, null);
         _live.StatusChanged += status => _ui.Post(_ => Connection = status, null);
-        _live.Reconnected += () => _ui.Post(async _ => await ReloadAsync(), null);
+
+        // After a reconnect the group has been re-joined; everything sent meanwhile is gone, so reload.
+        _live.Reconnected += () => _ui.Post(async _ => await List.LoadAsync(), null);
     }
 
     public string Title { get; } = $"POC 3 — SignalR from the API (pid {Environment.ProcessId})";
 
-    public ObservableCollection<EquipmentDto> Items { get; } = [];
+    public EquipmentList List { get; }
 
     public ObservableCollection<string> Log { get; } = [];
 
     /// <summary>Called once the window is showing.</summary>
     public async Task StartAsync()
     {
-        // ✅ DO connect and join FIRST, then load. The other order leaves a gap: a change made after the load but
-        //    before the join is in neither the list nor the events, and the screen stays wrong until the next change.
-        //    Events that arrive between the join and the load are held back like any during a load.
-        _loading = true;
+        // ✅ DO connect and join FIRST, then load (see EquipmentList.LoadAsync for why).
         await _live.ConnectAsync(CancellationToken.None);
-        await ReloadAsync();
+        await List.LoadAsync();
     }
 
     [RelayCommand]
-    private async Task ReloadAsync()
-    {
-        // The events that arrive during the load are held back and applied afterwards, in order. Applying them before
-        // the load finished would be undone when the (possibly older) list replaced Items. Applying them after is
-        // safe because each one sets a state rather than changing it ("row X now looks like this").
-        _loading = true;
-        try
-        {
-            List<EquipmentDto> all = await _api.LoadAllAsync();
-
-            Items.Clear();
-            foreach (EquipmentDto dto in all)
-            {
-                Items.Add(dto);
-            }
-
-            foreach (Action apply in _arrivedDuringLoad)
-            {
-                apply();
-            }
-
-            AddLog($"loaded {all.Count} item(s) over HTTP{(_arrivedDuringLoad.Count > 0 ? $", then applied {_arrivedDuringLoad.Count} event(s) that arrived meanwhile" : "")}");
-        }
-        catch (HttpRequestException ex)
-        {
-            AddLog($"load failed: {ex.Message}");
-        }
-        finally
-        {
-            _arrivedDuringLoad.Clear();
-            _loading = false;
-        }
-    }
-
-    [RelayCommand]
-    private async Task AddLaptopAsync()
-    {
-        try
-        {
-            await _api.CreateLaptopAsync();
-
-            // ❌ DON'T add the new row to Items here as well. The API pushes EquipmentCreated to everyone in the group,
-            //    this window included, and that's what adds it. Adding it here too shows it twice, or makes you write
-            //    "ignore my own echo" logic that goes wrong the first time two windows are open.
-            AddLog("asked the API to create a laptop (HTTP 201); waiting for the event");
-        }
-        catch (HttpRequestException ex)
-        {
-            AddLog($"create failed: {ex.Message}");
-        }
-    }
+    private Task AddLaptopAsync() =>
+        RunAsync(() => _api.CreateLaptopAsync("POC 3"), "asked the API to create a laptop; waiting for the SignalR event");
 
     [RelayCommand(CanExecute = nameof(CanDeleteSelected))]
-    private async Task DeleteSelectedAsync()
-    {
-        if (Selected is not { } item)
-        {
-            return;
-        }
-
-        try
-        {
-            await _api.DeleteAsync(item.Id);
-            AddLog($"asked the API to delete {item.AssetTag}; waiting for the event");
-        }
-        catch (HttpRequestException ex)
-        {
-            AddLog($"delete failed: {ex.Message}");
-        }
-    }
+    private Task DeleteSelectedAsync() =>
+        RunAsync(() => _api.DeleteAsync(Selected!.Id), $"asked the API to delete {Selected?.AssetTag}; waiting for the event");
 
     private bool CanDeleteSelected() => Selected is not null;
 
-    private void OnEvent(Action apply, string description)
-    {
-        AddLog($"event: {description}");
-        if (_loading)
-        {
-            _arrivedDuringLoad.Add(apply);
-        }
-        else
-        {
-            apply();
-        }
-    }
+    [RelayCommand]
+    private Task ReloadAsync() => List.LoadAsync();
 
-    /// <summary>
-    /// Created and Updated both mean "this row now looks like this". Treating them the same makes a repeated or
-    /// out-of-order event harmless.
-    /// </summary>
-    private void Upsert(EquipmentDto dto)
+    private async Task RunAsync(Func<Task> call, string description)
     {
-        int index = IndexOf(dto.Id);
-        if (index < 0)
+        try
         {
-            Items.Add(dto);
-        }
-        else
-        {
-            Items[index] = dto;
-        }
-    }
+            await call();
 
-    private void Remove(Guid id)
-    {
-        int index = IndexOf(id);
-        if (index >= 0)
-        {
-            Items.RemoveAt(index);
+            // ❌ DON'T change the list here as well. The API pushes the event to everyone in the group, this window
+            //    included, and that's what updates it. Doing both shows the row twice, or makes you write "ignore my
+            //    own echo" logic that goes wrong the first time two windows are open.
+            AddLog(description);
         }
-    }
-
-    private int IndexOf(Guid id)
-    {
-        for (int i = 0; i < Items.Count; i++)
+        catch (HttpRequestException ex)
         {
-            if (Items[i].Id == id)
-            {
-                return i;
-            }
+            AddLog($"request failed: {ex.Message}");
         }
-
-        return -1;
     }
 
     private void AddLog(string line)

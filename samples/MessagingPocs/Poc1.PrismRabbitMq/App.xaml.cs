@@ -2,7 +2,8 @@ using System.Windows;
 using Messaging.Hosting;
 using Messaging.Prism;
 using Microsoft.Extensions.Configuration;
-using Poc.Contracts;
+using Equipment.Messages;
+using Poc.Shared;
 using Poc1.PrismRabbitMq.Views;
 using Prism.DryIoc;
 using Prism.Events;
@@ -19,8 +20,11 @@ namespace Poc1.PrismRabbitMq;
 //   For a NEW app, prefer POC 3 (SignalR); for a new app that must use the broker, POC 2 has fewer moving parts.
 //
 // HOW IT'S WIRED
-//   MessagingClient (Messaging.Hosting) owns the RabbitMQ connection. UseEventAggregator (Messaging.Prism) turns each
-//   received message into GetEvent<MessageEvent<T>>().Publish(message), so view models subscribe the Prism way.
+//   The API publishes Equipment's events (EquipmentCreated / Updated / Deleted, from Equipment.Messages) to its own
+//   exchange, "CleanArch", through its outbox — about 2 s after each change commits. This app binds a queue to that
+//   exchange. MessagingClient (Messaging.Hosting) owns the RabbitMQ connection; UseEventAggregator (Messaging.Prism)
+//   turns each received message into GetEvent<MessageEvent<T>>().Publish(message), so view models subscribe the Prism
+//   way. Loading and changes go to the API over HTTP (Poc.Shared.EquipmentApi).
 //
 // ✅ DO   use plain message classes with [Message] and MessageEvent<T> (Messaging.Prism).
 // ❌ DON'T reference Common.RabbitMQ or declare PubSubEvent<T> subclasses as messages in a new app. That is the legacy
@@ -54,15 +58,19 @@ public partial class App : PrismApplication
 
         // MessagingClient = Messaging.Hosting without the .NET Generic Host, for Prism/DryIoc apps.
         MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
-            // Broker, this app's own exchange, and the exchange it listens to ("Poc.Server"): all from appsettings.json.
+            // Broker, this app's own exchange, and the exchange it listens to (the API's, "CleanArch"): appsettings.json.
             .AddBus(BusName, configuration.GetSection($"Messaging:Buses:{BusName}"))
-            // Receive every [Message] class in the contracts assembly. Without this (or a handler) nothing is bound,
-            // and the queue gets no messages at all.
-            .AddMessages(typeof(EquipmentStatusChanged).Assembly)
+            // Receive every [Message] class in the API's Equipment.Messages. Without this (or a handler) nothing is
+            // bound, and the queue gets no messages at all.
+            .AddMessages(typeof(EquipmentCreated).Assembly)
             // Raise each received message on Prism's aggregator as MessageEvent<T>.
             .UseEventAggregator(eventAggregator)));
 
         containerRegistry.RegisterInstance(client);
+
+        ApiOptions api = configuration.GetSection(ApiOptions.SectionName).Get<ApiOptions>() ?? new ApiOptions();
+        containerRegistry.RegisterInstance(EquipmentApi.Create(api));
+        containerRegistry.RegisterInstance(api);
     }
 
     protected override void OnInitialized()

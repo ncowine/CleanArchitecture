@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What all three POCs share, so each app is left with only the part that differs: how it LISTENS.
+    - EquipmentApi: loads and changes equipment over HTTP (every app changes data the same way: through the API).
+    - EquipmentList: keeps a list current — load, then apply events — with the ordering and idempotency rules.
+    - Equipment.Messages: the API's event classes. The same classes arrive over RabbitMQ (POC 1 and 2) and SignalR (POC 3).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Modules\Equipment\Equipment.Messages\Equipment.Messages.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -157,11 +157,13 @@ public sealed class Handler : IRequestHandler<Command, Guid>
 {
     private readonly IEquipmentRepository _equipment;
     private readonly IRealtimeDispatch _realtime;
+    private readonly IEquipmentOutbox _outbox;
 
-    public Handler(IEquipmentRepository equipment, IRealtimeDispatch realtime)
+    public Handler(IEquipmentRepository equipment, IRealtimeDispatch realtime, IEquipmentOutbox outbox)
     {
         _equipment = equipment;
         _realtime = realtime;
+        _outbox = outbox;
     }
 
     public async Task<Guid> Handle(Command command, CancellationToken cancellationToken)
@@ -169,14 +171,16 @@ public sealed class Handler : IRequestHandler<Command, Guid>
         var asset = EquipmentAsset.Create(command.Name, command.Category, command.AssetTag);
         await _equipment.AddAsync(asset, cancellationToken);
 
-        _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentCreated", new
+        var created = new EquipmentCreated          // Equipment.Messages — the event's contract
         {
-            id = asset.Id,
-            name = asset.Name,
-            category = asset.Category.ToString(),
-            assetTag = asset.AssetTag,
-            status = asset.Status.ToString(),
-        }));
+            Id = asset.Id,
+            Name = asset.Name,
+            Category = asset.Category.ToString(),
+            AssetTag = asset.AssetTag,
+            Status = asset.Status.ToString(),
+        };
+        _outbox.Enqueue(created);                   // the same event to RabbitMQ, via the outbox (tutorial 67)
+        _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentCreated), created));
 
         return asset.Id;
     }
@@ -186,12 +190,15 @@ public sealed class Handler : IRequestHandler<Command, Guid>
 Three things worth noticing:
 
 - **`RealtimeEvent(Type, Payload)`** — `Type` is the client-facing event name (what a client
-  subscribes to; see [chapter 9](#9-step-6--a-client-minimally)), `Payload` is an anonymous
-  object serialized when it's actually sent. Name the type the way you'd name an audit
+  subscribes to; see [chapter 9](#9-step-6--a-client-minimally)), `Payload` is serialized
+  (camelCase JSON) when it's actually sent. Name the type the way you'd name an audit
   action — something a client developer would recognize, not a generic `"Changed"`.
-- **The payload is a fresh, small anonymous object**, not the domain entity. Never publish
-  the entity itself — it can carry more than clients should see, and it couples the wire
-  shape to your domain model's shape.
+- **The payload is a small, named event class** (`Equipment.Messages.EquipmentCreated`), not the
+  domain entity. Never publish the entity itself — it can carry more than clients should see,
+  and it couples the wire shape to your domain model's shape. A named class (rather than an
+  anonymous object) makes the wire shape a visible contract: renaming a property shows up in
+  review, and .NET clients deserialize into the same class. It's also the class the outbox
+  sends to RabbitMQ, so there's one contract per event whichever way a client listens.
 - **This line runs before the method returns, but nothing is sent yet** — see
   [chapter 3](#3-why-the-flush-happens-after-commit).
 
@@ -591,12 +598,8 @@ Verification:
 ### The code you write
 
 ```csharp
-// 1. Publish from a handler, after the domain change
-_realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent("EquipmentCreated", new
-{
-    id = asset.Id,
-    name = asset.Name,
-}));
+// 1. Publish from a handler, after the domain change — a named event class, not an anonymous object
+_realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentCreated), created));
 
 // 2. Add a new group name (BuildingBlocks.RealTime/RealtimeGroups.cs)
 public static string OnboardingRequest(Guid requestId) => $"onboarding:{requestId}";

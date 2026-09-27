@@ -23,7 +23,8 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
 > - There's no messaging CI workflow here yet, and the build settings are isolated as described in PROVENANCE.md.
 > - **The API publishes only through its outbox**, with a publish that waits for the broker's confirm
 >   ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md), and [recipe D](#d-a-server-aspnet-handlers) step 4).
->   Legacy apps are unchanged. Modern WPF apps only subscribe.
+>   Equipment's create/update/delete events are the working example (exchange `CleanArch`). Legacy apps are
+>   unchanged. Modern WPF apps only subscribe.
 
 ---
 
@@ -514,13 +515,12 @@ module's outbox instead. The event is saved in the same transaction as the chang
 waits for the broker's confirm:
 
 ```csharp
-// Module registration: the outbox sends these classes to RabbitMQ. Each needs [Message] and a Route<T>() above.
-// The module's own outbox writer: NOT a second AddOutboxWriter/IOutbox, which Onboarding already registers.
-services.AddScoped<IEquipmentOutbox, EquipmentOutbox>();
-services.AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentRetired));
+// Program.cs, only when "Messaging" is configured: routes, then the module's integration events.
+messaging.Route<EquipmentCreated>().And().Route<EquipmentUpdated>().And().Route<EquipmentDeleted>();
+builder.Services.AddEquipmentIntegrationEvents();   // the module's own outbox writer + AddOutboxPublishing
 
-// In a handler, inside the unit of work:
-outbox.Enqueue(new EquipmentRetired { Id = asset.Id });
+// In a handler, inside the unit of work (IEquipmentOutbox, not a second IOutbox, which Onboarding owns):
+_outbox.Enqueue(created);
 ```
 
 The step-by-step version, including the outbox table and the writer, is in

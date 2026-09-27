@@ -1,34 +1,48 @@
 using System.Collections.ObjectModel;
+using System.Net.Http;
 using System.Windows;
+using System.Windows.Threading;
+using Equipment.Messages;
 using Messaging.Hosting;
 using Messaging.Prism;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
-using Poc.Contracts;
+using Poc.Shared;
+using Prism.Commands;
 using Prism.Events;
 using Prism.Mvvm;
 
 namespace Poc1.PrismRabbitMq.ViewModels;
 
 /// <summary>
-/// Receives <see cref="EquipmentStatusChanged"/> as a Prism event and shows the latest status per asset.
+/// The equipment list, kept current by the API's RabbitMQ events, received as Prism events.
 /// </summary>
 public sealed class MainWindowViewModel : BindableBase
 {
+    private readonly EquipmentApi _api;
+    private readonly RabbitMQBus _bus;
+    private readonly DispatcherTimer _connectionWatch;
+    private bool _wasConnected;
     private string _connection = "Connecting…";
+    private EquipmentRow? _selected;
 
-    public MainWindowViewModel(IEventAggregator eventAggregator, MessagingClient client)
+    public MainWindowViewModel(IEventAggregator eventAggregator, MessagingClient client, EquipmentApi api)
     {
-        // ✅ DO subscribe with a METHOD GROUP on a long-lived object, and ThreadOption.UIThread so the handler may touch
-        //    bound collections directly.
-        eventAggregator.GetEvent<MessageEvent<EquipmentStatusChanged>>()
-            .Subscribe(OnStatusChanged, ThreadOption.UIThread);
+        _api = api;
+        List = new EquipmentList(api);
+        List.Logged += AddLog;
+
+        // ✅ DO subscribe with METHOD GROUPS on a long-lived object (List lives as long as this view model), and
+        //    ThreadOption.UIThread so the handler may touch bound collections directly.
+        eventAggregator.GetEvent<MessageEvent<EquipmentCreated>>().Subscribe(List.Apply, ThreadOption.UIThread);
+        eventAggregator.GetEvent<MessageEvent<EquipmentUpdated>>().Subscribe(List.Apply, ThreadOption.UIThread);
+        eventAggregator.GetEvent<MessageEvent<EquipmentDeleted>>().Subscribe(List.Apply, ThreadOption.UIThread);
 
         // ❌ DON'T subscribe like this:
         //
-        //        string prefix = "Changed: ";
-        //        eventAggregator.GetEvent<MessageEvent<EquipmentStatusChanged>>()
-        //            .Subscribe(m => Log(prefix + m.AssetTag), ThreadOption.UIThread);
+        //        string prefix = "Created: ";
+        //        eventAggregator.GetEvent<MessageEvent<EquipmentCreated>>()
+        //            .Subscribe(m => AddLog(prefix + m.AssetTag), ThreadOption.UIThread);
         //
         //    Prism keeps only a WEAK reference to the handler. A lambda that captures a local lives in a compiler-made
         //    closure object that nothing else references, so the next garbage collection removes it and the
@@ -43,15 +57,28 @@ public sealed class MainWindowViewModel : BindableBase
         //    message after it. Use ThreadOption.BackgroundThread, or hand the work off.
 
         // Connection messages from the bus, for learning purposes. They're raised on background threads.
-        RabbitMQBus bus = client.Services.GetRequiredKeyedService<RabbitMQBus>(App.BusName);
-        bus.Log += (_, message) => Application.Current?.Dispatcher.BeginInvoke(() => OnBusLog(message));
+        _bus = client.Services.GetRequiredKeyedService<RabbitMQBus>(App.BusName);
+        _bus.Log += (_, message) => Application.Current?.Dispatcher.BeginInvoke(() => AddLog($"[bus] {message}"));
 
-        // ✅ DO load the current state from the API when the app starts (not shown: this POC has no API endpoint for
-        //    it). A desktop app's queue exists only while the app runs: events sent while it was closed are NOT waiting
-        //    for it. Load first, then let events keep the screen current.
+        // ✅ DO (re)load whenever the connection comes (back) up. This app's queue is exclusive to its connection:
+        //    when the connection drops, the broker deletes the queue, and every event sent until the app reconnects is
+        //    gone. The engine doesn't raise a "connected" event, so watch the flag it exposes.
+        _connectionWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _connectionWatch.Tick += async (_, _) => await CheckConnectionAsync();
+        _connectionWatch.Start();
+
+        AddLaptopCommand = new DelegateCommand(async () => await RunAsync(() => _api.CreateLaptopAsync("POC 1"), "asked the API to create a laptop; waiting for the RabbitMQ event (~2 s: the outbox)"));
+        DeleteSelectedCommand = new DelegateCommand(
+            async () => await RunAsync(() => _api.DeleteAsync(Selected!.Id), $"asked the API to delete {Selected?.AssetTag}; waiting for the event"),
+            () => Selected is not null);
+        ReloadCommand = new DelegateCommand(async () => await List.LoadAsync());
     }
 
     public string Title { get; } = $"POC 1 — RabbitMQ via Prism IEventAggregator (pid {Environment.ProcessId})";
+
+    public EquipmentList List { get; }
+
+    public ObservableCollection<string> Log { get; } = [];
 
     public string Connection
     {
@@ -59,49 +86,59 @@ public sealed class MainWindowViewModel : BindableBase
         private set => SetProperty(ref _connection, value);
     }
 
-    /// <summary>Latest known status per asset: what a real screen would show.</summary>
-    public ObservableCollection<AssetStatusRow> Assets { get; } = [];
-
-    /// <summary>Every message and connection event, newest first.</summary>
-    public ObservableCollection<string> Log { get; } = [];
-
-    private void OnStatusChanged(EquipmentStatusChanged message)
+    public EquipmentRow? Selected
     {
-        // ✅ DO apply events so that applying one twice does no harm ("set status to X", not "advance status"):
-        //    delivery is at least once, so a duplicate can arrive.
-        AssetStatusRow? row = Assets.FirstOrDefault(a => a.EquipmentId == message.EquipmentId);
-        if (row is null)
+        get => _selected;
+        set
         {
-            Assets.Add(new AssetStatusRow(message.EquipmentId, message.AssetTag, message.Status, message.ChangedAtUtc));
+            if (SetProperty(ref _selected, value))
+            {
+                DeleteSelectedCommand.RaiseCanExecuteChanged();
+            }
         }
-        else if (message.ChangedAtUtc >= row.ChangedAtUtc)
-        {
-            // ✅ DO ignore an event older than what you're showing: after a reconnect, or when the server retries,
-            //    an older event can arrive after a newer one.
-            Assets[Assets.IndexOf(row)] = row with { Status = message.Status, ChangedAtUtc = message.ChangedAtUtc };
-        }
-
-        AddLog($"EquipmentStatusChanged  {message.AssetTag} → {message.Status}");
     }
 
-    private void OnBusLog(string message)
+    public DelegateCommand AddLaptopCommand { get; }
+
+    public DelegateCommand DeleteSelectedCommand { get; }
+
+    public DelegateCommand ReloadCommand { get; }
+
+    private async Task CheckConnectionAsync()
     {
-        if (message.StartsWith("Consumer connected", StringComparison.Ordinal))
+        bool connected = _bus.IsConsumerConnected;
+        if (connected == _wasConnected)
         {
-            Connection = "Connected";
-        }
-        else if (message.Contains("does not exist yet", StringComparison.Ordinal))
-        {
-            // The subscribed exchange belongs to the server. Until the server has started once, it doesn't exist, and
-            // this app waits and retries. That's normal, not an error.
-            Connection = "Waiting for the server to create its exchange (start Poc.ServerSimulator)";
-        }
-        else if (message.Contains("failed", StringComparison.OrdinalIgnoreCase) || message.Contains("lost", StringComparison.OrdinalIgnoreCase))
-        {
-            Connection = "Disconnected — retrying";
+            return;
         }
 
-        AddLog($"[bus] {message}");
+        _wasConnected = connected;
+        if (connected)
+        {
+            Connection = "Connected to RabbitMQ, bound to the API's exchange";
+            await List.LoadAsync();
+        }
+        else
+        {
+            // Also shown while waiting for the API to create its exchange: the API declares "CleanArch" the first
+            // time it starts with messaging on. Subscribers only check for it; they never create it.
+            Connection = "Not connected — retrying (is RabbitMQ up, and has the API started at least once?)";
+        }
+    }
+
+    private async Task RunAsync(Func<Task> call, string description)
+    {
+        try
+        {
+            await call();
+
+            // ❌ DON'T change List here as well. The API's event does it, for every window alike, this one included.
+            AddLog(description);
+        }
+        catch (HttpRequestException ex)
+        {
+            AddLog($"request failed: {ex.Message}");
+        }
     }
 
     private void AddLog(string line)
@@ -109,5 +146,3 @@ public sealed class MainWindowViewModel : BindableBase
         Log.Insert(0, $"{DateTime.Now:HH:mm:ss}  {line}");
     }
 }
-
-public sealed record AssetStatusRow(Guid EquipmentId, string AssetTag, string Status, DateTime ChangedAtUtc);

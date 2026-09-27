@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Poc.Contracts\Poc.Contracts.csproj" />
+    <ProjectReference Include="..\Poc.Shared\Poc.Shared.csproj" />
     <ProjectReference Include="..\..\..\src\Messaging\Messaging.Hosting\Messaging.Hosting.csproj" />
   </ItemGroup>
 

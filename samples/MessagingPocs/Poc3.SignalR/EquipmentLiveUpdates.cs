@@ -1,4 +1,6 @@
+using Equipment.Messages;
 using Microsoft.AspNetCore.SignalR.Client;
+using Poc.Shared;
 
 namespace Poc3.SignalR;
 
@@ -31,10 +33,12 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
             .Build();
 
         // ✅ DO register handlers BEFORE StartAsync, so nothing sent right after connecting is missed.
-        // The method names are the server's event names (RealtimeEvent.Type), matched exactly.
-        _connection.On<EquipmentDto>("EquipmentCreated", dto => EquipmentChanged?.Invoke(dto));
-        _connection.On<EquipmentDto>("EquipmentUpdated", dto => EquipmentChanged?.Invoke(dto));
-        _connection.On<EquipmentDeletedDto>("EquipmentDeleted", dto => EquipmentDeleted?.Invoke(dto.Id));
+        // The method names are the server's event names (RealtimeEvent.Type, = the class name), matched exactly.
+        // The payloads are the API's Equipment.Messages classes — the SAME ones RabbitMQ carries to POC 1 and 2 — so
+        // there is one contract per event, whichever way a client listens.
+        _connection.On<EquipmentCreated>(nameof(EquipmentCreated), e => Created?.Invoke(e));
+        _connection.On<EquipmentUpdated>(nameof(EquipmentUpdated), e => Updated?.Invoke(e));
+        _connection.On<EquipmentDeleted>(nameof(EquipmentDeleted), e => Deleted?.Invoke(e));
         // Presence lists distinct USER NAMES, not connections. While the hub is anonymous every client is "anonymous",
         // so this shows 1 however many windows are open. It becomes meaningful once the hub authenticates callers.
         _connection.On<PresenceDto>("presence", dto => PresenceChanged?.Invoke(dto.Users.Count));
@@ -66,9 +70,11 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
         };
     }
 
-    public event Action<EquipmentDto>? EquipmentChanged;
+    public event Action<EquipmentCreated>? Created;
 
-    public event Action<Guid>? EquipmentDeleted;
+    public event Action<EquipmentUpdated>? Updated;
+
+    public event Action<EquipmentDeleted>? Deleted;
 
     public event Action<int>? PresenceChanged;
 
@@ -104,4 +110,7 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
     public ValueTask DisposeAsync() => _connection.DisposeAsync();
 
     private Task JoinAsync() => _connection.InvokeAsync("JoinGroup", EquipmentGroup);
+
+    /// <summary>The hub's "presence" message: who is watching a group.</summary>
+    private sealed record PresenceDto(string Group, List<string> Users);
 }

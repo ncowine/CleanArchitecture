@@ -3,6 +3,7 @@ using BuildingBlocks.Caching;
 using BuildingBlocks.Outbox;
 using CleanArch.Api.Authentication;
 using Equipment.Infrastructure.Persistence;
+using Messaging.Hosting;
 using Onboarding.Infrastructure.Persistence;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
@@ -63,6 +64,8 @@ internal static class ObservabilityExtensions
                 // Token exchanges for On-Behalf-Of downstream calls. Without this the IdP round-trip is
                 // invisible and reads as unexplained latency on the downstream span.
                 .AddSource(OnBehalfOfDiagnostics.ActivitySourceName)
+                // RabbitMQ publishes and receives (only emitted when messaging is configured).
+                .AddSource(MessagingTelemetry.Name)
                 // A child span per database query. Without it a slow handler is one opaque block: you can
                 // see the request took four seconds but not that 3.9 of them were a single SELECT — or
                 // that it was forty small queries in a loop, which is a different bug with a different fix.
@@ -104,6 +107,7 @@ internal static class ObservabilityExtensions
                 // Built-in .NET runtime metrics (GC, heap, thread pool, CPU) — no extra package needed.
                 .AddMeter("System.Runtime")
                 .AddMeter(OutboxDiagnostics.MeterName)
+                .AddMeter(MessagingTelemetry.Name)
                 // Every DataCache<,> publishes on this one shared meter, tagged with which cache it is
                 // (see CacheMetrics.cs) — so a new cache is covered automatically, with no wildcard and
                 // nothing to keep in sync here.

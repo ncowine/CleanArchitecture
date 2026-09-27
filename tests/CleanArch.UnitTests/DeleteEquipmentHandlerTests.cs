@@ -1,5 +1,6 @@
 using Equipment.Application.Inventory;
 using Equipment.Domain;
+using Equipment.Messages;
 using Xunit;
 
 namespace CleanArch.UnitTests;
@@ -15,7 +16,8 @@ public class DeleteEquipmentHandlerTests
         var cache = new FakeEquipmentCacheInvalidator();
         var changeNotifier = new FakeEquipmentChangeNotifier();
         var realtime = new FakeRealtimeDispatch();
-        var handler = new DeleteEquipment.Handler(repository, cache, changeNotifier, realtime);
+        var outbox = new FakeEquipmentOutbox();
+        var handler = new DeleteEquipment.Handler(repository, cache, changeNotifier, realtime, outbox);
 
         var deleted = await handler.Handle(new DeleteEquipment.Command(asset.Id), default);
 
@@ -27,6 +29,10 @@ public class DeleteEquipmentHandlerTests
         var (group, evt) = Assert.Single(realtime.Published);
         Assert.Equal("equipment", group);
         Assert.Equal("EquipmentDeleted", evt.Type);
+
+        var sent = Assert.IsType<EquipmentDeleted>(Assert.Single(outbox.Enqueued));
+        Assert.Same(sent, evt.Payload);
+        Assert.Equal(asset.Id, sent.Id);
     }
 
     [Fact]
@@ -36,7 +42,8 @@ public class DeleteEquipmentHandlerTests
         var cache = new FakeEquipmentCacheInvalidator();
         var changeNotifier = new FakeEquipmentChangeNotifier();
         var realtime = new FakeRealtimeDispatch();
-        var handler = new DeleteEquipment.Handler(repository, cache, changeNotifier, realtime);
+        var outbox = new FakeEquipmentOutbox();
+        var handler = new DeleteEquipment.Handler(repository, cache, changeNotifier, realtime, outbox);
 
         var deleted = await handler.Handle(new DeleteEquipment.Command(Guid.NewGuid()), default);
 
@@ -44,5 +51,6 @@ public class DeleteEquipmentHandlerTests
         Assert.Empty(cache.Invalidated);
         Assert.Empty(changeNotifier.Notified);
         Assert.Empty(realtime.Published);
+        Assert.Empty(outbox.Enqueued);
     }
 }

@@ -13,12 +13,12 @@ working while you do it, and diagnose the usual failures.
 outbox from [guide 60](60-talking-across-modules.md#4-why-a-multi-step-process-needs-the-outbox).
 You don't need to know RabbitMQ; [chapter 3](#3-five-ideas-you-need) covers the parts you use.
 
-> **Current state (2026-09-27).** The messaging library, the confirmed publish and the
-> outbox-to-RabbitMQ relay are in the solution and tested, but **the API doesn't use them
-> yet**: nothing calls `AddMessaging`, and no module sends an event to the broker. Chapters
-> 8–12 are the steps to connect the first event, and their code is the proposed shape, not
-> files you can open — `EquipmentRetired` and `IEquipmentOutbox` are illustrations. Everything
-> else describes code that exists, with real paths.
+> **Current state (2026-09-27).** The Equipment module is connected end to end: creating,
+> updating or deleting equipment sends `EquipmentCreated` / `EquipmentUpdated` /
+> `EquipmentDeleted` to RabbitMQ through Equipment's outbox **and** over SignalR, when the API's
+> `Messaging` section is configured (it is in Development). Chapters 8–12 walk through that real
+> code, with real paths. Onboarding doesn't publish to RabbitMQ; the API doesn't receive messages
+> yet ([chapter 13](#13-receiving-messages-in-the-api)).
 
 ---
 
@@ -319,23 +319,36 @@ cause, replay.
 
 ## 8. Step 1 — Turn messaging on in the API
 
-> Not done yet. This is the proposed shape; it keeps local development unchanged.
+Messaging is **opt-in by configuration**. `Program.cs` registers it only when a `Messaging`
+section exists; without one, the API behaves exactly as it did before RabbitMQ (SignalR
+included), and no outbox rows are written.
 
-**Make it opt-in.** Register messaging only when configuration has a `Messaging` section —
-the same approach `AddElasticsearchAudit` takes. A developer without a broker sees no change
-and no reconnect errors in the log.
+**`src/Api/CleanArch.Api/Program.cs`** — the one place that says where events go:
 
-**`appsettings.json`** (production values come from environment variables, as for connection
-strings):
+```csharp
+var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
+if (messagingBus.Exists())
+{
+    builder.Services.AddMessaging(messaging => messaging
+        .AddBus("Main", messagingBus)
+        .Route<EquipmentCreated>().And()
+        .Route<EquipmentUpdated>().And()
+        .Route<EquipmentDeleted>().And()
+        .AddTelemetry());
+
+    // Equipment's outbox now records its events, and its processor relays them with a confirmed publish.
+    builder.Services.AddEquipmentIntegrationEvents();
+}
+```
+
+**`src/Api/CleanArch.Api/appsettings.Development.json`** turns it on for local development
+(production values come from environment variables, as for connection strings):
 
 ```json
 "Messaging": {
   "Buses": {
     "Main": {
       "HostName": "localhost",
-      "VirtualHost": "/",
-      "UserName": "guest",
-      "Password": "guest",
       "ExchangeName": "CleanArch",
       "ClientName": "CleanArch.Api",
       "QueueMode": "Shared"
@@ -344,59 +357,56 @@ strings):
 }
 ```
 
-- **`ExchangeName`** is part of the contract: other apps bind to it by name. Set it
-  explicitly. Which name to use depends on who must receive the events — see
-  [chapter 15](#how-the-api-reaches-a-legacy-app).
-- **`QueueMode: Shared`** because the API is a server: several instances share one durable
-  queue. It only matters once the API receives messages.
-- `guest` only works from the broker's own machine. Real environments need a real account
-  with permission to declare exchanges and queues.
-
-**`Program.cs`** (the API references `Messaging.Hosting` and `BuildingBlocks.Outbox.Messaging`):
-
-```csharp
-var messagingSection = builder.Configuration.GetSection("Messaging:Buses:Main");
-if (messagingSection.Exists())
-{
-    builder.Services.AddMessaging(messaging => messaging
-        .AddBus("Main", messagingSection)
-        .Route<EquipmentRetired>().And()  // chapter 10 — one line per message the API sends
-        .AddTelemetry());                 // traces, metrics and logs; chapter 12
-}
-```
+- **No broker on your machine?** Delete the section. The API starts and works as before.
+- **`ExchangeName: CleanArch`** is part of the contract: subscribers bind to it by name. The API
+  declares it the first time it connects.
+- **`QueueMode: Shared`** because the API is a server. The API doesn't receive messages yet, so
+  its queue (`cleanarch.api.main`, plus `.dead-letter`) has no bindings; it's ready for
+  [chapter 13](#13-receiving-messages-in-the-api).
+- `guest` only works from the broker's own machine. Real environments need a real account with
+  permission to declare exchanges and queues.
 
 Every setting and its default is in the messaging guide's
-[configuration reference](../docs/messaging/README.md#configuration-reference).
-Configuration mistakes — a route to a bus that doesn't exist, a class without `[Message]` —
-stop the API at startup with a list of what's wrong.
+[configuration reference](../docs/messaging/README.md#configuration-reference). Configuration
+mistakes — a route to a bus that doesn't exist, a class without `[Message]` — stop the API at
+startup with a list of what's wrong.
 
 ---
 
 ## 9. Step 2 — Define the message
 
-A message is a **plain class** with a **wire name**. It lives in the sending module's
-`*.Contracts` project, which references `Messaging.Abstractions` (no dependencies) for the
-attribute:
+The module's events for other applications live in **`src/Modules/Equipment/Equipment.Messages`**:
+plain classes with a wire name.
 
 ```csharp
-using Messaging;
-
-namespace Equipment.Contracts;
-
-[Message("Equipment.EquipmentRetired")]
-public sealed class EquipmentRetired
+[Message("Equipment.EquipmentCreated")]
+public sealed class EquipmentCreated
 {
-    public Guid EquipmentId { get; set; }
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public string Category { get; set; } = "";
     public string AssetTag { get; set; } = "";
-    public DateTime RetiredOnUtc { get; set; }
+    public string Status { get; set; } = "";
 }
 ```
+
+`EquipmentUpdated` has the same shape (the full current state, so applying it twice is
+harmless); `EquipmentDeleted` carries only the `Id`.
+
+**Why a separate project, not `Equipment.Contracts`?** `Equipment.Contracts` holds interfaces
+other *modules* call in-process, and builds for net10. `Equipment.Messages` is consumed by
+*desktop apps*, so it targets **netstandard2.0**, and its only reference is
+`Messaging.Abstractions` (no dependencies) for the attribute. A unit test
+(`TransportIndependenceTests`) fails if it ever references anything else.
+
+**One contract, both channels.** The same classes travel over RabbitMQ (through the outbox) and
+SignalR (the hub). A client reads `EquipmentCreated` the same way whichever it listens to.
 
 ### Choosing the wire name
 
 | The message is… | Wire name | Why |
 |---|---|---|
-| **New**, only modern apps receive it | Explicit and stable: `Equipment.EquipmentRetired` | Not tied to the namespace, so moving the class can't break anyone |
+| **New**, only modern apps receive it (Equipment's are) | Explicit and stable: `Equipment.EquipmentCreated` | Not tied to the namespace, so moving the class can't break anyone |
 | **Received by a legacy app** | **Exactly** the legacy event's full .NET type name, e.g. `AppA.Events.OrderSaved` | Legacy apps identify events by their type's full name. Anything else is ignored |
 
 ### Shaping the payload
@@ -413,11 +423,12 @@ public sealed class EquipmentRetired
 
 ## 10. Step 3 — Route it
 
-A route says which bus a message goes to, and with which routing key:
+A route says which bus a message goes to, and with which routing key. The API's three routes
+are in the `Program.cs` block above:
 
 ```csharp
-messaging.Route<EquipmentRetired>();                                   // the only bus; key = wire name
-messaging.Route<EquipmentRetired>().To("Main");                        // a named bus
+messaging.Route<EquipmentCreated>();                                    // the only bus; key = wire name
+messaging.Route<EquipmentCreated>().To("Main");                         // a named bus
 messaging.Route<OrderSaved>().WithRoutingKey(o => $"orders.{o.Region}.saved");  // key from the message
 ```
 
@@ -425,69 +436,100 @@ messaging.Route<OrderSaved>().WithRoutingKey(o => $"orders.{o.Region}.saved");  
 one key per event (its full name), so a custom key never reaches them. Custom keys are for new
 subscribers that bind patterns such as `orders.*.saved`.
 
-A routing-key convention is a contract with every subscriber. Changing it doesn't make
-anyone misread a message — they just stop *getting* it.
+A routing-key convention is a contract with every subscriber. Changing it doesn't make anyone
+misread a message — they just stop *getting* it.
+
+**Division of labour:** the module says **which** events it publishes (the list in
+`AddEquipmentIntegrationEvents`); the host says **where** they go (routes and buses). Neither
+the handler nor the domain knows RabbitMQ exists.
 
 ---
 
 ## 11. Step 4 — Send it through the module's outbox
 
-Two situations, depending on the module.
-
 ### A. The module has no outbox yet (e.g. Equipment)
 
-Three things, in this order.
+This is how Equipment was connected. Each piece is small, and each sits in the layer it
+belongs to.
 
-**1. The outbox table.** Map it in the module's `DbContext` and add a migration
-([guide 60](60-talking-across-modules.md) and the README's
-[Adding a migration](../README.md#adding-a-migration)):
+**1. An outbox interface of the module's own** — Application layer,
+`Equipment.Application/Abstractions/IEquipmentOutbox.cs`:
 
 ```csharp
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    // …existing configuration…
-    modelBuilder.ApplyOutboxConfiguration();
-}
+public interface IEquipmentOutbox : IOutbox;
 ```
 
-**2. Its own writer — not `IOutbox`.** `AddOutboxWriter<TContext>()` registers the plain,
-non-keyed `IOutbox`, and Onboarding already does. A second registration silently wins, and one
-module's events land in the other's table
-([guide 60 §16](60-talking-across-modules.md#the-shared-ioutbox-collision)). The second module
-needs its own interface, e.g. `IEquipmentOutbox`, implemented the same way as
-`OutboxWriter`: add an `OutboxMessage` to the module's `DbContext` with
+Not the shared `IOutbox`: that's registered non-keyed and Onboarding already owns it. A second
+registration would silently win, and one module's events would be written into the other
+module's table ([guide 60 §16](60-talking-across-modules.md#the-shared-ioutbox-collision)).
 
-- `Type = typeof(TEvent).Name` — **the short name**; the relay finds the class by it,
-- `Content = JsonSerializer.Serialize(integrationEvent)` — default System.Text.Json settings,
-- `CorrelationId` from `ICorrelationContext`,
-
-and never call `SaveChanges` in it: the module's transaction commits it with the change.
-
-**3. Register the relay** as the module's outbox dispatcher:
+**2. The handler says what happened, twice over** — `CreateEquipment.cs` (Update and Delete are
+the same shape):
 
 ```csharp
-services.AddScoped<IEquipmentOutbox, EquipmentOutbox>();
-services.AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentRetired));
-services.AddOutboxAdmin<EquipmentDbContext>();   // dead-letter search and replay, if wanted
+var created = new EquipmentCreated
+{
+    Id = asset.Id,
+    Name = asset.Name,
+    Category = asset.Category.ToString(),
+    AssetTag = asset.AssetTag,
+    Status = asset.Status.ToString(),
+};
+_outbox.Enqueue(created);
+_realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentCreated), created));
+```
+
+Two calls, because they're two different promises — and **neither sends anything yet**:
+
+| Call | Waits for the commit because… | Then | If the API crashes right after the commit |
+|---|---|---|---|
+| `_outbox.Enqueue` | the row is saved in the same transaction as the change | the outbox processor relays it to RabbitMQ, ~2 s later | still sent, after the restart |
+| `_realtime.Publish` | `RealtimeDispatchBehavior` wraps the transaction and flushes only after it returns | pushed over SignalR at once | lost; clients catch up when they reload |
+
+A rolled-back change sends nothing on either channel.
+
+**3. The table** — Infrastructure, `EquipmentDbContext.OnModelCreating` calls
+`modelBuilder.ApplyOutboxConfiguration()`, and the migration `AddOutbox` creates the
+`OutboxMessages` table in Equipment's own database. The audit interceptor already skips outbox
+rows in every module.
+
+**4. The writer** — Infrastructure, `IntegrationEvents/EquipmentOutbox.cs` wraps the shared
+`OutboxWriter<EquipmentDbContext>` rather than copying it, so the row format (the short type
+name the relay looks up, the JSON) is the same as every other outbox.
+`IntegrationEvents/NoBrokerEquipmentOutbox.cs` is the default when messaging is off: it records
+nothing, so rows can't pile up with no processor to send them.
+
+**5. The switch** — Infrastructure, `DependencyInjection.cs`:
+
+```csharp
+// in AddEquipmentModule: off by default
+services.TryAddScoped<IEquipmentOutbox, NoBrokerEquipmentOutbox>();
+
+// called by the host when "Messaging" is configured
+public static IServiceCollection AddEquipmentIntegrationEvents(this IServiceCollection services)
+{
+    services.AddScoped<OutboxWriter<EquipmentDbContext>>();
+    services.RemoveAll<IEquipmentOutbox>();
+    services.AddScoped<IEquipmentOutbox, EquipmentOutbox>();
+    services.AddOutboxPublishing<EquipmentDbContext>(
+        typeof(EquipmentCreated), typeof(EquipmentUpdated), typeof(EquipmentDeleted));
+    return services;
+}
 ```
 
 `AddOutboxPublishing` registers `MessagingOutboxDispatcher<EquipmentDbContext>` and the
 background processor. Every class listed needs `[Message]` and a route. Two classes with the
 same short name are refused at startup, because the outbox couldn't tell them apart.
 
-Then the handler, inside its unit of work:
-
-```csharp
-asset.Retire(clock.UtcNow);
-_outbox.Enqueue(new EquipmentRetired { EquipmentId = asset.Id, AssetTag = asset.AssetTag, RetiredOnUtc = clock.UtcNow });
-// the TransactionBehavior commits both together
-```
+> `AddOutboxAdmin<EquipmentDbContext>()` (dead-letter search and replay) isn't registered for
+> Equipment: like `IOutbox`, its services are non-keyed and Onboarding already has them.
+> Keying them per module is the fix when Equipment's dead letters need an endpoint.
 
 ### B. The module's outbox already drives in-process work (Onboarding)
 
-Onboarding's dispatcher runs its saga steps, and there is one dispatcher per `DbContext`. So
-it keeps its dispatcher and **hands the rows it doesn't recognise to the relay**, instead of
-throwing "unknown type":
+Not built — Onboarding sends nothing to RabbitMQ yet. Its dispatcher runs its saga steps, and
+there is one dispatcher per `DbContext`. So it would keep its dispatcher and **hand the rows it
+doesn't recognise to the relay**, instead of throwing "unknown type":
 
 ```csharp
 // registration
@@ -508,19 +550,18 @@ tools.
 
 ## 12. Step 5 — See it working
 
+### Run it
+
+1. RabbitMQ running on `localhost:5672`.
+2. `dotnet run --project src/Api/CleanArch.Api` — in Development, with the `Messaging` section.
+3. Open the three POC windows from [`samples/MessagingPocs`](../samples/MessagingPocs/README.md),
+   then add or delete equipment (Swagger, `curl`, or any window's buttons). POC 3 (SignalR)
+   updates at once; POC 1 and 2 (RabbitMQ) about 2 seconds later, once the outbox has polled.
+
 ### Telemetry
 
-`.AddTelemetry()` in `AddMessaging` switches on traces, metrics and logs. Add the source and
-meter to the existing OpenTelemetry setup in `src/Api/CleanArch.Api/Observability.cs`:
-
-```csharp
-.WithTracing(tracing => tracing
-    // …existing sources…
-    .AddSource(MessagingTelemetry.Name))    // "Messaging"
-.WithMetrics(metrics => metrics
-    // …existing meters…
-    .AddMeter(MessagingTelemetry.Name))
-```
+`.AddTelemetry()` in `AddMessaging` switches on traces, metrics and logs, and
+`Observability.cs` adds the `Messaging` source and meter to OpenTelemetry:
 
 | Metric | Meaning |
 |---|---|
@@ -529,27 +570,26 @@ meter to the existing OpenTelemetry setup in `src/Api/CleanArch.Api/Observabilit
 | `messaging.process.duration` | Time spent handling a received message (seconds) |
 
 Alongside them, the outbox's own counters (`outbox_delivered_total`, `outbox_failed_total`,
-`outbox_dead_lettered_total`) already cover the sending side.
+`outbox_dead_lettered_total`) cover the sending side.
 
 **Correlation.** A message sent through the outbox carries the correlation ID of the request
-that wrote the row, in its `correlation-id` header. The outbox processor restores that ID into
-the API's `ICorrelationContext`; the relay carries it into the messaging library's own
-`CorrelationContext` for the publish. So one ID follows the flow from the HTTP request, through
-the audit record and the outbox, to the receiving application.
+that wrote the row, in its `correlation-id` header, and the row's ID as its message-id. So one
+ID follows the flow from the HTTP request, through the audit record and the outbox, to the
+receiving application.
 
 ### Health
 
-`services.AddHealthChecks().AddMessaging()` adds a check that reports **Unhealthy** whenever a
-bus is disconnected. **Think before adding it:** the API's `/health` endpoint runs every
-registered check, so a broker outage would mark the whole API unhealthy — and a load balancer
-would take it out of service for a problem the outbox already absorbs. Either leave it out of
-`/health`, or register it with a tag and give it its own endpoint with a `Predicate`.
+The messaging health check (`AddHealthChecks().AddMessaging()`) is **deliberately not
+registered**. It reports Unhealthy whenever the broker is disconnected, and `/health` runs every
+registered check, so an outage would take the whole API out of service — for a problem the
+outbox already absorbs (events wait and go out afterwards). If you want broker status, register
+it with a tag and give it its own endpoint with a `Predicate`.
 
 ### The management UI
 
 `http://localhost:15672` (guest/guest on a local broker):
 
-- **Exchanges** — the API's exchange exists, with the expected type (`topic`).
+- **Exchanges** — `CleanArch` exists, type `topic`.
 - **Queues** — each subscriber's queue, and its **Bindings** tab: is there a binding for your
   wire name or pattern?
 - **Get messages** on a queue you own, with *Ack mode: Nack message requeue true* so you only
@@ -612,18 +652,20 @@ recipe C in the [messaging guide](../docs/messaging/README.md#c-a-modern-wpf-app
 // App.xaml.cs
 builder.Services.AddMessaging(messaging => messaging
     .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
-    .AddMessages(typeof(EquipmentRetired).Assembly)); // receive every [Message] class in it
+    .AddMessages(typeof(EquipmentCreated).Assembly)); // receive every [Message] class in Equipment.Messages
 
 // A view model
 public MainWindowViewModel(IMessageSubscriber subscriber)
 {
     // Posted to the UI thread, like Prism's ThreadOption.UIThread.
-    _subscription = subscriber.Subscribe<EquipmentRetired>(OnRetired, SynchronizationContext.Current);
+    _subscription = subscriber.Subscribe<EquipmentCreated>(OnCreated, SynchronizationContext.Current);
 }
 ```
 
 - **Its config** points `ExchangeName` at the app's own name, and a `Subscriptions` entry at
-  the API's exchange.
+  the API's exchange, `CleanArch`.
+- **Reload after a reconnect,** not only at start-up: a desktop app's queue is deleted when its
+  connection drops, so events sent in the meantime are gone.
 - **Per-instance queue** (the default): every running copy gets every message, and the queue
   disappears when the app closes. Messages sent while it was closed aren't waiting for it —
   on start-up, load current state from the API, then apply events on top.
@@ -842,16 +884,14 @@ When connecting a new event:
 ```csharp
 // Program.cs — only when "Messaging:Buses:Main" is configured
 builder.Services.AddMessaging(m => m
-    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
-    .Route<EquipmentRetired>().And()
+    .AddBus("Main", messagingBus)
+    .Route<EquipmentCreated>().And()          // …one route per event
     .AddTelemetry());
+builder.Services.AddEquipmentIntegrationEvents();   // the module's writer + outbox relay
 
-// Module registration
-services.AddScoped<IEquipmentOutbox, EquipmentOutbox>();                    // its own writer
-services.AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentRetired));
-
-// Handler
-_outbox.Enqueue(new EquipmentRetired { … });                                // same transaction
+// Handler (inside the unit of work): the same event, both channels
+_outbox.Enqueue(created);                                                            // RabbitMQ, via the outbox
+_realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentCreated), created));  // SignalR
 ```
 
 ### A modern WPF app, receiving
@@ -859,9 +899,9 @@ _outbox.Enqueue(new EquipmentRetired { … });                                //
 ```csharp
 services.AddMessaging(m => m
     .AddBus("Main", configuration.GetSection("Messaging:Buses:Main"))
-    .AddMessages(typeof(EquipmentRetired).Assembly));
+    .AddMessages(typeof(EquipmentCreated).Assembly));
 
-IDisposable sub = subscriber.Subscribe<EquipmentRetired>(OnRetired, SynchronizationContext.Current);
+IDisposable sub = subscriber.Subscribe<EquipmentCreated>(OnCreated, SynchronizationContext.Current);
 ```
 
 ### The numbers
@@ -931,6 +971,7 @@ src/Common.RabbitMQ.Configuration/     the legacy App.config section
 
 src/BuildingBlocks.Outbox/
 ├── OutboxProcessor.cs                 2 s / 20 / 3 attempts; honours deferral
+├── OutboxWriter.cs                    public, so a module can wrap it behind its own interface
 └── OutboxDeliveryDeferredException.cs
 
 src/BuildingBlocks.Outbox.Messaging/
@@ -938,8 +979,18 @@ src/BuildingBlocks.Outbox.Messaging/
 ├── OutboxMessageTypes.cs              short type name → class
 └── DependencyInjection.cs             AddOutboxPublishing<TContext>
 
+The worked example — Equipment, both channels:
+src/Modules/Equipment/Equipment.Messages/            EquipmentCreated / Updated / Deleted (netstandard2.0)
+src/Modules/Equipment/Equipment.Application/Abstractions/IEquipmentOutbox.cs
+src/Modules/Equipment/Equipment.Application/Inventory/  Create / Update / Delete: outbox + real-time
+src/Modules/Equipment/Equipment.Infrastructure/IntegrationEvents/   EquipmentOutbox, NoBrokerEquipmentOutbox
+src/Modules/Equipment/Equipment.Infrastructure/DependencyInjection.cs   AddEquipmentIntegrationEvents
+src/Api/CleanArch.Api/Program.cs                     AddMessaging + routes, only when configured
+
 tests/Common.RabbitMQ.Tests/           golden, public API, broker, hosting, legacy model
-tests/CleanArch.Api.IntegrationTests/OutboxMessagingTests.cs
+tests/CleanArch.Api.IntegrationTests/OutboxMessagingTests.cs, EquipmentIntegrationEventsTests.cs
+tests/CleanArch.UnitTests/TransportIndependenceTests.cs   inner layers never reference a transport
+samples/MessagingPocs/                 three WPF apps receiving the same events three ways
 docs/messaging/                        the library guide, ADRs 0001–0003, assumptions, provenance
 ```
 

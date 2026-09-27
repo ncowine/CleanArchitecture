@@ -1,8 +1,8 @@
-using System.Net.Http;
 using System.Windows;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Poc.Shared;
 using Poc3.SignalR.ViewModels;
 using Poc3.SignalR.Views;
 
@@ -20,8 +20,9 @@ namespace Poc3.SignalR;
 //   forward them first (POC 2 receives them directly).
 //
 // HOW IT'S WIRED
-//   The API already pushes EquipmentCreated / Updated / Deleted to the "equipment" group on its hub, after each
-//   change commits (tutorials/65-real-time-notifications.md). This app joins that group.
+//   The API pushes EquipmentCreated / Updated / Deleted (the Equipment.Messages classes) to the "equipment" group on
+//   its hub right after each change commits (tutorials/65-real-time-notifications.md). This app joins that group.
+//   The same change also goes to RabbitMQ through the outbox for POC 1 and 2: one feature, two channels.
 //
 // WHAT SIGNALR IS NOT
 //   ❌ Not a queue. If the app isn't connected when an event is sent, that event is gone. There's no replay.
@@ -47,20 +48,7 @@ public partial class App : Application
         ApiOptions api = builder.Configuration.GetSection(ApiOptions.SectionName).Get<ApiOptions>() ?? new ApiOptions();
         builder.Services.AddSingleton(api);
 
-        // ✅ DO keep ONE HttpClient for the life of the app, with a pooled-connection lifetime so a changed DNS entry
-        //    (a server move, a failover) is picked up within minutes.
-        // ❌ DON'T create a new HttpClient per call: each one opens its own connections, and under load the machine
-        //    runs out of sockets.
-        // ❌ DON'T reach for AddHttpClient<T>() here expecting it to handle DNS for you: a typed client held by a
-        //    singleton (like this app's view model) keeps its first handler forever, and the factory's rotation never
-        //    happens.
-        HttpClient http = new(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) })
-        {
-            BaseAddress = new Uri(api.BaseUrl),
-        };
-        http.DefaultRequestHeaders.Add("X-Api-Key", api.ApiKey);   // write endpoints require it
-        http.DefaultRequestHeaders.Add("X-Actor", api.Actor);      // who did it, in the API's audit trail
-        builder.Services.AddSingleton(new EquipmentApi(http));
+        builder.Services.AddSingleton(EquipmentApi.Create(api));   // one HttpClient for the app's life (see EquipmentApi)
 
         builder.Services.AddSingleton<EquipmentLiveUpdates>();
         builder.Services.AddSingleton<MainWindowViewModel>();

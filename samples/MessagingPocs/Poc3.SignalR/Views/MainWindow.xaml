@@ -4,11 +4,10 @@
         Title="{Binding Title}" Height="520" Width="760">
     <DockPanel Margin="12">
         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap">
-            <Run FontWeight="SemiBold" Text="SignalR: " /><Run Text="{Binding Connection, Mode=OneWay}" />
-            <Run Text="   Users watching: " /><Run Text="{Binding Watchers, Mode=OneWay}" />
+            <Run FontWeight="SemiBold" Text="Listening: " /><Run Text="{Binding Connection, Mode=OneWay}" /><Run Text="   Users watching: " /><Run Text="{Binding Watchers, Mode=OneWay}" />
         </TextBlock>
         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" Foreground="Gray" TextWrapping="Wrap"
-                   Text="Needs CleanArch.Api running. Open two copies, add or delete in one, and watch the other update. Changes go over HTTP; updates come back over SignalR." />
+                   Text="Needs CleanArch.Api only. Changes go to the API over HTTP; updates come back over SignalR right after each change commits." />
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
             <Button Content="Add a laptop (HTTP POST)" Command="{Binding AddLaptopCommand}" Padding="10,4" Margin="0,0,8,0" />
             <Button Content="Delete selected (HTTP DELETE)" Command="{Binding DeleteSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />
@@ -20,7 +19,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <DataGrid ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False" IsReadOnly="True">
+            <DataGrid ItemsSource="{Binding List.Items}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False" IsReadOnly="True">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Asset" Binding="{Binding AssetTag}" Width="*" />
                     <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*" />

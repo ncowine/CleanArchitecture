@@ -1,4 +1,6 @@
 using BuildingBlocks.Messaging;
+using BuildingBlocks.Outbox;
+using BuildingBlocks.Outbox.Messaging;
 using BuildingBlocks.Persistence;
 using Equipment.Application;
 using Equipment.Application.Abstractions;
@@ -7,12 +9,15 @@ using Equipment.Infrastructure.Behaviors;
 using Equipment.Infrastructure.Caching;
 using Equipment.Infrastructure.Catalogue;
 using Equipment.Infrastructure.Contracts;
+using Equipment.Infrastructure.IntegrationEvents;
 using Equipment.Infrastructure.Persistence;
 using Equipment.Infrastructure.Reads;
 using Equipment.Infrastructure.Repositories;
+using Equipment.Messages;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Equipment.Infrastructure;
@@ -60,6 +65,36 @@ public static class DependencyInjection
         services.AddScoped<IEquipmentReservationService, EquipmentReservationService>();
 
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
+
+        // Integration events for other applications. Off by default: nothing is recorded until the host calls
+        // AddEquipmentIntegrationEvents (it does when "Messaging" is configured). TryAdd, so the order of the two
+        // calls doesn't matter.
+        services.TryAddScoped<IEquipmentOutbox, NoBrokerEquipmentOutbox>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Sends Equipment's integration events (<see cref="EquipmentCreated"/>, <see cref="EquipmentUpdated"/>,
+    /// <see cref="EquipmentDeleted"/>) to RabbitMQ through the module's outbox (docs/messaging/adr/0003): the handler
+    /// stages the event in the same transaction as the change, and the outbox processor relays it with a confirmed
+    /// publish once committed.
+    /// </summary>
+    /// <remarks>
+    /// Call from the host only when it has also called <c>AddMessaging</c> with a route for each of these classes — the
+    /// relay needs <c>IConfirmedMessagePublisher</c>. The module lists WHICH events it publishes; the host decides
+    /// WHERE they go (buses, routing keys).
+    /// </remarks>
+    public static IServiceCollection AddEquipmentIntegrationEvents(this IServiceCollection services)
+    {
+        services.AddScoped<OutboxWriter<EquipmentDbContext>>();
+        services.RemoveAll<IEquipmentOutbox>();
+        services.AddScoped<IEquipmentOutbox, EquipmentOutbox>();
+
+        services.AddOutboxPublishing<EquipmentDbContext>(
+            typeof(EquipmentCreated),
+            typeof(EquipmentUpdated),
+            typeof(EquipmentDeleted));
 
         return services;
     }
