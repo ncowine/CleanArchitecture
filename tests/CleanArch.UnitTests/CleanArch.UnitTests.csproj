@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BuildingBlocks\BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\src\BuildingBlocks.RealTime\BuildingBlocks.RealTime.csproj" />
+    <ProjectReference Include="..\..\src\BuildingBlocks.Caching\BuildingBlocks.Caching.csproj" />
     <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Domain\Equipment.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Application\Equipment.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Equipment\Equipment.Contracts\Equipment.Contracts.csproj" />
