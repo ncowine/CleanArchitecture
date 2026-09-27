@@ -8,6 +8,8 @@
 *.targets   text eol=lf
 *.slnx      text eol=lf
 *.json      text eol=lf
+# Messaging golden wire-format files are compared byte for byte; never convert their line endings.
+tests/**/Golden/*.json -text
 *.config    text eol=lf
 *.md        text eol=lf
 *.editorconfig text eol=lf

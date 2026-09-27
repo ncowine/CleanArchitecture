@@ -1,0 +1,4 @@
+<Project>
+  <!-- Messaging settings, isolated from the repository root: see ..\Messaging\Directory.Build.props. -->
+  <Import Project="$(MSBuildThisFileDirectory)..\Messaging\Directory.Build.props" />
+</Project>

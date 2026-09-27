@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Optional bridge between Messaging.Hosting and Prism's IEventAggregator, for WPF apps that keep the Prism style with
+    plain message classes (ADR 0002, section 5). Contracts, the core and the server never reference it or Prism.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Prism.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Messaging.Hosting\Messaging.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>

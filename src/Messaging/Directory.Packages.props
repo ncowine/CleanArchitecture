@@ -1,0 +1,48 @@
+<Project>
+  <!--
+    Central package versions for the messaging projects copied from RabbitMQ-Refactor (docs/messaging/PROVENANCE.md).
+
+    Deliberately separate from the repository root's Directory.Packages.props: legacy apps share these exact
+    versions (docs/messaging/legacy-baseline-assumptions.md, F4), and the adapter compiles against the lowest
+    version any legacy app uses (ADR 0001, section 7). The root pins newer versions for this solution's own code.
+    The other copied folders import this file.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <!-- Shared with the legacy apps. -->
+  <ItemGroup>
+    <PackageVersion Include="Newtonsoft.Json" Version="12.0.3" />
+    <PackageVersion Include="Prism.Core" Version="8.1.97" />
+    <PackageVersion Include="RabbitMQ.Client" Version="7.1.2" />
+  </ItemGroup>
+
+  <!-- Newtonsoft.Json 12.0.3: deeply nested JSON can overflow the stack. Accepted as a legacy constraint (ADR 0001, section 7). -->
+  <ItemGroup>
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-5crp-9r3c-p9vr" />
+  </ItemGroup>
+
+  <!-- Common.RabbitMQ.Configuration on net8.0. -->
+  <ItemGroup>
+    <PackageVersion Include="System.Configuration.ConfigurationManager" Version="8.0.1" />
+  </ItemGroup>
+
+  <!-- Messaging.Hosting: the 8.0 line, so net8 clients can opt in without being forced up. -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="8.0.31" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Tests -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+  </ItemGroup>
+</Project>
