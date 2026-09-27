@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Test events bound to the current Common.RabbitMQ. See Compat.Events.Baseline for the other side. -->
+  <PropertyGroup>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Common.RabbitMQ\Common.RabbitMQ.csproj" />
+  </ItemGroup>
+
+</Project>

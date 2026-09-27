@@ -47,6 +47,11 @@ Docker) or, from a bare Ubuntu box with no Docker knowledge,
 src/
   BuildingBlocks/            Mediator, behaviors, auditing, correlation, pagination (EF-free)
   BuildingBlocks.Outbox/     Reusable outbox: message, writer, processor, dispatcher, admin, metrics
+  BuildingBlocks.Outbox.Messaging/  Sends outbox rows to RabbitMQ with a confirmed publish (docs/messaging/adr/0003)
+  Messaging/                 RabbitMQ messaging shared with legacy .NET Framework apps (docs/messaging/)
+    Messaging.Abstractions / .RabbitMQ (engine) / .Hosting (server DI) / .Prism (optional bridge)
+  Common.RabbitMQ/           Legacy Prism adapter over the engine; public API is additions-only
+  Common.RabbitMQ.Configuration/  The legacy <rabbitMQ> App.config section
   Api/CleanArch.Api/         Host: composition root, auth, observability, middleware, endpoints map
   SharedKernel/              Shared, read-only reference data — not a module, owned by neither consumer
     SharedKernel.Models / .Data / .DataService / .Presentation
@@ -58,7 +63,13 @@ src/
 tests/
   CleanArch.UnitTests/            xUnit: domain invariants + handler behavior (fakes, no database)
   CleanArch.Api.IntegrationTests/ Real EF Core + SQLite + HybridCache against the module DI, no HTTP host
+  Common.RabbitMQ.Tests/          Messaging: golden wire bytes, legacy public API, real-broker tests (net472 + net8.0)
+  Fixtures/                       Test-only: frozen original library, legacy model, demo events for golden tests
 ```
+
+The messaging folders build with their **own** `Directory.Build.props` / `Directory.Packages.props` (in
+`src/Messaging/`), not the root ones: they are shared with legacy .NET Framework 4.7.2 apps and must keep those
+apps' package versions and language settings. See [docs/messaging/PROVENANCE.md](docs/messaging/PROVENANCE.md).
 
 Each feature is one file (vertical slice): a `static class` with nested `Command`/`Query`,
 `Response`/`Result`, `Validator`, and `Handler`.
@@ -193,6 +204,18 @@ dotnet test
 `CleanArch.Api.IntegrationTests` runs the real module DI (EF Core against a temp SQLite file, real
 HybridCache) without a full HTTP host; see [tutorials/80-testing.md](tutorials/80-testing.md) for the
 reasoning behind that split.
+
+`Common.RabbitMQ.Tests` covers messaging on **both** .NET Framework 4.7.2 and .NET 8. Most of it runs against a
+real RabbitMQ broker (4.x, installed natively — see [docs/messaging/README.md](docs/messaging/README.md#running-it-on-your-machine))
+and is skipped when none is reachable. Set `RABBITMQ_TESTS_REQUIRED=1` to make a missing broker fail instead:
+
+```powershell
+$env:RABBITMQ_TESTS_REQUIRED = '1'
+dotnet test tests/Common.RabbitMQ.Tests
+```
+
+Never regenerate a `Golden/*.json` file or edit `tests/Fixtures/Common.RabbitMQ.Baseline` to make a test pass:
+they pin what legacy apps expect on the wire.
 
 ## Going distributed / production notes
 

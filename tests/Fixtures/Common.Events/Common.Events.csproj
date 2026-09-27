@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Test fixture only: the source repository's demo Prism events, kept with their original namespace and
+       assembly name so wire names and golden files stay byte-identical. This project's own messages live in each
+       module's *.Contracts project, not here. -->
+  <PropertyGroup>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Common.RabbitMQ\Common.RabbitMQ.csproj" />
+  </ItemGroup>
+
+</Project>

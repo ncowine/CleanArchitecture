@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Frozen copy of src/Common.RabbitMQ at commit 5f63c03: the build the legacy apps run today.
+    The compatibility tests run it against the current build in both directions (ADR 0001, delivery plan step 0).
+    Do not edit. Same namespaces as Common.RabbitMQ, so reference it with an extern alias.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <AssemblyName>Common.RabbitMQ.Baseline</AssemblyName>
+    <RootNamespace>Common.RabbitMQ</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Prism.Core" />
+    <PackageReference Include="RabbitMQ.Client" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The same events as Compat.Events, bound to the baseline Common.RabbitMQ. -->
+  <PropertyGroup>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <AssemblyName>Compat.Events.Baseline</AssemblyName>
+    <RootNamespace>Compat.Events</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Compat.Events\*.cs" Link="%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Common.RabbitMQ.Baseline\Common.RabbitMQ.Baseline.csproj" />
+  </ItemGroup>
+
+</Project>

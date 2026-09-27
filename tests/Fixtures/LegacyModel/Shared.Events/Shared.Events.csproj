@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Events shared by several applications, in a netstandard2.0 project like the real common events. Plain PubSubEvent<T> classes with no messaging reference, like the real event assemblies (ADR 0002, fact F1). -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Prism.Core" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Test fixture only: the source repository's demo plain-class messages, used by the golden and hosting tests.
+    This project's own messages live in each module's *.Contracts project, not here.
+
+    Plain-class messages (ADR 0001, section 2). The wire name is the contract, not the CLR type; the only reference
+    is Messaging.Abstractions, which has no dependencies, for [Message].
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Messaging\Messaging.Abstractions\Messaging.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

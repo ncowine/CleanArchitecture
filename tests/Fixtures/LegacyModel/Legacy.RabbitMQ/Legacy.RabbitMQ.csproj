@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A MODEL of the real legacy messaging library, which isn't available to this repository (ADR 0002, step 5).
+    Known facts: plain PubSubEvent<T> events, one exchange per application, cross-app communication by binding to
+    another application's exchange, the default "/" vhost.
+    Everything else is an ASSUMPTION listed in docs/legacy-baseline-assumptions.md, each pinned by a named test in
+    tests/Common.RabbitMQ.Tests/LegacyModel. Change this model only together with that document.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Prism.Core" />
+    <PackageReference Include="RabbitMQ.Client" />
+  </ItemGroup>
+
+</Project>

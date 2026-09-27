@@ -1,0 +1,17 @@
+<Project>
+  <!--
+    Build settings for the messaging projects copied from RabbitMQ-Refactor (docs/messaging/PROVENANCE.md).
+
+    This file deliberately does NOT import the repository root's Directory.Build.props. The root sets net10.0,
+    nullable, implicit usings, warnings as errors and the Recommended analyzers for this solution's own code; the
+    messaging code is shared with legacy .NET Framework 4.7.2 apps and must build exactly as it does in its source
+    repository. The other copied folders (src/Common.RabbitMQ, src/Common.RabbitMQ.Configuration,
+    tests/Common.RabbitMQ.Tests, tests/Fixtures) import this file, so there is one copy of these settings.
+  -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>

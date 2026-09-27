@@ -667,6 +667,13 @@ it. Dead-lettering keeps the queue moving and puts the problem in front of a hum
 is exactly why [chapter 9](#9-step-4--route-each-step-in-the-dispatcher)'s business-failure
 distinction matters: only genuine bugs should ever reach this path.)
 
+**Waiting out an outage.** Three attempts two seconds apart is only six seconds — a message broker
+restarting would park perfectly good messages. So a dispatcher can throw
+`OutboxDeliveryDeferredException` for a failure that isn't the message's fault. The processor gives
+the attempt back, records the error, stops the batch there (so later messages don't overtake it) and
+tries again on the next poll. The RabbitMQ relay (`BuildingBlocks.Outbox.Messaging`) throws it when
+the broker is unreachable; see [docs/messaging/adr/0003](../docs/messaging/adr/0003-server-publishes-through-the-outbox.md).
+
 Operators inspect and replay:
 
 ```bash
