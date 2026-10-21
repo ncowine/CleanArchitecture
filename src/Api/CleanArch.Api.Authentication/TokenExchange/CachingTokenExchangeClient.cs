@@ -48,34 +48,43 @@ internal sealed class CachingTokenExchangeClient : ITokenExchangeClient
         _skew = TimeSpan.FromSeconds(options.Value.ExpirySkewSeconds);
     }
 
-    public async Task<ExchangedToken> ExchangeAsync(
-        string subjectToken, DownstreamTokenRequest downstream, CancellationToken cancellationToken)
-    {
-        var key = $"obo:{downstream.Name}:{downstream.Audience}:{downstream.Scope}:{ApiKeyHasher.Hash(subjectToken)}";
+    public Task<ExchangedToken> ExchangeAsync(
+        string subjectToken, DownstreamTokenRequest downstream, CancellationToken cancellationToken) =>
+        GetFreshAsync(
+            $"obo:{downstream.Name}:{downstream.Audience}:{downstream.Scope}:{ApiKeyHasher.Hash(subjectToken)}",
+            ct => _inner.ExchangeAsync(subjectToken, downstream, ct),
+            cancellationToken);
 
-        var token = await GetOrExchangeAsync(key, subjectToken, downstream, cancellationToken);
+    // One entry per downstream, shared by every request: the token is this API's own, not any user's.
+    public Task<ExchangedToken> ClientCredentialsAsync(
+        DownstreamTokenRequest downstream, CancellationToken cancellationToken) =>
+        GetFreshAsync(
+            $"cc:{downstream.Name}:{downstream.Audience}:{downstream.Scope}",
+            ct => _inner.ClientCredentialsAsync(downstream, ct),
+            cancellationToken);
+
+    private async Task<ExchangedToken> GetFreshAsync(
+        string key, Func<CancellationToken, Task<ExchangedToken>> fetch, CancellationToken cancellationToken)
+    {
+        var token = await GetOrFetchAsync(key, fetch, cancellationToken);
 
         // The cached token may have been minted with a short lifetime, or simply aged out within the
-        // entry's lingering window. If it is within the skew of expiry, drop it and exchange once more.
+        // entry's lingering window. If it is within the skew of expiry, drop it and fetch once more.
         if (IsExpiring(token))
         {
             await _cache.RemoveAsync(key, cancellationToken);
-            token = await GetOrExchangeAsync(key, subjectToken, downstream, cancellationToken);
+            token = await GetOrFetchAsync(key, fetch, cancellationToken);
         }
 
         return token;
     }
 
-    private ValueTask<ExchangedToken> GetOrExchangeAsync(
-        string key,
-        string subjectToken,
-        DownstreamTokenRequest downstream,
-        CancellationToken cancellationToken) =>
+    private ValueTask<ExchangedToken> GetOrFetchAsync(
+        string key, Func<CancellationToken, Task<ExchangedToken>> fetch, CancellationToken cancellationToken) =>
         _cache.GetOrCreateAsync(
             key,
-            (inner: _inner, subjectToken, downstream),
-            static (state, ct) => new ValueTask<ExchangedToken>(
-                state.inner.ExchangeAsync(state.subjectToken, state.downstream, ct)),
+            fetch,
+            static (fetch, ct) => new ValueTask<ExchangedToken>(fetch(ct)),
             CacheOptions,
             cancellationToken: cancellationToken);
 

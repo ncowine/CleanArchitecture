@@ -60,6 +60,9 @@ internal sealed class OnBehalfOfRegistry
     /// <summary>The configuration passed to <c>AddOnBehalfOf</c>, used to bind each named downstream.</summary>
     public IConfiguration Configuration { get; }
 
-    /// <summary>Every downstream name registered against an <c>HttpClient</c>, in registration order.</summary>
-    public List<string> Names { get; } = [];
+    /// <summary>
+    /// Every downstream registered against an <c>HttpClient</c>, with the grant it uses
+    /// (<c>on-behalf-of</c> or <c>client-credentials</c>), in registration order.
+    /// </summary>
+    public List<(string Name, string Grant)> Downstreams { get; } = [];
 }

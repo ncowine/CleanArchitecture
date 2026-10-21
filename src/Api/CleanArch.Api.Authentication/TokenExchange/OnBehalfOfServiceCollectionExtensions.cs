@@ -102,16 +102,60 @@ public static class OnBehalfOfServiceCollectionExtensions
     public static IHttpClientBuilder AddOnBehalfOf(
         this IHttpClientBuilder builder, string? downstreamName = null)
     {
+        var name = RegisterDownstream(builder, downstreamName, "on-behalf-of", nameof(AddOnBehalfOf));
+
+        // Built by hand rather than by the DI activator: the handler is bound to ONE downstream name and
+        // takes the internal exchange client, neither of which the default activator can supply.
+        return builder.AddHttpMessageHandler(provider => new OnBehalfOfHandler(
+            name,
+            provider.GetRequiredService<IHttpContextAccessor>(),
+            provider.GetRequiredService<ITokenExchangeClient>(),
+            provider.GetRequiredService<IOptionsMonitor<DownstreamTokenOptions>>(),
+            provider.GetRequiredService<ILogger<OnBehalfOfHandler>>()));
+    }
+
+    /// <summary>
+    /// Calls this downstream AS THIS API (OAuth2 <c>client_credentials</c>): a token for the service's own
+    /// identity, audience-scoped to the downstream, cached until near expiry. For downstreams that only
+    /// need to know your API is asking — no user is passed, so it also works from background work.
+    /// <code>
+    /// services.AddHttpClient("inventory", c => c.BaseAddress = inventoryUri).AddClientCredentials();
+    /// </code>
+    /// Uses the same identity at the provider as On-Behalf-Of (<c>OnBehalfOf:TokenEndpoint</c>,
+    /// <c>ClientId</c>, secret or signing key) and the same per-downstream section,
+    /// <c>OnBehalfOf:Downstreams:{name}</c>, for the audience and scope — validated at startup the same way.
+    /// </summary>
+    /// <param name="builder">The downstream's HTTP client builder.</param>
+    /// <param name="downstreamName">Configuration key under <c>OnBehalfOf:Downstreams</c>; defaults to the client's name.</param>
+    public static IHttpClientBuilder AddClientCredentials(
+        this IHttpClientBuilder builder, string? downstreamName = null)
+    {
+        var name = RegisterDownstream(builder, downstreamName, "client-credentials", nameof(AddClientCredentials));
+
+        return builder.AddHttpMessageHandler(provider => new ClientCredentialsHandler(
+            name,
+            provider.GetRequiredService<ITokenExchangeClient>(),
+            provider.GetRequiredService<IOptionsMonitor<DownstreamTokenOptions>>(),
+            provider.GetRequiredService<ILogger<ClientCredentialsHandler>>()));
+    }
+
+    /// <summary>
+    /// What both token-based downstreams need: the downstream's audience/scope bound and validated at
+    /// startup, the shared credentials validated once something uses them, and a startup log line.
+    /// </summary>
+    private static string RegisterDownstream(
+        IHttpClientBuilder builder, string? downstreamName, string grant, string method)
+    {
         var name = downstreamName ?? builder.Name;
 
         var registry = FindRegistry(builder.Services)
             ?? throw new InvalidOperationException(
-                $"AddOnBehalfOf() on HTTP client '{builder.Name}' requires the On-Behalf-Of services to be " +
+                $"{method}() on HTTP client '{builder.Name}' requires the On-Behalf-Of services to be " +
                 "registered first. Call services.AddOnBehalfOf(configuration) during startup.");
 
-        if (!registry.Names.Contains(name, StringComparer.Ordinal))
+        if (!registry.Downstreams.Contains((name, grant)))
         {
-            registry.Names.Add(name);
+            registry.Downstreams.Add((name, grant));
         }
 
         // Named options, one per downstream. Validated at startup so a typo'd section is a boot failure
@@ -136,14 +180,7 @@ public static class OnBehalfOfServiceCollectionExtensions
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, OnBehalfOfStartupLogger>());
 
-        // Built by hand rather than by the DI activator: the handler is bound to ONE downstream name and
-        // takes the internal exchange client, neither of which the default activator can supply.
-        return builder.AddHttpMessageHandler(provider => new OnBehalfOfHandler(
-            name,
-            provider.GetRequiredService<IHttpContextAccessor>(),
-            provider.GetRequiredService<ITokenExchangeClient>(),
-            provider.GetRequiredService<IOptionsMonitor<DownstreamTokenOptions>>(),
-            provider.GetRequiredService<ILogger<OnBehalfOfHandler>>()));
+        return name;
     }
 
     /// <summary>
@@ -198,12 +235,12 @@ internal sealed partial class OnBehalfOfStartupLogger : IHostedService
     {
         LogConfigured(
             _options.TokenEndpoint, _options.ClientId, _options.ClientAuthentication,
-            _registry.Names.Count);
+            _registry.Downstreams.Count);
 
-        foreach (var name in _registry.Names)
+        foreach (var (name, grant) in _registry.Downstreams)
         {
             var downstream = _downstreamOptions.Get(name);
-            LogDownstream(name, downstream.Audience, downstream.Scope);
+            LogDownstream(name, grant, downstream.Audience, downstream.Scope);
         }
 
         return Task.CompletedTask;
@@ -225,6 +262,6 @@ internal sealed partial class OnBehalfOfStartupLogger : IHostedService
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Information,
-        Message = "On-Behalf-Of downstream '{Downstream}' will request audience {Audience} scope {Scope}")]
-    private partial void LogDownstream(string downstream, string? audience, string? scope);
+        Message = "Downstream '{Downstream}' ({Grant}) will request audience {Audience} scope {Scope}")]
+    private partial void LogDownstream(string downstream, string grant, string? audience, string? scope);
 }

@@ -56,12 +56,16 @@ internal sealed class GlobalExceptionHandler : IExceptionHandler
                     .ExecuteAsync(httpContext);
                 return true;
 
-            // A failed On-Behalf-Of exchange: a rejected subject token is the caller's problem (401);
-            // an unreachable/erroring provider is a bad gateway (502). Never a 500.
+            // A failed downstream token request: a rejected subject token is the caller's problem (401);
+            // the provider refusing THIS API, or being unreachable, is a bad gateway (502). Never a 500.
             case TokenExchangeException tokenExchange:
-                var (status, title) = tokenExchange.Failure == TokenExchangeFailure.SubjectRejected
-                    ? (StatusCodes.Status401Unauthorized, "Unauthorized")
-                    : (StatusCodes.Status502BadGateway, "Upstream identity provider unavailable");
+                var (status, title) = tokenExchange.Failure switch
+                {
+                    TokenExchangeFailure.SubjectRejected => (StatusCodes.Status401Unauthorized, "Unauthorized"),
+                    TokenExchangeFailure.ClientRejected => (
+                        StatusCodes.Status502BadGateway, "Upstream identity provider rejected this API's credentials"),
+                    _ => (StatusCodes.Status502BadGateway, "Upstream identity provider unavailable"),
+                };
                 await Results
                     .Problem(
                         detail: tokenExchange.Message,
@@ -72,6 +76,21 @@ internal sealed class GlobalExceptionHandler : IExceptionHandler
                         extensions: new Dictionary<string, object?>
                         {
                             ["downstream"] = tokenExchange.DownstreamName,
+                        })
+                    .ExecuteAsync(httpContext);
+                return true;
+
+            // A downstream that takes the caller's own bearer token, reached by a caller who has none (API
+            // key / Basic): they must sign in as a user for this route.
+            case CallerTokenRequiredException callerToken:
+                await Results
+                    .Problem(
+                        detail: callerToken.Message,
+                        statusCode: StatusCodes.Status401Unauthorized,
+                        title: "Unauthorized",
+                        extensions: new Dictionary<string, object?>
+                        {
+                            ["downstream"] = callerToken.DownstreamName,
                         })
                     .ExecuteAsync(httpContext);
                 return true;

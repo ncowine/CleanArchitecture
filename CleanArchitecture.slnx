@@ -63,6 +63,9 @@
     <Project Path="tests/Fixtures/LegacyModel/Shared.Events/Shared.Events.csproj" />
   </Folder>
   <Folder Name="/samples/" />
+  <Folder Name="/samples/DownstreamAuth/">
+    <Project Path="samples/DownstreamAuth/Downstream.Sample/Downstream.Sample.csproj" />
+  </Folder>
   <Folder Name="/samples/MessagingPocs/">
     <Project Path="samples/MessagingPocs/Poc.Shared/Poc.Shared.csproj" />
     <Project Path="samples/MessagingPocs/Poc1.PrismRabbitMq/Poc1.PrismRabbitMq.csproj" />

@@ -19,6 +19,9 @@ public static class OnBehalfOfDiagnostics
     /// <summary>The span emitted around one token exchange.</summary>
     public const string ExchangeActivityName = "OnBehalfOf.Exchange";
 
+    /// <summary>The span emitted around one client-credentials token request (this API's own identity).</summary>
+    public const string ClientCredentialsActivityName = "OnBehalfOf.ClientCredentials";
+
     internal static readonly ActivitySource ActivitySource = new(ActivitySourceName);
 
     /// <summary>Tag names, so the tracing code and the troubleshooting docs cannot drift apart.</summary>

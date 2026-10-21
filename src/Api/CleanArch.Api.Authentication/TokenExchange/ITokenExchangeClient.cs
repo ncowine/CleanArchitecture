@@ -15,6 +15,14 @@ internal interface ITokenExchangeClient
     /// <exception cref="TokenExchangeException">The provider rejected the subject token or was unavailable.</exception>
     Task<ExchangedToken> ExchangeAsync(
         string subjectToken, DownstreamTokenRequest downstream, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gets a token for THIS API itself (OAuth2 <c>client_credentials</c>), audience-scoped to a downstream.
+    /// No user is involved: the downstream sees the service, which is all a service-to-service call needs.
+    /// </summary>
+    /// <exception cref="TokenExchangeException">The provider rejected this API's credentials or was unavailable.</exception>
+    Task<ExchangedToken> ClientCredentialsAsync(
+        DownstreamTokenRequest downstream, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -38,6 +46,12 @@ public enum TokenExchangeFailure
 
     /// <summary>The provider could not be reached or errored (5xx / timeout / network) — maps to 502.</summary>
     ProviderUnavailable,
+
+    /// <summary>
+    /// The provider refused THIS API's own request — a client-credentials grant with a wrong secret or an
+    /// ungranted scope. Configuration, not the caller, so it maps to 502 rather than 401.
+    /// </summary>
+    ClientRejected,
 }
 
 /// <summary>
