@@ -1,3 +1,4 @@
+using BuildingBlocks.Caching;
 using BuildingBlocks.Messaging;
 using BuildingBlocks.Outbox;
 using BuildingBlocks.Outbox.Messaging;
@@ -18,7 +19,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 
 namespace Equipment.Infrastructure;
 
@@ -46,11 +46,10 @@ public static class DependencyInjection
         services.AddScoped<IEquipmentCacheInvalidator, EquipmentCacheInvalidator>();
 
         // Computed/merged cache: per-site equipment rollup, aggregated across many rows plus a
-        // cross-database site name. Registered twice under the same singleton instance — once as itself
-        // so the directory below can call it, once as IHostedService so its InitAsync pre-warms every
-        // known site's summary before the app starts accepting requests.
-        services.AddSingleton<SiteEquipmentSummaryCache>();
-        services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<SiteEquipmentSummaryCache>());
+        // cross-database site name. AddDataCache registers one singleton as itself (so the directory below
+        // can call it) and as IHostedService, so its InitAsync pre-warms every known site's summary before
+        // the app starts accepting requests.
+        services.AddDataCache<SiteEquipmentSummaryCache>();
         services.AddSingleton<ISiteEquipmentSummaryDirectory, SiteEquipmentSummaryDirectory>();
         services.AddSingleton<IEquipmentChangeNotifier, EquipmentChangeNotifier>();
 
