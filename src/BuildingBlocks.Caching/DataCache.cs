@@ -25,9 +25,8 @@ namespace BuildingBlocks.Caching;
 /// <para>
 /// Override <see cref="InitAsync"/> to run logic before the cache serves its first request (e.g.
 /// pre-warming a known key set). It only runs if the SAME singleton instance is ALSO registered as an
-/// <see cref="IHostedService"/> — e.g. <c>services.AddSingleton&lt;IHostedService&gt;(sp =>
-/// sp.GetRequiredService&lt;MyCache&gt;())</c> — so the host awaits it during startup, before accepting
-/// requests. Without that second registration <see cref="InitAsync"/> is simply never called and the
+/// <see cref="IHostedService"/> — <see cref="DataCacheServiceCollectionExtensions.AddDataCache{TCache}"/>
+/// does both registrations — so the host awaits it during startup, before accepting requests. Without that second registration <see cref="InitAsync"/> is simply never called and the
 /// cache starts empty, which is also a perfectly fine default (see <see cref="GetAsync(TKey, CancellationToken)"/>).
 /// </para>
 /// <para>
