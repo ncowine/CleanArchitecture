@@ -5,6 +5,7 @@ using BuildingBlocks.Messaging;
 using BuildingBlocks.RealTime;
 using CleanArch.Api;
 using CleanArch.Api.Authentication;
+using CleanArch.Api.DownstreamDemo;
 using CleanArch.Api.Realtime;
 using Equipment.Infrastructure;
 using Equipment.Messages;
@@ -75,16 +76,12 @@ if (messagingBus.Exists())
     // take the API out of service for an outage the outbox already absorbs (events wait and go out afterwards).
 }
 
-// Example: downstream API clients that call AS the authenticated user (OAuth2 On-Behalf-Of). AddOnBehalfOf
-// exchanges the caller's OIDC token for one scoped to THAT downstream and attaches it. One line per
-// downstream; each reads its audience from OnBehalfOf:Downstreams:<client name>, so several downstreams
-// each get a token their own service accepts.
-//   builder.Services.AddHttpClient("billing", client =>
-//           client.BaseAddress = new Uri(builder.Configuration["Downstreams:Billing:BaseUrl"]!))
-//       .AddOnBehalfOf();
-//   builder.Services.AddHttpClient("grading", client =>
-//           client.BaseAddress = new Uri(builder.Configuration["Downstreams:Grading:BaseUrl"]!))
-//       .AddOnBehalfOf();
+// Calling other APIs: each downstream gets a typed HttpClient and the ONE authentication method it accepts —
+// On-Behalf-Of, forwarded bearer, client credentials, Basic or API key (docs/downstream-authentication.md).
+// DownstreamDemo/ is a live, working example of all five against samples/DownstreamAuth/Downstream.Sample,
+// which also plays the identity provider. Development only, and off unless DownstreamDemo:BaseUrl is set —
+// run with the "downstream-demo" launch profile (the sample's README has the steps).
+builder.Services.AddDownstreamDemo(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 
@@ -157,6 +154,7 @@ ApiVersionSet versionSet = app.NewApiVersionSet()
 app.MapEquipmentEndpoints(versionSet);
 app.MapOnboardingEndpoints(versionSet);
 app.MapReferenceEndpoints(versionSet);
+app.MapDownstreamDemo(versionSet);
 
 // Real-time presence + notifications hub (live view + "someone actioned this"). Exempt from the rate
 // limiter — connections are long-lived and share a source.

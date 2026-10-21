@@ -20,6 +20,31 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "downstream-demo": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "https://localhost:7214;http://localhost:5235",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "_note": "Live downstream-auth demo against samples/DownstreamAuth/Downstream.Sample (start it first). Every secret here is a published DEV-ONLY value matching that sample's appsettings.json — never reuse them.",
+        "DownstreamDemo__BaseUrl": "https://localhost:7300/",
+        "Okta__Authority": "https://localhost:7300",
+        "Okta__Audience": "cleanarch-api",
+        "OnBehalfOf__TokenEndpoint": "https://localhost:7300/connect/token",
+        "OnBehalfOf__ClientId": "cleanarch-api",
+        "OnBehalfOf__ClientSecret": "dev-only-cleanarch-secret",
+        "OnBehalfOf__Downstreams__billing__Audience": "api://billing",
+        "OnBehalfOf__Downstreams__billing__Scope": "invoices.read",
+        "OnBehalfOf__Downstreams__inventory__Audience": "api://inventory",
+        "OnBehalfOf__Downstreams__inventory__Scope": "stock.read",
+        "DownstreamCredentials__legacy__Username": "svc-cleanarch",
+        "DownstreamCredentials__legacy__Password": "dev-only-legacy-password",
+        "DownstreamCredentials__vendor__ApiKey": "dev-only-vendor-key",
+        "DownstreamCredentials__vendor__ApiKeyHeader": "X-Vendor-Key"
+      }
     }
   }
 }

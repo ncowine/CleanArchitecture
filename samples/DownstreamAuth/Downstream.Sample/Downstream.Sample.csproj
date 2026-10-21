@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Plays every downstream API the CleanArch API calls in the live downstream-authentication demo, PLUS the
+    identity provider those calls depend on — so all five methods run on one machine with no Okta tenant and
+    no Docker. Development only: the IdP signs with a key it generates at startup and its secrets are
+    published in appsettings.json. See README.md in this folder.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+
+</Project>
