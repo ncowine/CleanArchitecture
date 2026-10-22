@@ -208,7 +208,7 @@ namespace Messaging.RabbitMQ
 
             string key = string.IsNullOrEmpty(routingKey) ? wireName : routingKey;
             string id = string.IsNullOrEmpty(messageId) ? Guid.NewGuid().ToString("N") : messageId;
-            PublishContext context = new PublishContext(wireName, options.BusName, id, message?.GetType(), key);
+            PublishContext context = new PublishContext(wireName, options.BusName, id, message?.GetType(), key, retriedOnFailure: false);
             Observe(o => o.OnPublishing(context), nameof(IMessagingObserver.OnPublishing));
 
             // RabbitMQ.Client 7 serializes publishes on a channel itself and waits for each confirm separately, so this
@@ -242,7 +242,14 @@ namespace Messaging.RabbitMQ
                     Observe(o => o.OnPublishFailed(context, unavailable), nameof(IMessagingObserver.OnPublishFailed));
                     throw unavailable;
                 }
-                catch (Exception ex) when (!(ex is OperationCanceledException))
+                catch (OperationCanceledException ex)
+                {
+                    // The caller gave up, e.g. the host is shutting down. The message may or may not be on the broker, but
+                    // this context is finished either way, so the observer still hears about it.
+                    Observe(o => o.OnPublishFailed(context, ex), nameof(IMessagingObserver.OnPublishFailed));
+                    throw;
+                }
+                catch (Exception ex)
                 {
                     Observe(o => o.OnPublishFailed(context, ex), nameof(IMessagingObserver.OnPublishFailed));
 

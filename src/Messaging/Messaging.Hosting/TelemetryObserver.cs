@@ -69,11 +69,26 @@ namespace Messaging.Hosting
         public void OnPublishFailed(PublishContext context, Exception exception)
         {
             sentMessages.Add(1, Tags(context.BusName, context.WireName, exception.GetType().FullName));
-            logger.LogWarning(exception, "[{Bus}] Publishing {WireName} {MessageId} failed; it stays buffered and is retried.", context.BusName, context.WireName, context.MessageId);
 
-            if (context.Items.TryGetValue(ActivityItem, out object item))
+            Activity activity = context.Items.TryGetValue(ActivityItem, out object item) ? (Activity)item : null;
+            if (activity != null)
             {
-                AddException((Activity)item, exception);
+                AddException(activity, exception);
+            }
+
+            // A retry is an event on the same span, which ends when the broker confirms.
+            if (context.RetriedOnFailure)
+            {
+                logger.LogWarning(exception, "[{Bus}] Publishing {WireName} {MessageId} failed; it stays buffered and is retried.", context.BusName, context.WireName, context.MessageId);
+                return;
+            }
+
+            // A confirmed publish is never retried under this context, so its span ends here.
+            logger.LogWarning(exception, "[{Bus}] Publishing {WireName} {MessageId} failed; the caller decides whether to send it again.", context.BusName, context.WireName, context.MessageId);
+            if (activity != null)
+            {
+                activity.SetStatus(ActivityStatusCode.Error, exception.Message);
+                StopOffThread(context.Items);
             }
         }
 
