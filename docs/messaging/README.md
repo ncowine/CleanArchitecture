@@ -25,6 +25,8 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
 >   ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md), and [recipe D](#d-a-server-aspnet-handlers) step 4).
 >   Equipment's create/update/delete events are the working example (exchange `CleanArch`). Legacy apps are
 >   unchanged. Modern WPF apps only subscribe.
+> - **New to the API's messaging?** Start with [How the API uses RabbitMQ](how-the-api-uses-rabbitmq.md): the whole
+>   path from handler to receiving app, why each piece exists, with pseudo code and a worked example.
 
 ---
 
