@@ -92,7 +92,7 @@ Development also turns on **RabbitMQ** (the `Messaging` section of `appsettings.
 changes are sent to other applications through Equipment's outbox, as well as over SignalR. It needs a local broker
 ([tutorials/67](tutorials/67-messaging-with-rabbitmq.md)); **without one, delete that section** and the API behaves
 exactly as before. With it but no broker running, the API still starts, and events wait in the outbox until the
-broker is reachable.
+broker is reachable. How it all fits together, and why: [docs/messaging/how-the-api-uses-rabbitmq.md](docs/messaging/how-the-api-uses-rabbitmq.md).
 
 ### Calling protected endpoints
 
