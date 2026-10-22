@@ -71,6 +71,22 @@ The Equipment module is the worked example, sending the same event over both cha
 Since then: the SignalR hub requires an authenticated caller (`[Authorize]`, the same schemes as the API's write
 endpoints).
 
+Amended 2026-10-22, after a review found four ways the confirmed publish could dead-letter good messages, lose them,
+or stall the outbox. `PublishConfirmedAsync` now:
+
+- throws `BrokerUnavailableException` (deferred, no attempt used) for a broker **nack**, e.g. a full queue rejecting
+  publishes. It used to rethrow `PublishException`, which counted, so ~6 s of back-pressure dead-lettered good rows;
+- publishes as **mandatory**. A message no queue is bound for still completes and is marked delivered, because that is
+  normal while no receiver runs (desktop queues only exist while their app is open), but it is logged instead of
+  vanishing silently. Holding it would stall the whole outbox whenever no receiver is up;
+- gives up after **30 s without a confirm** (a broker memory or disk alarm blocks publishers; a half-open link never
+  answers) and throws `BrokerUnavailableException`, instead of holding the processor until shutdown. A message the
+  broker did take may then be sent again, which "at least once" already covers;
+- throws `BrokerUnavailableException`, not `ObjectDisposedException`, once the **bus has been stopped**, so an outbox
+  still polling during shutdown doesn't use up attempts.
+
+The buffered path (legacy apps) is unchanged: still `mandatory: false`, no timeout.
+
 Not done: Onboarding publishing to RabbitMQ; the API receiving messages; per-module outbox admin endpoints (the admin
 services are non-keyed like `IOutbox`); the `access_token` hook browser clients would need for Okta on the hub.
 
