@@ -1,0 +1,52 @@
+# =============================================================================
+#  RabbitMQ broker with one locked-down user per application
+# =============================================================================
+#   docker compose up -d       broker + users (the "users" job runs once and exits)
+#   docker compose run --rm users        re-apply users.sh after editing it
+#   docker compose down        stop   (add -v to wipe queues, users and messages)
+#
+# There is no guest user: the management UI (http://localhost:15672) takes
+# ADMIN_USER / ADMIN_PASSWORD from .env, and every application connects as its
+# own user from users.sh. Why and how: README.md
+# =============================================================================
+
+name: cleanarch-rabbitmq
+
+services:
+
+  rabbitmq:
+    image: rabbitmq:${RABBITMQ_VERSION}-management
+    # The data folder is named after the node, so a fixed hostname keeps the data across re-creates.
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${ADMIN_USER}
+      RABBITMQ_DEFAULT_PASS: ${ADMIN_PASSWORD}
+    ports:
+      - "${BIND_ADDR}:5672:5672"     # AMQP (the applications)
+      - "${BIND_ADDR}:15672:15672"   # management UI and HTTP API
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      # Waits for every listener, including the management API that users.sh calls.
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+    restart: unless-stopped
+
+  # Creates or updates the application users through the management API, then exits.
+  users:
+    image: curlimages/curl:${CURL_VERSION}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      RABBITMQ_URL: http://rabbitmq:15672
+    volumes:
+      - ./users.sh:/users.sh:ro
+    entrypoint: ["sh", "/users.sh"]
+    restart: "no"
+
+volumes:
+  rabbitmq-data:
