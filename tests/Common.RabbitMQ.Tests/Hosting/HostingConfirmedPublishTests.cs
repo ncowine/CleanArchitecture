@@ -1,4 +1,8 @@
 using System;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Common.RabbitMQ.Tests.Broker;
 using Common.RabbitMQ.Tests.Golden;
@@ -99,10 +103,77 @@ namespace Common.RabbitMQ.Tests.Hosting
             }
         }
 
+        [Fact]
+        public async Task ConfirmedPublisher_FailedPublish_EndsItsSpanWithAnError()
+        {
+            string messageId = "outbox-row-" + Guid.NewGuid().ToString("N");
+            using (PublishSpans spans = new PublishSpans())
+            await using (TestBus bus = await TestBus.Create())
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>().And().AddTelemetry(), options => options.Port = 1))
+            {
+                await Assert.ThrowsAsync<BrokerUnavailableException>(() =>
+                    host.Services.GetRequiredService<IConfirmedMessagePublisher>().PublishConfirmedAsync(GoldenMessage(), messageId, TestContext.Current.CancellationToken));
+
+                // The outbox publishes again under a new context, so nothing else would ever end this span.
+                Activity span = spans.Stopped(messageId);
+                Assert.NotNull(span);
+                Assert.Equal(ActivityStatusCode.Error, span.Status);
+            }
+        }
+
+        [Fact]
+        public async Task ConfirmedPublisher_CancelledPublish_EndsItsSpan()
+        {
+            string messageId = "outbox-row-" + Guid.NewGuid().ToString("N");
+            using (PublishSpans spans = new PublishSpans())
+            await using (TestBus bus = await TestBus.Create())
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>().And().AddTelemetry()))
+            using (CancellationTokenSource shutdown = new CancellationTokenSource())
+            {
+                await host.WaitUntilConnected();
+                shutdown.Cancel();
+
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                    host.Services.GetRequiredService<IConfirmedMessagePublisher>().PublishConfirmedAsync(GoldenMessage(), messageId, shutdown.Token));
+
+                Activity span = spans.Stopped(messageId);
+                Assert.NotNull(span);
+                Assert.Equal(ActivityStatusCode.Error, span.Status);
+            }
+        }
+
         private static CompatMessage GoldenMessage()
         {
             Compat.Events.CompatPayload golden = CompatPayloads.Golden();
             return new CompatMessage { Id = golden.Id, Name = golden.Name, UpdatedAt = golden.UpdatedAt };
+        }
+
+        /// <summary>Records the publish spans that end while it's alive.</summary>
+        private sealed class PublishSpans : IDisposable
+        {
+            private readonly ConcurrentQueue<Activity> stopped = new ConcurrentQueue<Activity>();
+            private readonly ActivityListener listener;
+
+            public PublishSpans()
+            {
+                listener = new ActivityListener
+                {
+                    ShouldListenTo = source => source.Name == MessagingTelemetry.Name,
+                    Sample = (ref ActivityCreationOptions<ActivityContext> options) => ActivitySamplingResult.AllDataAndRecorded,
+                    ActivityStopped = activity => stopped.Enqueue(activity),
+                };
+                ActivitySource.AddActivityListener(listener);
+            }
+
+            public Activity Stopped(string messageId)
+            {
+                return stopped.FirstOrDefault(a => a.Kind == ActivityKind.Producer && (string)a.GetTagItem("messaging.message.id") == messageId);
+            }
+
+            public void Dispose()
+            {
+                listener.Dispose();
+            }
         }
 
         [Message("Compat.Tests.UnroutedMessage")]

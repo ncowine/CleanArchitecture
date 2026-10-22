@@ -21,7 +21,11 @@ namespace Messaging
         /// <summary>The broker confirmed the message. Called on the bus's background thread.</summary>
         void OnPublished(PublishContext context);
 
-        /// <summary>Sending failed. The message stays buffered and is retried. Called on the bus's background thread.</summary>
+        /// <summary>
+        /// Sending failed. With <see cref="PublishContext.RetriedOnFailure"/> the message stays buffered and is retried,
+        /// and this is called on the bus's background thread. Without it (a confirmed publish) this is the last call for
+        /// the context, made on the publisher's thread.
+        /// </summary>
         void OnPublishFailed(PublishContext context, Exception exception);
 
         /// <summary>A message arrived and is about to be deserialized and dispatched. Called on the consumer's thread.</summary>
