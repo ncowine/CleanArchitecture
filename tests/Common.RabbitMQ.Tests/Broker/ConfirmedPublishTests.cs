@@ -68,6 +68,58 @@ namespace Common.RabbitMQ.Tests.Broker
         }
 
         [Fact]
+        public async Task ConfirmedPublish_RefusedByTheBroker_ThrowsBrokerUnavailable()
+        {
+            await using (TestBus bus = await TestBus.Create())
+            {
+                CoreEndpoint sender = bus.AddCoreEndpoint("compat-core", null);
+                await bus.WaitUntilConnected();
+                string routingKey = "full." + Guid.NewGuid().ToString("N");
+                await bus.RejectPublishes(routingKey);
+
+                // A nack is the broker's state (here a full queue), not the message's fault, so an outbox must retry it
+                // without using up an attempt.
+                await Assert.ThrowsAsync<BrokerUnavailableException>(() =>
+                    sender.Bus.PublishConfirmedAsync(CoreEndpoint.WireName, CompatPayloads.Golden(), routingKey, null, TestContext.Current.CancellationToken));
+            }
+        }
+
+        [Fact]
+        public async Task ConfirmedPublish_ThatNoQueueIsBoundFor_Completes_AndLogsIt()
+        {
+            await using (TestBus bus = await TestBus.Create())
+            {
+                CoreEndpoint sender = bus.AddCoreEndpoint("compat-core", null);
+                ConcurrentQueue<string> log = new ConcurrentQueue<string>();
+                sender.Bus.Log += (source, message) => log.Enqueue(message);
+                await bus.WaitUntilConnected();
+                string routingKey = "nobody." + Guid.NewGuid().ToString("N");
+
+                await sender.Bus.PublishConfirmedAsync(CoreEndpoint.WireName, CompatPayloads.Golden(), routingKey, "outbox-row-3", TestContext.Current.CancellationToken);
+
+                string warning = log.FirstOrDefault(m => m.Contains("No queue is bound"));
+                Assert.NotNull(warning);
+                Assert.Contains(routingKey, warning);
+                Assert.Contains("outbox-row-3", warning);
+            }
+        }
+
+        [Fact]
+        public async Task ConfirmedPublish_OnAStoppedBus_ThrowsBrokerUnavailable()
+        {
+            await using (TestBus bus = await TestBus.Create())
+            {
+                CoreEndpoint sender = bus.AddCoreEndpoint("compat-core", null);
+                await bus.WaitUntilConnected();
+                sender.Dispose();
+
+                // Not ObjectDisposedException: an outbox still polling during shutdown must not use up attempts.
+                await Assert.ThrowsAsync<BrokerUnavailableException>(() =>
+                    sender.Bus.PublishConfirmedAsync(CoreEndpoint.WireName, CompatPayloads.Golden(), null, null, TestContext.Current.CancellationToken));
+            }
+        }
+
+        [Fact]
         public async Task SharedQueue_WithAChangedSetting_ReportsWhatToDo()
         {
             await using (TestBus bus = await TestBus.Create())

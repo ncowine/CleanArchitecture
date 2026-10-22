@@ -529,7 +529,10 @@ The step-by-step version, including the outbox table and the writer, is in
 [tutorial 67](../../tutorials/67-messaging-with-rabbitmq.md#11-step-4--send-it-through-the-modules-outbox).
 
 - A row is marked delivered only after the broker confirms it. The row's ID travels as the message-id.
-- While the broker is unreachable, rows wait without using up their 3 attempts, and go out in order afterwards.
+- While the broker is unreachable, rows wait without using up their 3 attempts, and go out in order afterwards. The
+  same applies when the broker refuses a message (a nack), sends no confirm within 30 s, or the bus has been stopped.
+- A message no queue is bound for is logged ("No queue is bound …") and still marked delivered: with no receiver
+  running, nobody is waiting for it.
 - Delivery is at least once, so receivers must tolerate a duplicate.
 - A module whose outbox also drives in-process steps (like Onboarding's saga) keeps its own dispatcher and hands the
   rows it doesn't recognise to `MessagingOutboxDispatcher<TContext>` (`CanDispatch`, then `DispatchAsync`).

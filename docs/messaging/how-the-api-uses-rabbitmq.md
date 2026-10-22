@@ -185,10 +185,14 @@ PublishAsync(message):
             remove from buffer only after the confirm
 
 PublishConfirmedAsync(message, messageId):
-    if not connected: throw BrokerUnavailableException
+    if stopped or not connected: throw BrokerUnavailableException
     for each bus the message is routed to:
-        publish(bytes, headers, message-id = messageId)
-        wait for broker confirm               // throws if the connection drops
+        publish(bytes, headers, message-id = messageId, mandatory = true)
+        wait up to 30 s for the broker's confirm
+            confirmed            -> done
+            returned (no queue)  -> log "No queue is bound ...", done
+            nack, no confirm in 30 s, connection dropped
+                                 -> throw BrokerUnavailableException
 ```
 
 The API uses only the confirmed path. A buffered publish could report success while the message is still in memory,
@@ -476,6 +480,10 @@ written because the change rolled back.
 | API crashes right after the commit | Row is in the database; the processor finds it after restart | Sent later |
 | RabbitMQ down for seconds or hours | Dispatcher throws `OutboxDeliveryDeferredException`; attempt not counted; batch stops to keep order | Sent, in order, once the broker is back |
 | Connection drops mid-publish | `BrokerUnavailableException` → deferred, as above | Sent later |
+| Broker refuses the message (nack), e.g. a receiver's full queue | `BrokerUnavailableException` → deferred | Sent later |
+| Broker blocks publishers (memory or disk alarm), or the link is half-open | No confirm within 30 s → `BrokerUnavailableException` → deferred | Sent later, possibly twice |
+| API shutting down while the processor polls | Bus already stopped → `BrokerUnavailableException` → deferred | Sent after restart |
+| No queue is bound for the routing key | Published as mandatory, so the broker returns it; logged as "No queue is bound …" | Marked sent; nobody received it |
 | No route for the class, bad JSON, unknown type | Counts as a failed attempt; retried every 2 s | Dead-lettered after 3 attempts (`DeadLetteredOnUtc` set) |
 | Broker confirms, then the API crashes before saving `ProcessedOnUtc` | Row still looks unsent; it's published again after restart | **Duplicate**, same message-id |
 | Receiver's handler throws (server, shared queue) | Retried 3 times, 1 s apart, in the receiver | Receiver's `<queue>.dead-letter` |
@@ -703,6 +711,8 @@ references RabbitMQ, the outbox relay or SignalR, and `OutboxMessagingTests` cov
 - **Changing a shared queue's settings fails at the broker.** A queue's arguments can't change once it exists. The bus
   logs which queue; put the setting back, or delete the queue and lose its messages.
 - **Desktop queues disappear with their connection.** Reload from the API after a reconnect.
+- **An event nobody is bound for is marked sent.** That's deliberate: holding it would stall the outbox whenever no
+  receiver runs. The "No queue is bound …" log line is how a missing or mistyped binding shows up.
 
 ### Not built yet
 

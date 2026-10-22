@@ -115,6 +115,18 @@ namespace Common.RabbitMQ.Tests.Broker
             return WireCapture.Start(channel, ExchangeName);
         }
 
+        /// <summary>Binds a queue that refuses every publish, so the broker nacks messages sent with <paramref name="routingKey"/>.</summary>
+        public async Task RejectPublishes(string routingKey)
+        {
+            Dictionary<string, object> arguments = new Dictionary<string, object>
+            {
+                ["x-max-length"] = 0,
+                ["x-overflow"] = "reject-publish",
+            };
+            QueueDeclareOk queue = await channel.QueueDeclareAsync(queue: "", durable: false, exclusive: true, autoDelete: true, arguments: arguments).ConfigureAwait(false);
+            await channel.QueueBindAsync(queue.QueueName, ExchangeName, routingKey).ConfigureAwait(false);
+        }
+
         /// <summary>Publishes as another application would, without either build.</summary>
         public async Task PublishRaw(string routingKey, IDictionary<string, object> headers, byte[] body)
         {

@@ -32,6 +32,9 @@ namespace Messaging.RabbitMQ
     /// </summary>
     public sealed class RabbitMQBus : IDisposable
     {
+        /// <summary>How long <see cref="PublishConfirmedAsync"/> waits for the broker's confirm before giving up.</summary>
+        private static readonly TimeSpan ConfirmTimeout = TimeSpan.FromSeconds(30);
+
         private readonly RabbitMQBusOptions options;
         private readonly IMessageSerializer serializer;
         private readonly IInboundDispatcher dispatcher;
@@ -178,12 +181,23 @@ namespace Messaging.RabbitMQ
         /// Sent as the message-id property. Null for a new one; an outbox passes its row's ID so that a message sent again
         /// after a failure keeps the same ID.
         /// </param>
+        /// <remarks>
+        /// Published as mandatory. A message no queue is bound for still completes, because that is normal while no
+        /// receiver runs (desktop queues only exist while their app is open), but it is logged so a missing binding
+        /// shows instead of passing silently.
+        /// </remarks>
         /// <exception cref="BrokerUnavailableException">
-        /// The bus isn't connected, or the connection dropped during the publish. Try again later.
+        /// The bus isn't connected or has been stopped, the connection dropped during the publish, the broker refused the
+        /// message (a nack, e.g. a full queue rejecting publishes), or no confirm came within
+        /// <see cref="ConfirmTimeout"/>. None of these is the message's fault. Try again later.
         /// </exception>
         public async Task PublishConfirmedAsync(string wireName, object message, string routingKey, string messageId, CancellationToken cancellationToken)
         {
-            EnsureNotDisposed();
+            // Not ObjectDisposedException: to a caller such as an outbox, a stopped bus is just one that can't publish now.
+            if (disposed)
+            {
+                throw new BrokerUnavailableException($"Bus '{options.BusName}' has been stopped.");
+            }
 
             if (string.IsNullOrWhiteSpace(wireName))
             {
@@ -207,20 +221,45 @@ namespace Messaging.RabbitMQ
                 throw unavailable;
             }
 
-            try
+            // A connection the broker has blocked (memory or disk alarm), or a half-open one, never confirms. Without a limit
+            // the caller would wait until shutdown, holding up everything queued behind this message.
+            using (CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
-                await PublishMessage(channel, new PendingMessage(context, body), cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (!(ex is OperationCanceledException))
-            {
-                Observe(o => o.OnPublishFailed(context, ex), nameof(IMessagingObserver.OnPublishFailed));
+                timeout.CancelAfter(ConfirmTimeout);
 
-                if (ex is OperationInterruptedException || !channel.IsOpen)
+                try
                 {
-                    throw new BrokerUnavailableException($"Bus '{options.BusName}' lost its connection while publishing.", ex);
+                    await PublishMessage(channel, new PendingMessage(context, body), mandatory: true, timeout.Token).ConfigureAwait(false);
                 }
+                catch (PublishException ex) when (ex.IsReturn)
+                {
+                    WriteLog($"No queue is bound to exchange '{options.ExchangeName}' for routing key '{key}': message {id} ({wireName}) reached no receiver.");
+                }
+                catch (OperationCanceledException ex) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    BrokerUnavailableException unavailable = new BrokerUnavailableException(
+                        $"Bus '{options.BusName}' got no confirm from the broker within {ConfirmTimeout.TotalSeconds:0} s.", ex);
+                    Observe(o => o.OnPublishFailed(context, unavailable), nameof(IMessagingObserver.OnPublishFailed));
+                    throw unavailable;
+                }
+                catch (Exception ex) when (!(ex is OperationCanceledException))
+                {
+                    Observe(o => o.OnPublishFailed(context, ex), nameof(IMessagingObserver.OnPublishFailed));
 
-                throw;
+                    // PublishException here is a nack: the broker refused the message, e.g. a full queue that rejects
+                    // publishes. Like a lost connection, it's the broker's state, not the message, so it's worth a retry.
+                    if (ex is PublishException)
+                    {
+                        throw new BrokerUnavailableException($"Bus '{options.BusName}': the broker refused the message (nack).", ex);
+                    }
+
+                    if (ex is OperationInterruptedException || ex is ObjectDisposedException || !channel.IsOpen)
+                    {
+                        throw new BrokerUnavailableException($"Bus '{options.BusName}' lost its connection while publishing.", ex);
+                    }
+
+                    throw;
+                }
             }
 
             Observe(o => o.OnPublished(context), nameof(IMessagingObserver.OnPublished));
@@ -727,7 +766,7 @@ namespace Messaging.RabbitMQ
                     IChannel channel = publisherChannel;
                     if (channel != null && channel.IsOpen && outstandingMessages.TryPeek(out message))
                     {
-                        await PublishMessage(channel, message, token).ConfigureAwait(false);
+                        await PublishMessage(channel, message, mandatory: false, token).ConfigureAwait(false);
 
                         // Only removed once the broker confirmed it; on failure it is retried.
                         outstandingMessages.TryDequeue(out PendingMessage published);
@@ -756,7 +795,11 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        private async Task PublishMessage(IChannel channel, PendingMessage message, CancellationToken token)
+        /// <param name="mandatory">
+        /// False on the buffered path, as legacy apps always published. With true, a message no queue is bound for comes
+        /// back as a <see cref="PublishException"/> whose <see cref="PublishException.IsReturn"/> is set.
+        /// </param>
+        private async Task PublishMessage(IChannel channel, PendingMessage message, bool mandatory, CancellationToken token)
         {
             PublishContext context = message.Context;
 
@@ -787,7 +830,7 @@ namespace Messaging.RabbitMQ
             await channel.BasicPublishAsync(
                 exchange: options.ExchangeName,
                 routingKey: context.RoutingKey,
-                mandatory: false,
+                mandatory: mandatory,
                 basicProperties: properties,
                 body: message.Body,
                 cancellationToken: token).ConfigureAwait(false);
