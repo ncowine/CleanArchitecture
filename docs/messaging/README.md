@@ -27,6 +27,8 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
 >   unchanged. Modern WPF apps only subscribe.
 > - **New to the API's messaging?** Start with [How the API uses RabbitMQ](how-the-api-uses-rabbitmq.md): the whole
 >   path from handler to receiving app, why each piece exists, with pseudo code and a worked example.
+> - **Changing the messaging code?** [Reading the code](reading-the-code.md) maps every step to its file and method,
+>   explains the threads, and the .NET features you may not know (`AsyncLocal`, keyed services, `SemaphoreSlim`…).
 
 ---
 
@@ -150,7 +152,6 @@ Two ideas explain almost everything:
 | `Messaging/Messaging.Prism` | net8.0 | Prism.Core, Messaging.Hosting | Optional bridge: plain message classes as Prism events (`MessageEvent<T>`). | Modern WPF apps that like the Prism style. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
 | `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Newtonsoft 12.0.3, the engine | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
-| `Common.RabbitMQ.Configuration` | net472, net8.0 | System.Configuration | The `<rabbitMQ>` App.config section. | Legacy and net8 WPF apps. |
 | `Common.Events` | net472, net8.0 | Common.RabbitMQ | The demo apps' Prism events (`EmployeeUpdated` and others). | Demo WPF apps. |
 | `WpfApp.Net472` | net472 | the above | Demo legacy desktop app. | You, to try things. |
 | `WpfApp.Net8` | net8.0-windows | the above | Demo modern desktop app. It uses **both** styles side by side: Prism events on its Legacy bus, plain classes on its Modern bus. | You, and as the reference for migrating apps that keep Prism. |
@@ -166,7 +167,7 @@ Two ideas explain almost everything:
 | `Common.RabbitMQ.Tests/Broker` | The engine against a real broker: delivery, echo drop, headers, queues, retries, dead letters, observers. |
 | `Common.RabbitMQ.Tests/Hosting` | The server side and modern clients: handlers, JSON, telemetry, health, routing keys, the Prism bridge, `IMessageSubscriber`. |
 | `Common.RabbitMQ.Tests/LegacyModel` | A **model of the real legacy library** and every assumption about it, plus the new code working with it. |
-| `Common.RabbitMQ.Tests/Adapter` | The legacy adapter's newer features: events by assembly, App.config, routing rules. |
+| `Common.RabbitMQ.Tests/Adapter` | The legacy adapter's newer features: events by assembly, appsettings.json, routing rules. |
 | `Fixtures/Common.RabbitMQ.Baseline` | A **frozen copy** of the original library, so tests can prove old and new builds talk to each other. |
 | `Fixtures/LegacyModel` | The legacy model and example event projects (`AppA.Events`, `AppB.Events`, `Shared.Events`). |
 
@@ -321,9 +322,17 @@ RemoteEventRegistry registry = new RemoteEventRegistry()
     .Add(typeof(OrderSaved).Assembly)            // your app's events
     .Add(typeof(UserChanged).Assembly);          // shared events (netstandard2.0)
 
+IConfiguration configuration = new ConfigurationBuilder()
+    .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
+    .AddJsonFile("appsettings.json")
+    .AddEnvironmentVariables()                   // Messaging__Buses__AppB__Password at deployment
+    .Build();
+
 RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, registry);
-foreach (RabbitMQConfig config in RabbitMQConfigLoader.Load())
+foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
 {
+    RabbitMQConfig config = bus.Get<RabbitMQConfig>();
+    config.BusName = bus.Key;
     router.AddBus(config);
 }
 
@@ -332,25 +341,31 @@ containerRegistry.RegisterInstance<IRabbitMQService>(router);
 router.Init();                                   // connects in the background
 ```
 
-**2. Configure App.config:**
+It needs the `Microsoft.Extensions.Configuration.Json` and `.Binder` packages (they support .NET Framework 4.7.2).
 
-```xml
-<configSections>
-  <section name="rabbitMQ" type="Common.RabbitMQ.Configuration.RabbitMQConfigSection, Common.RabbitMQ.Configuration" />
-</configSections>
+**2. Configure appsettings.json**, the same `Messaging:Buses` section every app uses:
 
-<rabbitMQ>
-  <bus name="AppB" hostName="localhost" exchangeName="AppB" exchangeType="topic" clientName="AppB">
-    <subscriptions>
-      <subscribe exchange="AppA" />                                  <!-- every AppA event I know -->
-      <subscribe exchange="AppC" routingKeys="orders.*.saved" />     <!-- by pattern -->
-    </subscriptions>
-    <routes>
-      <route event="AppB.Events.CustomerChanged" routingKey="customers.eu.changed" />  <!-- optional default key -->
-    </routes>
-  </bus>
-</rabbitMQ>
+```json
+{
+  "Messaging": {
+    "Buses": {
+      "AppB": {
+        "HostName": "localhost",
+        "ExchangeName": "AppB",
+        "ClientName": "AppB",
+        "Subscriptions": [
+          { "Exchange": "AppA" },
+          { "Exchange": "AppC", "RoutingKeys": [ "orders.*.saved" ] }
+        ],
+        "RoutingKeys": { "AppB.Events.CustomerChanged": "customers.eu.changed" }
+      }
+    }
+  }
+}
 ```
+
+`Subscriptions` without `RoutingKeys` means every event of that exchange this app knows. `RoutingKeys` (optional) is
+a default routing key per event, used by `PublishRemote`.
 
 **3. Publish and subscribe, exactly as before:**
 
@@ -542,7 +557,7 @@ The step-by-step version, including the outbox table and the writer, is in
 
 | You have | Use |
 |---|---|
-| An existing .NET Framework WPF app | Recipe A. Change one registration line and App.config, nothing else. |
+| An existing .NET Framework WPF app | Recipe A. Change the registration lines and add appsettings.json, nothing else. |
 | A migrated .NET 8 WPF app that keeps Prism | Recipe B. Plain classes, but the familiar Prism style. |
 | A new .NET 8 WPF app, or one dropping Prism | Recipe C, like `WpfApp.Modern`. |
 | A server, or code that should be free of Prism | Recipe D. |
@@ -586,19 +601,20 @@ Example (`src/WebApi/appsettings.json`):
 }
 ```
 
-### Legacy apps (`App.config` → `<rabbitMQ><bus ...>`)
+### Legacy apps (`appsettings.json` → `Messaging:Buses:<name>`, bound onto `RabbitMQConfig`)
 
-| Attribute / element | Default | Meaning |
+The same section as above. The section key is the bus name, matched by `[RemoteEvent("name")]` or
+`RemoteEventRegistry.Add(assembly, "name")`. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`,
+`ExchangeName`, `ExchangeType`, `ClientName`, `PrefetchCount` and `Subscriptions` (`Exchange`, `RoutingKeys`) mean
+the same and have the same defaults. The differences:
+
+| Key | Default | Meaning |
 |---|---|---|
-| `name` | *(required)* | The bus name, matched by `[RemoteEvent("name")]` or `RemoteEventRegistry.Add(assembly, "name")`. |
-| `hostName`, `port`, `virtualHost` | `localhost`, `5672`, `/` | Where the broker is. |
-| `userName`, `password` | `guest`, `guest` | Credentials. |
-| `exchangeName` | *(required)* | This app's own exchange. |
-| `exchangeType` | `topic` | As above. |
-| `clientName` | the process name | As above. Set it: the process name includes `.exe`. |
-| `reconnectDelaySeconds`, `outstandingPollIntervalMilliseconds`, `prefetchCount`, `heartbeatSeconds` | `5`, `100`, `50`, `30` | As above. |
-| `<subscriptions><subscribe exchange="..." routingKeys="a, b" /></subscriptions>` | *(none)* | Other apps' exchanges. No `routingKeys` means one binding per known event. |
-| `<routes><route event="Full.Name" routingKey="..." /></routes>` | *(none)* | A default routing key per event, used by `PublishRemote`. |
+| `ClientName` | the process name | Set it: the process name includes `.exe`. |
+| `ReconnectDelaySeconds`, `OutstandingPollIntervalMilliseconds`, `HeartbeatSeconds` | `5`, `100`, `30` | Whole numbers, where the server uses `ReconnectDelay`, `OutstandingPollInterval` and `Heartbeat` (time spans). |
+| `RoutingKeys` | *(none)* | `{ "Full.Event.Name": "routing.key" }`: a default routing key per event, used by `PublishRemote`. |
+
+Server-only keys (`QueueMode`, retries, `HeaderMatch`, `ExchangeDurable`, `BindOwnExchange`) are ignored here.
 
 ### Headers on the wire
 

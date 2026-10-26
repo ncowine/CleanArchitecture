@@ -185,7 +185,6 @@ flowchart TB
 | `src/Messaging/Messaging.Hosting` | net8.0 | Server-style setup: `AddMessaging`, routes, handlers, `IMessageSubscriber`, `IConfirmedMessagePublisher`, System.Text.Json, telemetry, health check. |
 | `src/Messaging/Messaging.Prism` | net8.0 | Optional bridge for a .NET 8 app that wants to keep Prism's `IEventAggregator` style. |
 | `src/Common.RabbitMQ` | net472, net8.0 | **The legacy adapter**: the old `PublishRemote` / `IRabbitMQService` API on top of the engine. Public API is additions-only. |
-| `src/Common.RabbitMQ.Configuration` | net472, net8.0 | The legacy `<rabbitMQ>` App.config section. |
 | `src/BuildingBlocks.Outbox.Messaging` | net10.0 | **The relay**: sends outbox rows to RabbitMQ with a confirmed publish. |
 | `tests/Common.RabbitMQ.Tests` | net472, net8.0 | Golden wire bytes, the legacy public API, real-broker tests. |
 | `tests/Fixtures/*` | | The frozen original library, a model of the real legacy library, and demo events the golden tests need. |
@@ -680,13 +679,13 @@ public MainWindowViewModel(IMessageSubscriber subscriber)
 
 ## 15. Legacy apps: what they keep
 
-**Everything.** Their code, their App.config, their Prism events, their buffered publishing,
+**Everything.** Their code, their Prism events, their buffered publishing,
 and what happens when they close or crash. The adapter (`src/Common.RabbitMQ`) keeps the old
 public API; a test fails if anything is removed or changed, and each addition has to be
 listed with a reason.
 
 What the adapter *added* — events found by assembly instead of an attribute on each one,
-`PublishRemoteTo`, `<subscriptions>` and `<routes>` in App.config — is opt-in, and none of it
+`PublishRemoteTo`, `Subscriptions` and `RoutingKeys` in appsettings.json — is opt-in, and none of it
 is needed for an app to keep working.
 
 ### How the API reaches a legacy app
@@ -967,7 +966,6 @@ src/Messaging/
 └── Messaging.Hosting/TelemetryObserver.cs              traces, metrics, logs, correlation headers
 
 src/Common.RabbitMQ/                   the legacy adapter (public API frozen, additions only)
-src/Common.RabbitMQ.Configuration/     the legacy App.config section
 
 src/BuildingBlocks.Outbox/
 ├── OutboxProcessor.cs                 2 s / 20 / 3 attempts; honours deferral

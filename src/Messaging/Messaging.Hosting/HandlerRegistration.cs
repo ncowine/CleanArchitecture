@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -8,15 +7,12 @@ namespace Messaging.Hosting
 {
     internal sealed class HandlerRegistration
     {
-        public HandlerRegistration(Type messageType, Type handlerType, IReadOnlyCollection<string> buses)
+        public HandlerRegistration(Type messageType, Type handlerType, IReadOnlyCollection<string> buses, Func<object, object, MessageContext, CancellationToken, Task> invoke)
         {
             MessageType = messageType;
             HandlerType = handlerType;
             Buses = buses;
-
-            MethodInfo invoke = typeof(HandlerInvoker<>).MakeGenericType(messageType).GetMethod(nameof(HandlerInvoker<object>.Invoke));
-            Invoke = (Func<object, object, MessageContext, CancellationToken, Task>)invoke.CreateDelegate(
-                typeof(Func<object, object, MessageContext, CancellationToken, Task>));
+            Invoke = invoke;
         }
 
         public Type MessageType { get; }
@@ -26,7 +22,10 @@ namespace Messaging.Hosting
         /// <summary>The buses this handler receives from.</summary>
         public IReadOnlyCollection<string> Buses { get; }
 
-        /// <summary>(handler, message, context, token) → handler.Handle(message, context, token).</summary>
+        /// <summary>
+        /// (handler, message, context, token) → handler.Handle(message, context, token). Built in
+        /// <see cref="MessagingBuilder.Handle{TMessage, THandler}"/>, where both types are known, so no reflection is needed.
+        /// </summary>
         public Func<object, object, MessageContext, CancellationToken, Task> Invoke { get; }
     }
 }

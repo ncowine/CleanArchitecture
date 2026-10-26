@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Messaging.RabbitMQ;
@@ -29,18 +28,11 @@ namespace Messaging.Hosting
         /// </summary>
         public Task PublishAsync<TMessage>(TMessage message, PublishOptions options, CancellationToken cancellationToken = default)
         {
-            if (message == null)
-            {
-                throw new ArgumentNullException(nameof(message));
-            }
-
-            Type messageType = message.GetType();
-            RouteRegistration route = GetRoute(messageType);
-            string wireName = WireNames.Get(messageType);
+            RouteRegistration route = GetRoute(message);
+            string wireName = WireNames.Get(message.GetType());
             string routingKey = !string.IsNullOrEmpty(options?.RoutingKey) ? options.RoutingKey : route.RoutingKey?.Invoke(message);
 
-            IReadOnlyList<string> busNames = registry.GetRouteBuses(route);
-            foreach (string busName in busNames)
+            foreach (string busName in registry.GetRouteBuses(route))
             {
                 provider.GetRequiredKeyedService<RabbitMQBus>(busName).Enqueue(wireName, message, routingKey);
             }
@@ -50,14 +42,8 @@ namespace Messaging.Hosting
 
         public async Task PublishConfirmedAsync(object message, string messageId, CancellationToken cancellationToken = default)
         {
-            if (message == null)
-            {
-                throw new ArgumentNullException(nameof(message));
-            }
-
-            Type messageType = message.GetType();
-            RouteRegistration route = GetRoute(messageType);
-            string wireName = WireNames.Get(messageType);
+            RouteRegistration route = GetRoute(message);
+            string wireName = WireNames.Get(message.GetType());
             string routingKey = route.RoutingKey?.Invoke(message);
 
             foreach (string busName in registry.GetRouteBuses(route))
@@ -68,8 +54,14 @@ namespace Messaging.Hosting
             }
         }
 
-        private RouteRegistration GetRoute(Type messageType)
+        private RouteRegistration GetRoute(object message)
         {
+            if (message == null)
+            {
+                throw new ArgumentNullException(nameof(message));
+            }
+
+            Type messageType = message.GetType();
             return registry.GetRoute(messageType)
                 ?? throw new InvalidOperationException($"{messageType.Name} has no route. Add messaging.Route<{messageType.Name}>().");
         }

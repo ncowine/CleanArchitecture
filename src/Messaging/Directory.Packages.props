@@ -23,9 +23,10 @@
     <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-5crp-9r3c-p9vr" />
   </ItemGroup>
 
-  <!-- Common.RabbitMQ.Configuration on net8.0. -->
+  <!-- appsettings.json, the one configuration format: legacy apps bind it onto RabbitMQConfig (tested on net472). -->
   <ItemGroup>
-    <PackageVersion Include="System.Configuration.ConfigurationManager" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
   </ItemGroup>
 
   <!-- Messaging.Hosting: the 8.0 line, so net8 clients can opt in without being forced up. -->

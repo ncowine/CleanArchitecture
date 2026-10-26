@@ -12,30 +12,31 @@ namespace Messaging.Hosting
     /// </summary>
     internal sealed class MessagingRegistry
     {
-        private readonly Dictionary<string, BusRegistration> buses = new Dictionary<string, BusRegistration>(StringComparer.Ordinal);
+        /// <summary>Bus name → its serializer; null means the System.Text.Json default.</summary>
+        private readonly Dictionary<string, IMessageSerializer> buses = new Dictionary<string, IMessageSerializer>(StringComparer.Ordinal);
         private readonly Dictionary<Type, RouteRegistration> routes = new Dictionary<Type, RouteRegistration>();
         private readonly List<HandlerRegistration> handlers = new List<HandlerRegistration>();
         private readonly List<MessageTypeRegistration> messageTypes = new List<MessageTypeRegistration>();
         private readonly List<PendingSubscription> subscriptions = new List<PendingSubscription>();
 
-        public IReadOnlyCollection<BusRegistration> Buses => buses.Values;
+        public IReadOnlyCollection<string> BusNames => buses.Keys;
 
         /// <summary>Set by <see cref="MessagingBuilder.AddTelemetry"/>.</summary>
         public bool TelemetryEnabled { get; set; }
 
-        public void AddBus(BusRegistration bus)
+        public void AddBus(string name, IMessageSerializer serializer)
         {
-            if (buses.ContainsKey(bus.Name))
+            if (buses.ContainsKey(name))
             {
-                throw new InvalidOperationException($"Bus '{bus.Name}' is already added.");
+                throw new InvalidOperationException($"Bus '{name}' is already added.");
             }
 
-            buses.Add(bus.Name, bus);
+            buses.Add(name, serializer);
         }
 
-        public BusRegistration GetBus(string name)
+        public IMessageSerializer GetSerializer(string busName)
         {
-            return buses[name];
+            return buses[busName];
         }
 
         /// <summary>The route for <paramref name="messageType"/>, created on first use.</summary>
@@ -145,13 +146,13 @@ namespace Messaging.Hosting
                     .Select(b => $"The subscription to '{subscription.Subscription.Exchange}' is for unknown bus '{b}'."));
             }
 
-            foreach (BusRegistration bus in buses.Values)
+            foreach (string busName in buses.Keys)
             {
                 // Two types with one wire name on the same bus would make incoming messages ambiguous.
-                IEnumerable<string> duplicates = GetMessageRegistrations(bus.Name)
+                IEnumerable<string> duplicates = GetMessageRegistrations(busName)
                     .GroupBy(r => r.WireName)
                     .Where(g => g.Count() > 1)
-                    .Select(g => $"Bus '{bus.Name}' has several message types named '{g.Key}': {string.Join(", ", g.Select(r => r.MessageType.Name))}.");
+                    .Select(g => $"Bus '{busName}' has several message types named '{g.Key}': {string.Join(", ", g.Select(r => r.MessageType.Name))}.");
                 errors.AddRange(duplicates);
             }
 

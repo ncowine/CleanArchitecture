@@ -31,11 +31,11 @@ namespace Messaging.Hosting
         {
             registry.Validate();
 
-            foreach (BusRegistration registration in registry.Buses)
+            foreach (string busName in registry.BusNames)
             {
-                RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>(registration.Name);
+                RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>(busName);
                 bus.Log += OnBusLog;
-                bus.Start(registry.GetMessageRegistrations(registration.Name));
+                bus.Start(registry.GetMessageRegistrations(busName));
                 started.Add(bus);
             }
 

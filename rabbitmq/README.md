@@ -49,7 +49,8 @@ executable's file name (e.g. `WpfApp1.exe`), and `users.sh` must then use exactl
 
 - **API:** keep passwords out of `appsettings*.json`. Set `Messaging:Buses:Main:UserName` and `:Password` with user
   secrets in development, and environment variables (`Messaging__Buses__Main__Password`) on the server.
-- **Legacy apps:** `userName` and `password` on their `<bus>` element in App.config, set at deployment, not committed.
+- **Legacy apps:** the same keys in their `appsettings.json`, with the password from an environment variable
+  (`Messaging__Buses__<Bus>__Password`) set at deployment, not committed.
 - **Modern WPF apps** get events from the API over SignalR and need no broker user at all.
 
 ## Before other machines connect
