@@ -144,9 +144,8 @@ namespace Messaging.RabbitMQ
         }
 
         /// <summary>
-        /// As <see cref="Enqueue(string, object)"/>, routed with <paramref name="routingKey"/> instead of the wire name
-        /// (ADR 0002, section 3). The wire name still travels in the event-type header, so receivers identify the message
-        /// either way; only subscribers whose bindings match <paramref name="routingKey"/> receive it.
+        /// As <see cref="Enqueue(string, object)"/>, routed with <paramref name="routingKey"/> instead of the wire name. The
+        /// wire name still travels in the event-type header, so receivers identify the message either way.
         /// </summary>
         /// <param name="routingKey">Null or empty for the wire name.</param>
         public void Enqueue(string wireName, object message, string routingKey)
@@ -157,24 +156,15 @@ namespace Messaging.RabbitMQ
         }
 
         /// <summary>
-        /// Publishes <paramref name="message"/> now and completes once the broker has confirmed it (ADR 0003). Unlike
-        /// <see cref="Enqueue(string, object, string)"/>, nothing is buffered: the caller keeps the message until this
-        /// succeeds, which is what an outbox needs. Legacy apps never call it; the buffered path is unchanged.
+        /// Publishes <paramref name="message"/> now and completes once the broker has confirmed it (ADR 0003). Nothing is
+        /// buffered: the caller keeps the message until this succeeds, which is what an outbox needs. A message no queue
+        /// is bound for still completes (normal while no receiver runs), but it is logged.
         /// </summary>
         /// <param name="routingKey">Null or empty for the wire name.</param>
-        /// <param name="messageId">
-        /// Sent as the message-id property. Null for a new one; an outbox passes its row's ID so that a message sent again
-        /// after a failure keeps the same ID.
-        /// </param>
-        /// <remarks>
-        /// Published as mandatory. A message no queue is bound for still completes, because that is normal while no
-        /// receiver runs (desktop queues only exist while their app is open), but it is logged so a missing binding
-        /// shows instead of passing silently.
-        /// </remarks>
+        /// <param name="messageId">Null for a new one. An outbox passes its row's ID, so a message sent again keeps its ID.</param>
         /// <exception cref="BrokerUnavailableException">
-        /// The bus isn't connected or has been stopped, the connection dropped during the publish, the broker refused the
-        /// message (a nack, e.g. a full queue rejecting publishes), or no confirm came within
-        /// <see cref="ConfirmTimeout"/>. None of these is the message's fault. Try again later.
+        /// The bus isn't connected or is stopped, the connection dropped, the broker refused the message (nack), or no
+        /// confirm came within <see cref="ConfirmTimeout"/>. Not the message's fault: try again later.
         /// </exception>
         public async Task PublishConfirmedAsync(string wireName, object message, string routingKey, string messageId, CancellationToken cancellationToken)
         {
@@ -594,12 +584,7 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        /// <summary>
-        /// Per-instance queues (legacy behaviour): drops the bus's own messages, runs the dispatcher once and always
-        /// acknowledges. Shared queues: no echo drop (another instance's message is indistinguishable from ours), up to
-        /// <see cref="RabbitMQBusOptions.MaxAttempts"/> attempts, then the dead-letter queue. Unknown and undeserializable
-        /// messages go straight to the dead-letter queue.
-        /// </summary>
+        /// <summary>RabbitMQ.Client calls this for every delivery: <see cref="Receive"/> decides, then the delivery is settled.</summary>
         private async Task OnMessageReceived(object sender, BasicDeliverEventArgs args)
         {
             IChannel channel = ((AsyncEventingBasicConsumer)sender).Channel;
