@@ -51,7 +51,6 @@ src/
   Messaging/                 RabbitMQ messaging shared with legacy .NET Framework apps (docs/messaging/)
     Messaging.Abstractions / .RabbitMQ (engine) / .Hosting (server DI) / .Prism (optional bridge)
   Common.RabbitMQ/           Legacy Prism adapter over the engine; public API is additions-only
-  Common.RabbitMQ.Configuration/  The legacy <rabbitMQ> App.config section
   Api/CleanArch.Api/         Host: composition root, auth, observability, middleware, endpoints map
   SharedKernel/              Shared, read-only reference data — not a module, owned by neither consumer
     SharedKernel.Models / .Data / .DataService / .Presentation

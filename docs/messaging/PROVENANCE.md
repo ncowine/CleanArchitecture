@@ -13,7 +13,8 @@ reference the adapter by relative path (`src/Common.RabbitMQ`), so the source re
 | Here | From | Changes |
 |---|---|---|
 | `src/Messaging/Messaging.Abstractions`, `.RabbitMQ`, `.Hosting`, `.Prism` | same paths | none |
-| `src/Common.RabbitMQ`, `src/Common.RabbitMQ.Configuration` | same paths | none |
+| `src/Common.RabbitMQ` | same path | none |
+| `src/Common.RabbitMQ.Configuration` | same path | **removed** 2026-10-26, see below |
 | `tests/Common.RabbitMQ.Tests` | same path | two project references point at the relocated fixtures below |
 | `tests/Fixtures/Common.RabbitMQ.Baseline`, `Compat.Events`, `Compat.Events.Baseline`, `LegacyModel/*` | same paths | none |
 | `tests/Fixtures/Common.Events` | `src/Common.Events` | moved to test fixtures; path to `Common.RabbitMQ` updated |
@@ -38,8 +39,8 @@ with `[Message("...")]`, referencing only `Messaging.Abstractions`:
 ## Build isolation
 
 `src/Messaging/Directory.Build.props` and `src/Messaging/Directory.Packages.props` hold the settings for every copied
-project. The other copied folders (`src/Common.RabbitMQ`, `src/Common.RabbitMQ.Configuration`,
-`tests/Common.RabbitMQ.Tests`, `tests/Fixtures`) have small files that import them. None of them import the
+project. The other copied folders (`src/Common.RabbitMQ`, `tests/Common.RabbitMQ.Tests`, `tests/Fixtures`) have
+small files that import them. None of them import the
 repository root's files, because the root sets things the legacy-compatible code must not get:
 
 | Root setting | Messaging setting | Why |
@@ -75,5 +76,6 @@ Record each change to the copied code here (what and why), so a later comparison
 | 2026-09-27 | `Messaging.Hosting`: `IConfirmedMessagePublisher` (new), `MessagePublisher` | Exposes the confirmed publish, using the message's route | ADR 0003. |
 | 2026-10-22 | `Messaging.RabbitMQ`: `RabbitMQBus.PublishConfirmedAsync`, `PublishMessage` | Confirmed publish: a nack, a 30 s confirm timeout and a stopped bus throw `BrokerUnavailableException`; published as mandatory, and an unroutable message is logged and completes | Review fixes so the outbox can't dead-letter, lose or stall on these (ADR 0003, amended). Local to this repo: RabbitMQ-Refactor has no confirmed publish. The buffered path is unchanged. |
 | 2026-10-22 | `Messaging.Abstractions`: `PublishContext.RetriedOnFailure` (new, additive); `Messaging.Hosting`: `TelemetryObserver`; `Messaging.RabbitMQ`: `RabbitMQBus.PublishConfirmedAsync` | A failed or cancelled confirmed publish ends its span with an error status; the observer is told about a cancelled one | Spans of confirmed publishes were never stopped on failure (the observer assumed a retry under the same context) and a cancelled one skipped the observer, so outages were invisible in traces. Buffered path unchanged: `RetriedOnFailure` defaults to true. |
+| 2026-10-26 | `Common.RabbitMQ.Configuration` (removed), `tests/Common.RabbitMQ.Tests/Adapter/AppSettingsTests` (replaces `AppConfigTests`) | The `<rabbitMQ>` App.config section is gone. Every app, legacy included, reads `Messaging:Buses:<name>` from appsettings.json; legacy apps bind it onto `RabbitMQConfig` | One configuration format instead of three. The section was a guess at the legacy format (assumption A9) and nothing used it. `RabbitMQConfig`'s public API is unchanged. |
 
-`src/Common.RabbitMQ`, `src/Common.RabbitMQ.Configuration`, the wire format and the golden files are unchanged.
+`src/Common.RabbitMQ`, the wire format and the golden files are unchanged.
