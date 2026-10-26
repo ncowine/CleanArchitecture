@@ -15,16 +15,12 @@ namespace Messaging.RabbitMQ
     /// <summary>
     /// One connection to one bus (virtual host + exchange).
     /// <para>
-    /// <see cref="Start"/> starts three fire-and-forget loops:
-    /// <list type="bullet">
-    /// <item><see cref="ConnectConsumer"/> - connects, creates this instance's queue, binds the subscribed wire names and
-    /// then keeps checking for a dropped connection, reconnecting when needed.</item>
-    /// <item><see cref="ConnectPublisher"/> - same, for the publishing connection.</item>
-    /// <item><see cref="OutstandingQueue"/> - sends buffered messages whenever the publisher is connected.</item>
-    /// </list>
+    /// <see cref="Start"/> starts three background loops that run until the bus is disposed: <see cref="KeepConnected"/>
+    /// once for the consumer connection (its queue and bindings) and once for the publisher connection, and
+    /// <see cref="OutstandingQueue"/>, which sends buffered messages whenever the publisher is connected.
     /// </para>
-    /// Every instance has its own exclusive queue, so every instance receives every message; its own messages are
-    /// dropped using the <see cref="WireHeaders.SourceId"/> header. Received messages go to the <see cref="IInboundDispatcher"/>.
+    /// By default every instance has its own exclusive queue, so every instance receives every message; its own messages
+    /// are dropped using the <see cref="WireHeaders.SourceId"/> header. Received messages go to the <see cref="IInboundDispatcher"/>.
     /// <para>
     /// The optional <see cref="IMessagingObserver"/> sees every stage and can add headers to outgoing messages.
     /// Without one, nothing beyond the frozen wire format is sent.
@@ -132,8 +128,8 @@ namespace Messaging.RabbitMQ
 
             CancellationToken token = cancellation.Token;
 
-            Task.Run(() => ConnectConsumer(token));
-            Task.Run(() => ConnectPublisher(token));
+            Task.Run(() => KeepConnected(ConnectionRole.Consumer, token));
+            Task.Run(() => KeepConnected(ConnectionRole.Publisher, token));
             Task.Run(() => OutstandingQueue(token));
         }
 
@@ -157,18 +153,7 @@ namespace Messaging.RabbitMQ
         {
             EnsureNotDisposed();
 
-            if (string.IsNullOrWhiteSpace(wireName))
-            {
-                throw new ArgumentException("A wire name is required.", nameof(wireName));
-            }
-
-            byte[] body = serializer.Serialize(message);
-
-            string key = string.IsNullOrEmpty(routingKey) ? wireName : routingKey;
-            PublishContext context = new PublishContext(wireName, options.BusName, Guid.NewGuid().ToString("N"), message?.GetType(), key);
-            Observe(o => o.OnPublishing(context), nameof(IMessagingObserver.OnPublishing));
-
-            outstandingMessages.Enqueue(new PendingMessage(context, body));
+            outstandingMessages.Enqueue(Prepare(wireName, message, routingKey, messageId: null, retriedOnFailure: true));
         }
 
         /// <summary>
@@ -199,17 +184,8 @@ namespace Messaging.RabbitMQ
                 throw new BrokerUnavailableException($"Bus '{options.BusName}' has been stopped.");
             }
 
-            if (string.IsNullOrWhiteSpace(wireName))
-            {
-                throw new ArgumentException("A wire name is required.", nameof(wireName));
-            }
-
-            byte[] body = serializer.Serialize(message);
-
-            string key = string.IsNullOrEmpty(routingKey) ? wireName : routingKey;
-            string id = string.IsNullOrEmpty(messageId) ? Guid.NewGuid().ToString("N") : messageId;
-            PublishContext context = new PublishContext(wireName, options.BusName, id, message?.GetType(), key, retriedOnFailure: false);
-            Observe(o => o.OnPublishing(context), nameof(IMessagingObserver.OnPublishing));
+            PendingMessage pending = Prepare(wireName, message, routingKey, messageId, retriedOnFailure: false);
+            PublishContext context = pending.Context;
 
             // RabbitMQ.Client 7 serializes publishes on a channel itself and waits for each confirm separately, so this
             // shares the publisher channel with the outgoing buffer's loop safely.
@@ -229,47 +205,82 @@ namespace Messaging.RabbitMQ
 
                 try
                 {
-                    await PublishMessage(channel, new PendingMessage(context, body), mandatory: true, timeout.Token).ConfigureAwait(false);
+                    await PublishMessage(channel, pending, mandatory: true, timeout.Token).ConfigureAwait(false);
                 }
                 catch (PublishException ex) when (ex.IsReturn)
                 {
-                    WriteLog($"No queue is bound to exchange '{options.ExchangeName}' for routing key '{key}': message {id} ({wireName}) reached no receiver.");
-                }
-                catch (OperationCanceledException ex) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                {
-                    BrokerUnavailableException unavailable = new BrokerUnavailableException(
-                        $"Bus '{options.BusName}' got no confirm from the broker within {ConfirmTimeout.TotalSeconds:0} s.", ex);
-                    Observe(o => o.OnPublishFailed(context, unavailable), nameof(IMessagingObserver.OnPublishFailed));
-                    throw unavailable;
-                }
-                catch (OperationCanceledException ex)
-                {
-                    // The caller gave up, e.g. the host is shutting down. The message may or may not be on the broker, but
-                    // this context is finished either way, so the observer still hears about it.
-                    Observe(o => o.OnPublishFailed(context, ex), nameof(IMessagingObserver.OnPublishFailed));
-                    throw;
+                    WriteLog($"No queue is bound to exchange '{options.ExchangeName}' for routing key '{context.RoutingKey}': message {context.MessageId} ({wireName}) reached no receiver.");
                 }
                 catch (Exception ex)
                 {
-                    Observe(o => o.OnPublishFailed(context, ex), nameof(IMessagingObserver.OnPublishFailed));
+                    bool timedOut = timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested;
+                    BrokerUnavailableException unavailable = AsBrokerUnavailable(ex, channel, timedOut);
 
-                    // PublishException here is a nack: the broker refused the message, e.g. a full queue that rejects
-                    // publishes. Like a lost connection, it's the broker's state, not the message, so it's worth a retry.
-                    if (ex is PublishException)
+                    // The observer hears about every failure, so the publish's span always ends. A timeout is reported as
+                    // the timeout, anything else as the error the client raised.
+                    Exception reported = timedOut ? unavailable : ex;
+                    Observe(o => o.OnPublishFailed(context, reported), nameof(IMessagingObserver.OnPublishFailed));
+
+                    if (unavailable == null)
                     {
-                        throw new BrokerUnavailableException($"Bus '{options.BusName}': the broker refused the message (nack).", ex);
+                        throw;
                     }
 
-                    if (ex is OperationInterruptedException || ex is ObjectDisposedException || !channel.IsOpen)
-                    {
-                        throw new BrokerUnavailableException($"Bus '{options.BusName}' lost its connection while publishing.", ex);
-                    }
-
-                    throw;
+                    throw unavailable;
                 }
             }
 
             Observe(o => o.OnPublished(context), nameof(IMessagingObserver.OnPublished));
+        }
+
+        /// <summary>
+        /// The <see cref="BrokerUnavailableException"/> a failed confirmed publish becomes, or null to rethrow the original:
+        /// when the caller cancelled, or the error isn't the broker's.
+        /// </summary>
+        private BrokerUnavailableException AsBrokerUnavailable(Exception ex, IChannel channel, bool timedOut)
+        {
+            if (timedOut)
+            {
+                return new BrokerUnavailableException($"Bus '{options.BusName}' got no confirm from the broker within {ConfirmTimeout.TotalSeconds:0} s.", ex);
+            }
+
+            // The caller gave up, e.g. the host is shutting down. The message may or may not be on the broker.
+            if (ex is OperationCanceledException)
+            {
+                return null;
+            }
+
+            // A nack: the broker refused the message, e.g. a full queue that rejects publishes. Like a lost connection,
+            // it's the broker's state, not the message, so it's worth a retry.
+            if (ex is PublishException)
+            {
+                return new BrokerUnavailableException($"Bus '{options.BusName}': the broker refused the message (nack).", ex);
+            }
+
+            if (ex is OperationInterruptedException || ex is ObjectDisposedException || !channel.IsOpen)
+            {
+                return new BrokerUnavailableException($"Bus '{options.BusName}' lost its connection while publishing.", ex);
+            }
+
+            return null;
+        }
+
+        /// <summary>The steps both publish paths share: serialize, pick the routing key and ID, tell the observer.</summary>
+        private PendingMessage Prepare(string wireName, object message, string routingKey, string messageId, bool retriedOnFailure)
+        {
+            if (string.IsNullOrWhiteSpace(wireName))
+            {
+                throw new ArgumentException("A wire name is required.", nameof(wireName));
+            }
+
+            byte[] body = serializer.Serialize(message);
+
+            string key = string.IsNullOrEmpty(routingKey) ? wireName : routingKey;
+            string id = string.IsNullOrEmpty(messageId) ? Guid.NewGuid().ToString("N") : messageId;
+            PublishContext context = new PublishContext(wireName, options.BusName, id, message?.GetType(), key, retriedOnFailure);
+            Observe(o => o.OnPublishing(context), nameof(IMessagingObserver.OnPublishing));
+
+            return new PendingMessage(context, body);
         }
 
         /// <summary>Starts receiving <paramref name="registration"/>. Does nothing when already subscribed.</summary>
@@ -343,20 +354,31 @@ namespace Messaging.RabbitMQ
             cancellation.Dispose();
         }
 
-        #region Consumer
+        #region Connections
 
-        private async Task ConnectConsumer(CancellationToken token)
+        /// <summary>
+        /// Runs until the bus stops. Every <see cref="RabbitMQBusOptions.ReconnectDelay"/> it checks the connection for
+        /// <paramref name="role"/> and, when it's missing or dropped, closes what's left and opens a new one.
+        /// </summary>
+        private async Task KeepConnected(ConnectionRole role, CancellationToken token)
         {
             while (!token.IsCancellationRequested)
             {
                 try
                 {
-                    if (!IsOpen(consumerConnection, consumerChannel))
+                    if (role == ConnectionRole.Consumer && !IsConsumerConnected)
                     {
                         await CloseConsumer().ConfigureAwait(false);
                         await OpenConsumer(token).ConfigureAwait(false);
                         WriteLog($"Consumer connected, queue '{consumerQueueName}'.");
-                        ObserveConnection(ConnectionRole.Consumer, ConnectionStatus.Connected, null, null);
+                        ObserveConnection(role, ConnectionStatus.Connected, null, null);
+                    }
+                    else if (role == ConnectionRole.Publisher && !IsPublisherConnected)
+                    {
+                        await ClosePublisher().ConfigureAwait(false);
+                        await OpenPublisher(token).ConfigureAwait(false);
+                        WriteLog("Publisher connected.");
+                        ObserveConnection(role, ConnectionStatus.Connected, null, null);
                     }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -365,8 +387,8 @@ namespace Messaging.RabbitMQ
                 }
                 catch (Exception ex)
                 {
-                    WriteLog($"Consumer connection failed: {ex.Message}");
-                    ObserveConnection(ConnectionRole.Consumer, ConnectionStatus.Failed, null, ex);
+                    WriteLog($"{role} connection failed: {ex.Message}");
+                    ObserveConnection(role, ConnectionStatus.Failed, null, ex);
                 }
 
                 if (!await Delay(options.ReconnectDelay, token).ConfigureAwait(false))
@@ -375,6 +397,28 @@ namespace Messaging.RabbitMQ
                 }
             }
         }
+
+        private Task OnConsumerConnectionShutdown(object sender, ShutdownEventArgs args)
+        {
+            return OnConnectionLost(ConnectionRole.Consumer, args);
+        }
+
+        private Task OnPublisherConnectionShutdown(object sender, ShutdownEventArgs args)
+        {
+            return OnConnectionLost(ConnectionRole.Publisher, args);
+        }
+
+        /// <summary>Only reports the loss; <see cref="KeepConnected"/> notices it on its next check and reconnects.</summary>
+        private Task OnConnectionLost(ConnectionRole role, ShutdownEventArgs args)
+        {
+            WriteLog($"{role} connection lost: {args.ReplyText}");
+            ObserveConnection(role, ConnectionStatus.Lost, args.ReplyText, null);
+            return Task.CompletedTask;
+        }
+
+        #endregion
+
+        #region Consumer
 
         private async Task OpenConsumer(CancellationToken token)
         {
@@ -559,41 +603,63 @@ namespace Messaging.RabbitMQ
         private async Task OnMessageReceived(object sender, BasicDeliverEventArgs args)
         {
             IChannel channel = ((AsyncEventingBasicConsumer)sender).Channel;
-            bool shared = options.QueueMode == QueueMode.Shared;
-            MessageSettlement settlement = MessageSettlement.Ack;
-            MessageContext context = null;
-            Stopwatch stopwatch = null;
+            MessageSettlement settlement;
 
             try
             {
-                CancellationToken token = cancellation.Token;
-                Dictionary<string, string> headers = ReadHeaders(args.BasicProperties?.Headers);
+                settlement = await Receive(args).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Failed before the message was identified, e.g. on its headers.
+                WriteLog($"Failed to handle message '{args.RoutingKey}': {ex.Message}");
+                settlement = FailedSettlement;
+            }
 
-                // Our own message coming back - the sender's local side has already seen it.
-                if (!shared && headers.TryGetValue(WireHeaders.SourceId, out string sourceId) && sourceId == instanceId)
-                {
-                    return;
-                }
+            await Settle(channel, args.DeliveryTag, settlement).ConfigureAwait(false);
+        }
 
-                string wireName = headers.TryGetValue(WireHeaders.MessageType, out string messageType) && messageType != null
-                    ? messageType
-                    : args.RoutingKey;
-                if (!subscriptions.TryGetValue(wireName, out MessageRegistration registration))
-                {
-                    WriteLog($"Ignored unknown event '{wireName}'.");
+        /// <summary>Identifies one delivery and hands it to the dispatcher. Returns what to tell the broker.</summary>
+        private async Task<MessageSettlement> Receive(BasicDeliverEventArgs args)
+        {
+            CancellationToken token = cancellation.Token;
+            Dictionary<string, string> headers = ReadHeaders(args.BasicProperties?.Headers);
 
-                    // With only per-type bindings an unknown message is a mistake worth keeping. Pattern and header
-                    // subscriptions bring in unhandled types by design, so those are just skipped.
-                    settlement = shared && !HasFixedBindings() ? MessageSettlement.DeadLetter : MessageSettlement.Ack;
-                    return;
-                }
+            if (IsOwnEcho(headers))
+            {
+                return MessageSettlement.Ack;
+            }
 
-                headers.TryGetValue(WireHeaders.CorrelationId, out string correlationId);
-                context = new MessageContext(wireName, options.BusName, args.BasicProperties?.MessageId, correlationId, args.Redelivered, headers, args.Exchange, args.RoutingKey);
-                Observe(o => o.OnReceived(context), nameof(IMessagingObserver.OnReceived));
-                stopwatch = Stopwatch.StartNew();
+            string wireName = headers.TryGetValue(WireHeaders.MessageType, out string messageType) && messageType != null
+                ? messageType
+                : args.RoutingKey;
+            if (!subscriptions.TryGetValue(wireName, out MessageRegistration registration))
+            {
+                WriteLog($"Ignored unknown event '{wireName}'.");
 
-                int attempts = shared ? options.MaxAttempts : 1;
+                // With only per-type bindings an unknown message is a mistake worth keeping. Pattern and header
+                // subscriptions bring in unhandled types by design, so those are just skipped.
+                return IsShared && !HasFixedBindings() ? MessageSettlement.DeadLetter : MessageSettlement.Ack;
+            }
+
+            headers.TryGetValue(WireHeaders.CorrelationId, out string correlationId);
+            MessageContext context = new MessageContext(wireName, options.BusName, args.BasicProperties?.MessageId, correlationId, args.Redelivered, headers, args.Exchange, args.RoutingKey);
+            Observe(o => o.OnReceived(context), nameof(IMessagingObserver.OnReceived));
+
+            return await HandleWithRetries(registration, context, args, token).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Runs the dispatcher: once on a per-instance queue, up to <see cref="RabbitMQBusOptions.MaxAttempts"/> times on a
+        /// shared one, waiting <see cref="RabbitMQBusOptions.RetryDelay"/> between attempts.
+        /// </summary>
+        private async Task<MessageSettlement> HandleWithRetries(MessageRegistration registration, MessageContext context, BasicDeliverEventArgs args, CancellationToken token)
+        {
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            int attempts = IsShared ? options.MaxAttempts : 1;
+
+            try
+            {
                 for (int attempt = 1; ; attempt++)
                 {
                     // A fresh copy per attempt, so a handler that changed the message doesn't affect the retry.
@@ -605,7 +671,7 @@ namespace Messaging.RabbitMQ
                         await dispatcher.Dispatch(registration, message, context, args.CancellationToken).ConfigureAwait(false);
 
                         Observe(o => o.OnHandled(context, stopwatch.Elapsed), nameof(IMessagingObserver.OnHandled));
-                        return;
+                        return MessageSettlement.Ack;
                     }
                     catch (Exception ex) when (attempt < attempts && !token.IsCancellationRequested)
                     {
@@ -616,28 +682,33 @@ namespace Messaging.RabbitMQ
 
                     if (!await Delay(options.RetryDelay, token).ConfigureAwait(false))
                     {
-                        settlement = MessageSettlement.None;
-                        return;
+                        // Stopping: leave it unacknowledged, so the broker gives it to another instance or the next start.
+                        return MessageSettlement.None;
                     }
                 }
             }
             catch (Exception ex)
             {
-                // Per-instance queues: acked anyway so a bad message can't be redelivered forever.
                 WriteLog($"Failed to handle message '{args.RoutingKey}': {ex.Message}");
-                settlement = shared ? MessageSettlement.DeadLetter : MessageSettlement.Ack;
+                TimeSpan duration = stopwatch.Elapsed;
+                FailedMessageAction action = IsShared ? FailedMessageAction.DeadLettered : FailedMessageAction.Dropped;
+                Observe(o => o.OnHandlingFailed(context, duration, ex, action), nameof(IMessagingObserver.OnHandlingFailed));
+                return FailedSettlement;
+            }
+        }
 
-                if (context != null)
-                {
-                    TimeSpan duration = stopwatch?.Elapsed ?? TimeSpan.Zero;
-                    FailedMessageAction action = shared ? FailedMessageAction.DeadLettered : FailedMessageAction.Dropped;
-                    Observe(o => o.OnHandlingFailed(context, duration, ex, action), nameof(IMessagingObserver.OnHandlingFailed));
-                }
-            }
-            finally
-            {
-                await Settle(channel, args.DeliveryTag, settlement).ConfigureAwait(false);
-            }
+        private bool IsShared => options.QueueMode == QueueMode.Shared;
+
+        /// <summary>Shared queues dead-letter a failed message. Per-instance queues ack it anyway, so a bad message can't be redelivered forever.</summary>
+        private MessageSettlement FailedSettlement => IsShared ? MessageSettlement.DeadLetter : MessageSettlement.Ack;
+
+        /// <summary>
+        /// Our own message coming back: the sender's local side has already seen it. Only on per-instance queues; on a
+        /// shared queue another instance's message looks the same as ours.
+        /// </summary>
+        private bool IsOwnEcho(Dictionary<string, string> headers)
+        {
+            return !IsShared && headers.TryGetValue(WireHeaders.SourceId, out string sourceId) && sourceId == instanceId;
         }
 
         private async Task Settle(IChannel channel, ulong deliveryTag, MessageSettlement settlement)
@@ -669,47 +740,9 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        private Task OnConsumerConnectionShutdown(object sender, ShutdownEventArgs args)
-        {
-            WriteLog($"Consumer connection lost: {args.ReplyText}");
-            ObserveConnection(ConnectionRole.Consumer, ConnectionStatus.Lost, args.ReplyText, null);
-            return Task.CompletedTask;
-        }
-
         #endregion
 
         #region Publisher
-
-        private async Task ConnectPublisher(CancellationToken token)
-        {
-            while (!token.IsCancellationRequested)
-            {
-                try
-                {
-                    if (!IsOpen(publisherConnection, publisherChannel))
-                    {
-                        await ClosePublisher().ConfigureAwait(false);
-                        await OpenPublisher(token).ConfigureAwait(false);
-                        WriteLog("Publisher connected.");
-                        ObserveConnection(ConnectionRole.Publisher, ConnectionStatus.Connected, null, null);
-                    }
-                }
-                catch (OperationCanceledException) when (token.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    WriteLog($"Publisher connection failed: {ex.Message}");
-                    ObserveConnection(ConnectionRole.Publisher, ConnectionStatus.Failed, null, ex);
-                }
-
-                if (!await Delay(options.ReconnectDelay, token).ConfigureAwait(false))
-                {
-                    break;
-                }
-            }
-        }
 
         private async Task OpenPublisher(CancellationToken token)
         {
@@ -750,13 +783,6 @@ namespace Messaging.RabbitMQ
             }
 
             await CloseQuietly(channel, connection).ConfigureAwait(false);
-        }
-
-        private Task OnPublisherConnectionShutdown(object sender, ShutdownEventArgs args)
-        {
-            WriteLog($"Publisher connection lost: {args.ReplyText}");
-            ObserveConnection(ConnectionRole.Publisher, ConnectionStatus.Lost, args.ReplyText, null);
-            return Task.CompletedTask;
         }
 
         #endregion
@@ -858,7 +884,7 @@ namespace Messaging.RabbitMQ
                 Password = options.Password,
                 RequestedHeartbeat = options.Heartbeat,
 
-                // Reconnecting is done by ConnectConsumer / ConnectPublisher.
+                // Reconnecting is done by KeepConnected.
                 AutomaticRecoveryEnabled = false,
                 TopologyRecoveryEnabled = false,
             };
