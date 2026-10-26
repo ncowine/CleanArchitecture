@@ -27,6 +27,8 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
 >   unchanged. Modern WPF apps only subscribe.
 > - **New to the API's messaging?** Start with [How the API uses RabbitMQ](how-the-api-uses-rabbitmq.md): the whole
 >   path from handler to receiving app, why each piece exists, with pseudo code and a worked example.
+> - **Changing the messaging code?** [Reading the code](reading-the-code.md) maps every step to its file and method,
+>   explains the threads, and the .NET features you may not know (`AsyncLocal`, keyed services, `SemaphoreSlim`…).
 
 ---
 
