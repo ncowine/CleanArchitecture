@@ -43,7 +43,7 @@ namespace Messaging.Hosting
         {
             MessagingRegistry registry = provider.GetRequiredService<MessagingRegistry>();
             RabbitMQBusOptions options = provider.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get(name);
-            IMessageSerializer serializer = registry.GetBus(name).Serializer ?? new SystemTextJsonMessageSerializer();
+            IMessageSerializer serializer = registry.GetSerializer(name) ?? new SystemTextJsonMessageSerializer();
 
             // Subscriptions added in code join those from configuration. Each bus is created once.
             options.Subscriptions.AddRange(registry.GetSubscriptions(name));

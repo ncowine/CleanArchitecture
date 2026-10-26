@@ -130,7 +130,11 @@ namespace Messaging.Hosting
             where THandler : class, IMessageHandler<TMessage>
         {
             Services.AddScoped<THandler>();
-            return new HandlerBuilder(this, typeof(TMessage), typeof(THandler));
+            return new HandlerBuilder(
+                this,
+                typeof(TMessage),
+                typeof(THandler),
+                (handler, message, context, cancellationToken) => ((THandler)handler).Handle((TMessage)message, context, cancellationToken));
         }
 
         private void AddBus(string name, IMessageSerializer serializer)
@@ -140,7 +144,7 @@ namespace Messaging.Hosting
                 throw new ArgumentException("A bus name is required.", nameof(name));
             }
 
-            Registry.AddBus(new BusRegistration(name, serializer));
+            Registry.AddBus(name, serializer);
 
             Services.AddOptions<RabbitMQBusOptions>(name).PostConfigure(options =>
             {

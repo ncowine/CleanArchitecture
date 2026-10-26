@@ -28,16 +28,16 @@ namespace Messaging.Hosting
             Dictionary<string, object> data = new Dictionary<string, object>();
             List<string> down = new List<string>();
 
-            foreach (BusRegistration registration in registry.Buses)
+            foreach (string busName in registry.BusNames)
             {
-                RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>(registration.Name);
-                data[$"{registration.Name}.consumer"] = bus.IsConsumerConnected ? "connected" : "disconnected";
-                data[$"{registration.Name}.publisher"] = bus.IsPublisherConnected ? "connected" : "disconnected";
-                data[$"{registration.Name}.outstanding"] = bus.OutstandingCount;
+                RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>(busName);
+                data[$"{busName}.consumer"] = bus.IsConsumerConnected ? "connected" : "disconnected";
+                data[$"{busName}.publisher"] = bus.IsPublisherConnected ? "connected" : "disconnected";
+                data[$"{busName}.outstanding"] = bus.OutstandingCount;
 
                 if (!bus.IsConsumerConnected || !bus.IsPublisherConnected)
                 {
-                    down.Add(registration.Name);
+                    down.Add(busName);
                 }
             }
 

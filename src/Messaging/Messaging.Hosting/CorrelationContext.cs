@@ -10,32 +10,28 @@ namespace Messaging.Hosting
     /// </summary>
     public static class CorrelationContext
     {
+        // AsyncLocal: like a static field, but each chain of async calls has its own value. A value set here is seen by
+        // everything this call goes on to run, across awaits and thread switches, while messages handled at the same
+        // time each keep their own ID. A plain static would let them overwrite each other.
         private static readonly AsyncLocal<string> current = new AsyncLocal<string>();
 
         /// <summary>Null outside an operation.</summary>
         public static string Current => current.Value;
 
-        /// <summary>Makes <paramref name="correlationId"/> current until the returned scope is disposed.</summary>
+        /// <summary>
+        /// Makes <paramref name="correlationId"/> current until the returned scope is disposed, then puts back the
+        /// previous one. Use it in a <c>using</c> block.
+        /// </summary>
         public static IDisposable Begin(string correlationId)
         {
             string previous = current.Value;
             current.Value = correlationId;
-            return new Scope(previous);
+            return new CorrelationScope(previous);
         }
 
-        private sealed class Scope : IDisposable
+        internal static void Restore(string previous)
         {
-            private readonly string previous;
-
-            public Scope(string previous)
-            {
-                this.previous = previous;
-            }
-
-            public void Dispose()
-            {
-                current.Value = previous;
-            }
+            current.Value = previous;
         }
     }
 }
