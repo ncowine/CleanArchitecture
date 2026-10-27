@@ -5,9 +5,10 @@ namespace Poc.Net8.Views;
 
 public partial class MainWindow : Window
 {
-    public MainWindow(MainWindowViewModel viewModel)
+    public MainWindow(MainWindowViewModel viewModel, SelectionStatusViewModel status)
     {
         InitializeComponent();
         DataContext = viewModel;
+        StatusBar.DataContext = status;   // its own view model: the two only meet through the local event
     }
 }

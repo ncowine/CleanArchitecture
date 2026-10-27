@@ -56,6 +56,13 @@ couldn't read one anyway. It doesn't even reference the legacy events project.
 | Equipment created / updated / deleted | `Equipment.EquipmentCreated` … | the API, through its outbox (~2 s) | `Equipment.Messages` classes |
 | A note on a piece of equipment | `Poc.Legacy.Events.EquipmentNoteSent` | net472, net8 | `PubSubEvent<EquipmentNote>` |
 | Equipment disposed of | `Poc.Legacy.Events.EquipmentDisposed` | net472 | `PubSubEvent<EquipmentDisposal>` |
+| A row was selected (**local only**) | none: never on the wire | net472, net8, inside the app | `PubSubEvent<EquipmentRow?>` |
+
+**Local-only events.** `EquipmentSelected` (in each legacy app's own `Events/` folder) is raised with plain
+`Publish()` and heard by the status bar's view model in the same app. What keeps it off the broker is where it lives:
+the adapter only knows the assemblies registered in `App.xaml.cs` (`Poc.Legacy.Events`), so an event in the app's own
+assembly gets no binding, is never received, and `PublishRemote` on it throws. Keep app-internal events out of the
+registered events assembly.
 
 **How one wire carries both formats.** A legacy app knows an event by its class's **full name**; a modern app or the
 API by its `[Message("…")]` name. The body is JSON either way. So:
@@ -126,6 +133,7 @@ SignalR is the default recommendation ([POC 3](#poc-3-signalr), fewer moving par
 - **Dispose of a laptop from net472.** The net8 window logs the disposal; the API logs
   `Equipment … disposed by net472 …; removed from inventory: True`; ~2 s later the row disappears from **every**
   window, net10 included — through the API's `EquipmentDeleted`, not the disposal.
+- **Select a row in net472 or net8.** The status bar says so (a local event); no other window reacts.
 - **Watch the management UI** (`http://localhost:15672`) → Exchanges → `Poc.Net472` → Bindings: the net8 queues, the
   other net472 queues and `cleanarch.api.main`, but no net10 queue.
 - **Stop the API, dispose of something, start the API.** The disposal waits in the API's durable queue and is handled
@@ -155,6 +163,8 @@ Each is explained where it happens in the code.
 - ❌ Renaming or moving an event class. Its full name is the wire name: every app listening for the old one, the API
   included, silently stops receiving it.
 - ❌ Prism subscriptions with capturing lambdas. Weak references: they're collected and stop silently.
+- ❌ Putting a local-only event in the registered events assembly. Everything there is bound on the broker and can be
+  published to other apps by mistake.
 - ❌ Using the legacy adapter in a NEW app. It exists so existing apps keep working unchanged.
 
 **Modern format (net10)**

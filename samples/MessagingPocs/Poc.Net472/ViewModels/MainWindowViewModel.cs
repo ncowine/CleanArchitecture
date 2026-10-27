@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Common.RabbitMQ;
 using Poc.Legacy.Events;
+using Poc.Net472.Events;
 using Poc.Shared;
 using Prism.Commands;
 using Prism.Events;
@@ -95,6 +96,10 @@ public sealed class MainWindowViewModel : BindableBase
                 DeleteSelectedCommand.RaiseCanExecuteChanged();
                 SendNoteCommand.RaiseCanExecuteChanged();
                 DisposeSelectedCommand.RaiseCanExecuteChanged();
+
+                // Local only: Publish, not PublishRemote. Whoever in this app cares (the status bar) hears it;
+                // no other app does. See Events/EquipmentSelected.cs for what keeps it off the broker.
+                _events.GetEvent<EquipmentSelected>().Publish(value);
             }
         }
     }

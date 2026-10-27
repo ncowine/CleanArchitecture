@@ -1,0 +1,32 @@
+using Poc.Net8.Events;
+using Poc.Shared;
+using Prism.Events;
+using Prism.Mvvm;
+
+namespace Poc.Net8.ViewModels;
+
+/// <summary>
+/// The status bar. Knows nothing about the main view model: it only hears the local <see cref="EquipmentSelected"/>.
+/// </summary>
+public sealed class SelectionStatusViewModel : BindableBase
+{
+    private string _text = "Nothing selected";
+
+    public SelectionStatusViewModel(IEventAggregator events)
+    {
+        // Published on the UI thread (from a binding), so PublisherThread is enough here and runs synchronously.
+        // Method group, so Prism's weak reference keeps working for as long as this view model lives.
+        events.GetEvent<EquipmentSelected>().Subscribe(OnSelected, ThreadOption.PublisherThread);
+    }
+
+    public string Text
+    {
+        get => _text;
+        private set => SetProperty(ref _text, value);
+    }
+
+    private void OnSelected(EquipmentRow? row)
+    {
+        Text = row is null ? "Nothing selected" : $"Selected {row.AssetTag} — {row.Name} ({row.Status})  [local event, never sent]";
+    }
+}
