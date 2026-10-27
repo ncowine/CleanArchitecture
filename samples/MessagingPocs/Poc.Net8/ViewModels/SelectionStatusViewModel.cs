@@ -10,7 +10,7 @@ namespace Poc.Net8.ViewModels;
 /// </summary>
 public sealed class SelectionStatusViewModel : BindableBase
 {
-    private string _text = "Nothing selected";
+    private string text = "Nothing selected";
 
     public SelectionStatusViewModel(IEventAggregator events)
     {
@@ -21,8 +21,8 @@ public sealed class SelectionStatusViewModel : BindableBase
 
     public string Text
     {
-        get => _text;
-        private set => SetProperty(ref _text, value);
+        get => text;
+        private set => SetProperty(ref text, value);
     }
 
     private void OnSelected(EquipmentRow? row)

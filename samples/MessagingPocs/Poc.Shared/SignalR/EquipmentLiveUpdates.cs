@@ -17,11 +17,11 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
     /// <summary>The group name the API publishes equipment changes to (RealtimeGroups.Equipment() on the server).</summary>
     private const string EquipmentGroup = "equipment";
 
-    private readonly HubConnection _connection;
+    private readonly HubConnection connection;
 
     public EquipmentLiveUpdates(ApiOptions options)
     {
-        _connection = new HubConnectionBuilder()
+        connection = new HubConnectionBuilder()
             .WithUrl(new Uri(new Uri(options.BaseUrl), "hubs/presence"), http =>
             {
                 // ✅ DO authenticate the hub connection with the same key as the HTTP calls. The hub has [Authorize], so
@@ -36,20 +36,20 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
         // The method names are the server's event names (RealtimeEvent.Type, = the class name), matched exactly.
         // The payloads are the API's Equipment.Messages classes — the SAME ones RabbitMQ carries to the other apps — so
         // there is one contract per event, whichever way a client listens.
-        _connection.On<EquipmentCreated>(nameof(EquipmentCreated), e => Created?.Invoke(e));
-        _connection.On<EquipmentUpdated>(nameof(EquipmentUpdated), e => Updated?.Invoke(e));
-        _connection.On<EquipmentDeleted>(nameof(EquipmentDeleted), e => Deleted?.Invoke(e));
+        connection.On<EquipmentCreated>(nameof(EquipmentCreated), e => Created?.Invoke(e));
+        connection.On<EquipmentUpdated>(nameof(EquipmentUpdated), e => Updated?.Invoke(e));
+        connection.On<EquipmentDeleted>(nameof(EquipmentDeleted), e => Deleted?.Invoke(e));
         // Presence lists distinct USER NAMES, not connections: the authenticated caller's name, which for an API key is
         // the key's subject. Every window using the same key counts as one user.
-        _connection.On<PresenceDto>("presence", dto => PresenceChanged?.Invoke(dto.Users.Count));
+        connection.On<PresenceDto>("presence", dto => PresenceChanged?.Invoke(dto.Users.Count));
 
-        _connection.Reconnecting += error =>
+        connection.Reconnecting += error =>
         {
             StatusChanged?.Invoke("Connection lost — reconnecting…");
             return Task.CompletedTask;
         };
 
-        _connection.Reconnected += async connectionId =>
+        connection.Reconnected += async connectionId =>
         {
             // ❌ DON'T assume you're still in your groups after a reconnect. A reconnect is a NEW connection with a new
             //    id, and group membership belonged to the old one. Without joining again, the app looks connected and
@@ -62,7 +62,7 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
             Reconnected?.Invoke();
         };
 
-        _connection.Closed += error =>
+        connection.Closed += error =>
         {
             // With ForeverRetryPolicy this only happens when the app disposes the connection.
             StatusChanged?.Invoke("Disconnected");
@@ -94,7 +94,7 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
             try
             {
                 StatusChanged?.Invoke("Connecting…");
-                await _connection.StartAsync(cancellationToken);
+                await connection.StartAsync(cancellationToken);
                 break;
             }
             catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -116,9 +116,9 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
         return true;
     }
 
-    public ValueTask DisposeAsync() => _connection.DisposeAsync();
+    public ValueTask DisposeAsync() => connection.DisposeAsync();
 
-    private Task JoinAsync() => _connection.InvokeAsync("JoinGroup", EquipmentGroup);
+    private Task JoinAsync() => connection.InvokeAsync("JoinGroup", EquipmentGroup);
 
     /// <summary>The hub's "presence" message: who is watching a group.</summary>
     private sealed record PresenceDto(string Group, List<string> Users);

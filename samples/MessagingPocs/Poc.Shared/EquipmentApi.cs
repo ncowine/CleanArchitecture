@@ -16,11 +16,11 @@ namespace Poc.Shared;
 /// </remarks>
 public sealed class EquipmentApi
 {
-    private readonly HttpClient _http;
+    private readonly HttpClient http;
 
     public EquipmentApi(HttpClient http)
     {
-        _http = http;
+        this.http = http;
     }
 
     /// <summary>
@@ -53,7 +53,7 @@ public sealed class EquipmentApi
     public async Task<List<EquipmentRow>> LoadAllAsync(CancellationToken cancellationToken = default)
     {
         // The list endpoint is POST with the paging in the body (the house style for list endpoints).
-        using HttpResponseMessage response = await _http.PostAsJsonAsync(
+        using HttpResponseMessage response = await http.PostAsJsonAsync(
             "equipment/search", new { page = 1, pageSize = 100 }, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -66,14 +66,14 @@ public sealed class EquipmentApi
         string tag = $"POC-{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}";
 
         // category 0 = Laptop (the API takes the enum as a number).
-        using HttpResponseMessage response = await _http.PostAsJsonAsync(
+        using HttpResponseMessage response = await http.PostAsJsonAsync(
             "equipment", new { name = $"Laptop from {createdBy}", category = 0, assetTag = tag }, cancellationToken);
         await EnsureSuccess(response);
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await _http.DeleteAsync($"equipment/{id}", cancellationToken);
+        using HttpResponseMessage response = await http.DeleteAsync($"equipment/{id}", cancellationToken);
 
         // Already gone (someone else deleted it first) is fine: the outcome the user wanted.
         if (response.StatusCode != HttpStatusCode.NotFound)

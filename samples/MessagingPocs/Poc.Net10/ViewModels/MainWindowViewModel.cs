@@ -15,31 +15,31 @@ namespace Poc.Net10.ViewModels;
 /// </summary>
 public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 {
-    private readonly List<IDisposable> _subscriptions = [];
-    private readonly SynchronizationContext _ui;
-    private readonly EquipmentApi _api;
-    private DispatcherTimer? _connectionWatch;
-    private bool _wasConnected;
+    private readonly List<IDisposable> subscriptions = [];
+    private readonly SynchronizationContext ui;
+    private readonly EquipmentApi api;
+    private DispatcherTimer? connectionWatch;
+    private bool wasConnected;
 
     [ObservableProperty]
-    private string _title = $"net10 — modern app, API events only (pid {Environment.ProcessId})";
+    private string title = $"net10 — modern app, API events only (pid {Environment.ProcessId})";
 
     [ObservableProperty]
-    private string _connection = "Connecting…";
+    private string connection = "Connecting…";
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeleteSelectedCommand))]
-    private EquipmentRow? _selected;
+    private EquipmentRow? selected;
 
     public MainWindowViewModel(EquipmentApi api)
     {
-        _api = api;
+        this.api = api;
         List = new EquipmentList(api);
         List.Logged += AddLog;
 
         // ❌ DON'T create this view model off the UI thread: Current would be null, and events would update the UI
         //    from a background thread.
-        _ui = SynchronizationContext.Current ?? throw new InvalidOperationException("Create the view model on the UI thread.");
+        ui = SynchronizationContext.Current ?? throw new InvalidOperationException("Create the view model on the UI thread.");
     }
 
     public EquipmentList List { get; }
@@ -53,16 +53,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         // ✅ DO pass the UI's SynchronizationContext, so each handler runs on the UI thread.
         // ✅ DO keep and dispose the subscriptions: they're strong references, unlike Prism's.
-        _subscriptions.Add(subscriber.Subscribe<EquipmentCreated>(List.Apply, _ui));
-        _subscriptions.Add(subscriber.Subscribe<EquipmentUpdated>(List.Apply, _ui));
-        _subscriptions.Add(subscriber.Subscribe<EquipmentDeleted>(List.Apply, _ui));
+        subscriptions.Add(subscriber.Subscribe<EquipmentCreated>(List.Apply, ui));
+        subscriptions.Add(subscriber.Subscribe<EquipmentUpdated>(List.Apply, ui));
+        subscriptions.Add(subscriber.Subscribe<EquipmentDeleted>(List.Apply, ui));
 
-        bus.Log += (_, message) => _ui.Post(_ => AddLog($"[bus] {message}"), null);
+        bus.Log += (_, message) => ui.Post(_ => AddLog($"[bus] {message}"), null);
 
         // ✅ DO (re)load whenever the connection comes (back) up: the queue goes with the connection.
-        _connectionWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _connectionWatch.Tick += async (_, _) => await CheckConnectionAsync(bus);
-        _connectionWatch.Start();
+        connectionWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        connectionWatch.Tick += async (_, _) => await CheckConnectionAsync(bus);
+        connectionWatch.Start();
     }
 
     /// <summary>SignalR: subscribe, connect (retrying until the API is up), join the group, then load.</summary>
@@ -71,13 +71,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Title += " · SignalR";
 
         // SignalR raises these on thread-pool threads: post each to the UI thread.
-        live.Created += e => _ui.Post(_ => List.Apply(e), null);
-        live.Updated += e => _ui.Post(_ => List.Apply(e), null);
-        live.Deleted += e => _ui.Post(_ => List.Apply(e), null);
-        live.StatusChanged += status => _ui.Post(_ => Connection = $"SignalR: {status}", null);
+        live.Created += e => ui.Post(_ => List.Apply(e), null);
+        live.Updated += e => ui.Post(_ => List.Apply(e), null);
+        live.Deleted += e => ui.Post(_ => List.Apply(e), null);
+        live.StatusChanged += status => ui.Post(_ => Connection = $"SignalR: {status}", null);
 
         // Nothing is queued for a disconnected client, so reload after every reconnect.
-        live.Reconnected += () => _ui.Post(async _ => await List.LoadAsync(), null);
+        live.Reconnected += () => ui.Post(async _ => await List.LoadAsync(), null);
 
         // ✅ DO connect and join FIRST, then load (see EquipmentList.LoadAsync for why).
         if (await live.ConnectAsync(CancellationToken.None))
@@ -88,22 +88,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-        _connectionWatch?.Stop();
-        foreach (IDisposable subscription in _subscriptions)
+        connectionWatch?.Stop();
+        foreach (IDisposable subscription in subscriptions)
         {
             subscription.Dispose();
         }
 
-        _subscriptions.Clear();
+        subscriptions.Clear();
     }
 
     [RelayCommand]
     private Task AddLaptopAsync() =>
-        RunAsync(() => _api.CreateLaptopAsync($"net10 (pid {Environment.ProcessId})"), "asked the API to create a laptop; waiting for its event");
+        RunAsync(() => api.CreateLaptopAsync($"net10 (pid {Environment.ProcessId})"), "asked the API to create a laptop; waiting for its event");
 
     [RelayCommand(CanExecute = nameof(CanDeleteSelected))]
     private Task DeleteSelectedAsync() =>
-        RunAsync(() => _api.DeleteAsync(Selected!.Id), $"asked the API to delete {Selected?.AssetTag}; waiting for its event");
+        RunAsync(() => api.DeleteAsync(Selected!.Id), $"asked the API to delete {Selected?.AssetTag}; waiting for its event");
 
     private bool CanDeleteSelected() => Selected is not null;
 
@@ -113,12 +113,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task CheckConnectionAsync(RabbitMQBus bus)
     {
         bool connected = bus.IsConsumerConnected;
-        if (connected == _wasConnected)
+        if (connected == wasConnected)
         {
             return;
         }
 
-        _wasConnected = connected;
+        wasConnected = connected;
         if (connected)
         {
             Connection = "RabbitMQ: connected, bound to the API's exchange (CleanArch) only";

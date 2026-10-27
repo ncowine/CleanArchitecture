@@ -35,7 +35,7 @@ public partial class App : Application
 {
     public const string BusName = "Main";
 
-    private IHost? _host;
+    private IHost? host;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -69,37 +69,37 @@ public partial class App : Application
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
 
-        _host = builder.Build();
+        host = builder.Build();
 
         // ✅ DO build the window (and so the view model, on the UI thread) and subscribe BEFORE connecting.
-        MainWindow window = _host.Services.GetRequiredService<MainWindow>();
-        MainWindowViewModel viewModel = _host.Services.GetRequiredService<MainWindowViewModel>();
+        MainWindow window = host.Services.GetRequiredService<MainWindow>();
+        MainWindowViewModel viewModel = host.Services.GetRequiredService<MainWindowViewModel>();
 
         if (useSignalR)
         {
             window.Show();
 
             // Connecting retries until the API is up, and the window says so.
-            await viewModel.ListenOverSignalRAsync(_host.Services.GetRequiredService<EquipmentLiveUpdates>());
+            await viewModel.ListenOverSignalRAsync(host.Services.GetRequiredService<EquipmentLiveUpdates>());
         }
         else
         {
             viewModel.ListenOverRabbitMq(
-                _host.Services.GetRequiredService<IMessageSubscriber>(),
-                _host.Services.GetRequiredKeyedService<RabbitMQBus>(BusName));
-            await _host.StartAsync();   // starts connecting in the background
+                host.Services.GetRequiredService<IMessageSubscriber>(),
+                host.Services.GetRequiredKeyedService<RabbitMQBus>(BusName));
+            await host.StartAsync();   // starts connecting in the background
             window.Show();
         }
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        if (_host is not null)
+        if (host is not null)
         {
             // ❌ DON'T block on StopAsync() on the UI thread: it can deadlock. Hand it to the thread pool.
             // Disposing the host also closes the hub connection (so the API's presence updates at once) and disposes
             // the view model's subscriptions.
-            IHost host = _host;
+            IHost host = this.host;
             Task.Run(async () =>
             {
                 await host.StopAsync();

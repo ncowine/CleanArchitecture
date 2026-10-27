@@ -11,39 +11,39 @@ namespace Poc3.SignalR.ViewModels;
 /// </summary>
 public sealed partial class MainWindowViewModel : ObservableObject
 {
-    private readonly EquipmentApi _api;
-    private readonly EquipmentLiveUpdates _live;
-    private readonly SynchronizationContext _ui;
+    private readonly EquipmentApi api;
+    private readonly EquipmentLiveUpdates live;
+    private readonly SynchronizationContext ui;
 
     [ObservableProperty]
-    private string _connection = "Starting…";
+    private string connection = "Starting…";
 
     [ObservableProperty]
-    private int _watchers;
+    private int watchers;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeleteSelectedCommand))]
-    private EquipmentRow? _selected;
+    private EquipmentRow? selected;
 
     public MainWindowViewModel(EquipmentApi api, EquipmentLiveUpdates live)
     {
-        _api = api;
-        _live = live;
+        this.api = api;
+        this.live = live;
         List = new EquipmentList(api);
         List.Logged += AddLog;
-        _ui = SynchronizationContext.Current ?? throw new InvalidOperationException("Create the view model on the UI thread.");
+        ui = SynchronizationContext.Current ?? throw new InvalidOperationException("Create the view model on the UI thread.");
 
         // SignalR raises these on thread-pool threads.
         // ❌ DON'T update the list straight from them: WPF throws when a bound collection changes off the UI thread.
         // ✅ DO post every one to the UI thread. That also serialises them: they're applied one at a time, in order.
-        _live.Created += e => _ui.Post(_ => List.Apply(e), null);
-        _live.Updated += e => _ui.Post(_ => List.Apply(e), null);
-        _live.Deleted += e => _ui.Post(_ => List.Apply(e), null);
-        _live.PresenceChanged += count => _ui.Post(_ => Watchers = count, null);
-        _live.StatusChanged += status => _ui.Post(_ => Connection = status, null);
+        live.Created += e => ui.Post(_ => List.Apply(e), null);
+        live.Updated += e => ui.Post(_ => List.Apply(e), null);
+        live.Deleted += e => ui.Post(_ => List.Apply(e), null);
+        live.PresenceChanged += count => ui.Post(_ => Watchers = count, null);
+        live.StatusChanged += status => ui.Post(_ => Connection = status, null);
 
         // After a reconnect the group has been re-joined; everything sent meanwhile is gone, so reload.
-        _live.Reconnected += () => _ui.Post(async _ => await List.LoadAsync(), null);
+        live.Reconnected += () => ui.Post(async _ => await List.LoadAsync(), null);
     }
 
     public string Title { get; } = $"POC 3 — SignalR from the API (pid {Environment.ProcessId})";
@@ -56,7 +56,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public async Task StartAsync()
     {
         // ✅ DO connect and join FIRST, then load (see EquipmentList.LoadAsync for why).
-        if (await _live.ConnectAsync(CancellationToken.None))
+        if (await live.ConnectAsync(CancellationToken.None))
         {
             await List.LoadAsync();
         }
@@ -64,11 +64,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [RelayCommand]
     private Task AddLaptopAsync() =>
-        RunAsync(() => _api.CreateLaptopAsync("POC 3"), "asked the API to create a laptop; waiting for the SignalR event");
+        RunAsync(() => api.CreateLaptopAsync("POC 3"), "asked the API to create a laptop; waiting for the SignalR event");
 
     [RelayCommand(CanExecute = nameof(CanDeleteSelected))]
     private Task DeleteSelectedAsync() =>
-        RunAsync(() => _api.DeleteAsync(Selected!.Id), $"asked the API to delete {Selected?.AssetTag}; waiting for the event");
+        RunAsync(() => api.DeleteAsync(Selected!.Id), $"asked the API to delete {Selected?.AssetTag}; waiting for the event");
 
     private bool CanDeleteSelected() => Selected is not null;
 

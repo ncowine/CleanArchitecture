@@ -19,20 +19,20 @@ namespace Poc.Net8.ViewModels;
 /// </summary>
 public sealed class MainWindowViewModel : BindableBase
 {
-    private readonly IEventAggregator _events;
-    private readonly EquipmentApi _api;
-    private readonly RabbitMQService _bus;
-    private readonly DispatcherTimer _connectionWatch;
-    private readonly string _me = $"net8 (pid {Environment.ProcessId})";
-    private bool _wasConnected;
-    private string _connection = "Connecting…";
-    private string _noteText = "Battery swollen, keep it off the shelf";
-    private EquipmentRow? _selected;
+    private readonly IEventAggregator events;
+    private readonly EquipmentApi api;
+    private readonly RabbitMQService bus;
+    private readonly DispatcherTimer connectionWatch;
+    private readonly string me = $"net8 (pid {Environment.ProcessId})";
+    private bool wasConnected;
+    private string connection = "Connecting…";
+    private string noteText = "Battery swollen, keep it off the shelf";
+    private EquipmentRow? selected;
 
     public MainWindowViewModel(IEventAggregator events, RabbitMQServiceRouter router, EquipmentApi api)
     {
-        _events = events;
-        _api = api;
+        this.events = events;
+        this.api = api;
         List = new EquipmentList(api);
         List.Logged += AddLog;
 
@@ -50,24 +50,24 @@ public sealed class MainWindowViewModel : BindableBase
         events.GetEvent<EquipmentNoteSent>().Subscribe(OnNote, ThreadOption.UIThread);
         events.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, ThreadOption.UIThread);
 
-        _bus = router.GetBus(App.BusName);
+        bus = router.GetBus(App.BusName);
         router.Log += (_, message) => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
 
         // ✅ DO (re)load whenever the connection comes (back) up: this app's queue is deleted with its connection, so
         //    events sent while it was down are gone.
-        _connectionWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _connectionWatch.Tick += async (_, _) => await CheckConnectionAsync();
-        _connectionWatch.Start();
+        connectionWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        connectionWatch.Tick += async (_, _) => await CheckConnectionAsync();
+        connectionWatch.Start();
 
-        AddLaptopCommand = new DelegateCommand(async () => await RunAsync(() => _api.CreateLaptopAsync(_me), "asked the API to create a laptop; waiting for its event"));
+        AddLaptopCommand = new DelegateCommand(async () => await RunAsync(() => api.CreateLaptopAsync(me), "asked the API to create a laptop; waiting for its event"));
         DeleteSelectedCommand = new DelegateCommand(
-            async () => await RunAsync(() => _api.DeleteAsync(Selected!.Id), $"asked the API to delete {Selected?.AssetTag}; waiting for its event"),
+            async () => await RunAsync(() => api.DeleteAsync(Selected!.Id), $"asked the API to delete {Selected?.AssetTag}; waiting for its event"),
             () => Selected is not null);
         ReloadCommand = new DelegateCommand(async () => await List.LoadAsync());
         SendNoteCommand = new DelegateCommand(SendNote, () => Selected is not null);
     }
 
-    public string Title => $"net8 — migrated legacy app, legacy event format ({_me})";
+    public string Title => $"net8 — migrated legacy app, legacy event format ({me})";
 
     public EquipmentList List { get; }
 
@@ -75,29 +75,29 @@ public sealed class MainWindowViewModel : BindableBase
 
     public string Connection
     {
-        get => _connection;
-        private set => SetProperty(ref _connection, value);
+        get => connection;
+        private set => SetProperty(ref connection, value);
     }
 
     public string NoteText
     {
-        get => _noteText;
-        set => SetProperty(ref _noteText, value);
+        get => noteText;
+        set => SetProperty(ref noteText, value);
     }
 
     public EquipmentRow? Selected
     {
-        get => _selected;
+        get => selected;
         set
         {
-            if (SetProperty(ref _selected, value))
+            if (SetProperty(ref selected, value))
             {
                 DeleteSelectedCommand.RaiseCanExecuteChanged();
                 SendNoteCommand.RaiseCanExecuteChanged();
 
                 // Local only: Publish, not PublishRemote. Whoever in this app cares (the status bar) hears it;
                 // no other app does. See Events/EquipmentSelected.cs for what keeps it off the broker.
-                _events.GetEvent<EquipmentSelected>().Publish(value);
+                events.GetEvent<EquipmentSelected>().Publish(value);
             }
         }
     }
@@ -113,18 +113,18 @@ public sealed class MainWindowViewModel : BindableBase
     private void SendNote()
     {
         // App to app, the legacy way. Buffered while disconnected, sent once connected.
-        _events.GetEvent<EquipmentNoteSent>().PublishRemote(new EquipmentNote
+        events.GetEvent<EquipmentNoteSent>().PublishRemote(new EquipmentNote
         {
             EquipmentId = Selected!.Id,
             AssetTag = Selected.AssetTag,
             Text = NoteText,
-            From = _me,
+            From = me,
         });
     }
 
     private void OnNote(EquipmentNote note)
     {
-        AddLog($"note on {note.AssetTag} from {(note.From == _me ? "me" : note.From)}: {note.Text}");
+        AddLog($"note on {note.AssetTag} from {(note.From == me ? "me" : note.From)}: {note.Text}");
     }
 
     private void OnDisposed(EquipmentDisposal disposal)
@@ -136,13 +136,13 @@ public sealed class MainWindowViewModel : BindableBase
 
     private async Task CheckConnectionAsync()
     {
-        bool connected = _bus.IsConsumerConnected;
-        if (connected == _wasConnected)
+        bool connected = bus.IsConsumerConnected;
+        if (connected == wasConnected)
         {
             return;
         }
 
-        _wasConnected = connected;
+        wasConnected = connected;
         if (connected)
         {
             Connection = "Connected: bound to CleanArch (API), Poc.Net8 (own) and Poc.Net472";

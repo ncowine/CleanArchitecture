@@ -13,15 +13,15 @@ namespace Poc.Shared;
 /// </remarks>
 public sealed class EquipmentList
 {
-    private readonly EquipmentApi _api;
+    private readonly EquipmentApi api;
 
     // Events that arrive while a load is in flight wait here, and are applied after it.
-    private readonly List<Action> _arrivedDuringLoad = [];
-    private bool _loading = true;   // until the first load: events can arrive between subscribing and loading
+    private readonly List<Action> arrivedDuringLoad = [];
+    private bool loading = true;   // until the first load: events can arrive between subscribing and loading
 
     public EquipmentList(EquipmentApi api)
     {
-        _api = api;
+        this.api = api;
     }
 
     public ObservableCollection<EquipmentRow> Items { get; } = [];
@@ -41,10 +41,10 @@ public sealed class EquipmentList
         // Events arriving during the load are held back and applied afterwards, in order. Applied before the load
         // finished, they'd be wiped out when the (possibly older) list replaced Items. Applied after, they're safe:
         // each one SETS a state ("row X now looks like this") rather than changing it.
-        _loading = true;
+        loading = true;
         try
         {
-            List<EquipmentRow> all = await _api.LoadAllAsync();
+            List<EquipmentRow> all = await api.LoadAllAsync();
 
             Items.Clear();
             foreach (EquipmentRow row in all)
@@ -52,13 +52,13 @@ public sealed class EquipmentList
                 Items.Add(row);
             }
 
-            foreach (Action apply in _arrivedDuringLoad)
+            foreach (Action apply in arrivedDuringLoad)
             {
                 apply();
             }
 
             Logged?.Invoke($"loaded {all.Count} item(s) over HTTP" +
-                (_arrivedDuringLoad.Count > 0 ? $", then applied {_arrivedDuringLoad.Count} event(s) that arrived meanwhile" : ""));
+                (arrivedDuringLoad.Count > 0 ? $", then applied {arrivedDuringLoad.Count} event(s) that arrived meanwhile" : ""));
         }
         catch (HttpRequestException ex)
         {
@@ -66,8 +66,8 @@ public sealed class EquipmentList
         }
         finally
         {
-            _arrivedDuringLoad.Clear();
-            _loading = false;
+            arrivedDuringLoad.Clear();
+            loading = false;
         }
     }
 
@@ -87,9 +87,9 @@ public sealed class EquipmentList
     private void OnEvent(Action apply, string description)
     {
         Logged?.Invoke($"event: {description}");
-        if (_loading)
+        if (loading)
         {
-            _arrivedDuringLoad.Add(apply);
+            arrivedDuringLoad.Add(apply);
         }
         else
         {

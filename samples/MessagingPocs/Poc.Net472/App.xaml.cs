@@ -34,7 +34,7 @@ public partial class App : PrismApplication
 {
     public const string BusName = "Main";
 
-    private RabbitMQServiceRouter? _router;
+    private RabbitMQServiceRouter? router;
 
     protected override Window CreateShell()
     {
@@ -55,16 +55,16 @@ public partial class App : PrismApplication
         RemoteEventRegistry registry = new RemoteEventRegistry()
             .Add(typeof(EquipmentNoteSent).Assembly);
 
-        _router = new RabbitMQServiceRouter(Container.Resolve<IEventAggregator>(), registry);
+        router = new RabbitMQServiceRouter(Container.Resolve<IEventAggregator>(), registry);
         foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
         {
             RabbitMQConfig config = bus.Get<RabbitMQConfig>()!;
             config.BusName = bus.Key;
-            _router.AddBus(config);
+            router.AddBus(config);
         }
 
-        containerRegistry.RegisterInstance(_router);
-        containerRegistry.RegisterInstance<IRabbitMQService>(_router);   // PublishRemote finds it here
+        containerRegistry.RegisterInstance(router);
+        containerRegistry.RegisterInstance<IRabbitMQService>(router);   // PublishRemote finds it here
 
         ApiOptions api = configuration.GetSection(ApiOptions.SectionName).Get<ApiOptions>() ?? new ApiOptions();
         containerRegistry.RegisterInstance(EquipmentApi.Create(api));
@@ -75,12 +75,12 @@ public partial class App : PrismApplication
         base.OnInitialized();
 
         // Returns at once: connecting happens in the background and retries every few seconds.
-        _router!.Init();
+        router!.Init();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _router?.Dispose();
+        router?.Dispose();
         base.OnExit(e);
     }
 }

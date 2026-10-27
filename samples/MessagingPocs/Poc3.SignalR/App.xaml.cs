@@ -33,7 +33,7 @@ namespace Poc3.SignalR;
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 public partial class App : Application
 {
-    private IHost? _host;
+    private IHost? host;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -54,24 +54,24 @@ public partial class App : Application
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
 
-        _host = builder.Build();
+        host = builder.Build();
 
-        MainWindow window = _host.Services.GetRequiredService<MainWindow>();
+        MainWindow window = host.Services.GetRequiredService<MainWindow>();
         window.Show();
 
         // Show the window first, then connect: connecting retries until the API is up, and the window says so.
-        await _host.Services.GetRequiredService<MainWindowViewModel>().StartAsync();
+        await host.Services.GetRequiredService<MainWindowViewModel>().StartAsync();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        if (_host is not null)
+        if (host is not null)
         {
             // ✅ DO close the hub connection on exit, so the API sees the client leave (presence updates at once
             //    rather than after a timeout). Off the UI thread, so it can't deadlock.
-            EquipmentLiveUpdates live = _host.Services.GetRequiredService<EquipmentLiveUpdates>();
+            EquipmentLiveUpdates live = host.Services.GetRequiredService<EquipmentLiveUpdates>();
             Task.Run(async () => await live.DisposeAsync()).GetAwaiter().GetResult();
-            _host.Dispose();
+            host.Dispose();
         }
 
         base.OnExit(e);
