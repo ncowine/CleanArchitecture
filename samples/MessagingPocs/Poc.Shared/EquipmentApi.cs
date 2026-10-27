@@ -1,24 +1,26 @@
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Json;
 
 namespace Poc.Shared;
 
 /// <summary>
-/// Reads and changes equipment through the API over plain HTTP. All three POCs use it the same way.
+/// Reads and changes equipment through the API over plain HTTP. Every POC uses it the same way.
 /// </summary>
 /// <remarks>
-/// ✅ DO send every change as an HTTP request. The API validates it, saves it, audits it, and THEN tells everyone
-///    — over RabbitMQ (POC 1 and 2) and SignalR (POC 3), this app included.
-/// ❌ DON'T publish changes to the broker from a desktop app, or send them over the SignalR hub. You'd bypass the API's
-///    validation, authorization, auditing and transactions, and have two ways to change data to keep in step.
+/// ✅ DO send every change to the API's data as an HTTP request. The API validates it, saves it, audits it, and THEN
+///    tells everyone — over RabbitMQ and SignalR, this app included.
+/// ❌ DON'T send a change to the API's data over the SignalR hub, or invent broker messages for it. You'd bypass the
+///    API's validation, authorization, auditing and transactions. (The net472 app's EquipmentDisposed is the exception
+///    that proves the rule: an EXISTING legacy event the API was taught to handle, through the same command.)
 /// </remarks>
 public sealed class EquipmentApi
 {
-    private readonly HttpClient _http;
+    private readonly HttpClient http;
 
     public EquipmentApi(HttpClient http)
     {
-        _http = http;
+        this.http = http;
     }
 
     /// <summary>
@@ -32,7 +34,14 @@ public sealed class EquipmentApi
     /// </summary>
     public static EquipmentApi Create(ApiOptions options)
     {
+#if NETFRAMEWORK
+        // .NET Framework has no SocketsHttpHandler: the connection lease on the ServicePoint does the same job.
+        Uri baseUrl = new(options.BaseUrl);
+        System.Net.ServicePointManager.FindServicePoint(baseUrl).ConnectionLeaseTimeout = (int)TimeSpan.FromMinutes(5).TotalMilliseconds;
+        HttpClient http = new()
+#else
         HttpClient http = new(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) })
+#endif
         {
             BaseAddress = new Uri(options.BaseUrl),
         };
@@ -44,7 +53,7 @@ public sealed class EquipmentApi
     public async Task<List<EquipmentRow>> LoadAllAsync(CancellationToken cancellationToken = default)
     {
         // The list endpoint is POST with the paging in the body (the house style for list endpoints).
-        using HttpResponseMessage response = await _http.PostAsJsonAsync(
+        using HttpResponseMessage response = await http.PostAsJsonAsync(
             "equipment/search", new { page = 1, pageSize = 100 }, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -54,17 +63,17 @@ public sealed class EquipmentApi
 
     public async Task CreateLaptopAsync(string createdBy, CancellationToken cancellationToken = default)
     {
-        string tag = $"POC-{Random.Shared.Next(100000, 999999)}";
+        string tag = $"POC-{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}";
 
         // category 0 = Laptop (the API takes the enum as a number).
-        using HttpResponseMessage response = await _http.PostAsJsonAsync(
+        using HttpResponseMessage response = await http.PostAsJsonAsync(
             "equipment", new { name = $"Laptop from {createdBy}", category = 0, assetTag = tag }, cancellationToken);
         await EnsureSuccess(response);
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await _http.DeleteAsync($"equipment/{id}", cancellationToken);
+        using HttpResponseMessage response = await http.DeleteAsync($"equipment/{id}", cancellationToken);
 
         // Already gone (someone else deleted it first) is fine: the outcome the user wanted.
         if (response.StatusCode != HttpStatusCode.NotFound)
@@ -79,7 +88,7 @@ public sealed class EquipmentApi
         {
             // The API returns problem details; show them rather than a bare status code.
             string body = await response.Content.ReadAsStringAsync();
-            throw new HttpRequestException($"{(int)response.StatusCode} {response.ReasonPhrase}: {body}", null, response.StatusCode);
+            throw new HttpRequestException($"{(int)response.StatusCode} {response.ReasonPhrase}: {body}");
         }
     }
 

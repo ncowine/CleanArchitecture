@@ -1,0 +1,42 @@
+<Window x:Class="Poc.Net472.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding Title}" Height="560" Width="820">
+    <DockPanel Margin="12">
+        <StatusBar x:Name="StatusBar" DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <StatusBarItem Content="{Binding Text}" />
+        </StatusBar>
+        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap">
+            <Run FontWeight="SemiBold" Text="RabbitMQ: " /><Run Text="{Binding Connection, Mode=OneWay}" />
+        </TextBlock>
+        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" Foreground="Gray" TextWrapping="Wrap"
+                   Text="Receives the API's events and the other legacy apps' events, as Prism events. Changes to equipment go to the API over HTTP; notes go to the other legacy apps; a disposal goes to the API (and the legacy apps) over RabbitMQ." />
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button Content="Add a laptop (HTTP)" Command="{Binding AddLaptopCommand}" Padding="10,4" Margin="0,0,8,0" />
+            <Button Content="Delete selected (HTTP)" Command="{Binding DeleteSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />
+            <Button Content="Reload (HTTP)" Command="{Binding ReloadCommand}" Padding="10,4" Margin="0,0,8,0" />
+            <Button Content="Dispose of selected (RabbitMQ → API)" Command="{Binding DisposeSelectedCommand}" Padding="10,4" />
+        </StackPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Button DockPanel.Dock="Right" Content="Send note on selected (RabbitMQ → legacy apps)" Command="{Binding SendNoteCommand}" Padding="10,4" Margin="8,0,0,0" />
+            <TextBox Text="{Binding NoteText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" />
+        </DockPanel>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="2*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <DataGrid ItemsSource="{Binding List.Items}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False" IsReadOnly="True">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Asset" Binding="{Binding AssetTag}" Width="*" />
+                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*" />
+                    <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="*" />
+                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Grid.Row="1" Text="Log" FontWeight="SemiBold" Margin="0,8,0,4" />
+            <ListBox Grid.Row="2" ItemsSource="{Binding Log}" FontFamily="Consolas" />
+        </Grid>
+    </DockPanel>
+</Window>

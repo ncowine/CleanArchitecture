@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The legacy apps' events: plain Prism PubSubEvent<T> classes, the format .NET Framework apps already use. Shared by
+    the net472 and the net8 POC (both legacy format, through Common.RabbitMQ); netstandard2.0 so both can load it.
+
+    - EquipmentNoteSent, EquipmentDisposed: published by the legacy apps themselves.
+    - FromApi/: the API's Equipment events, as legacy events. A legacy app knows an event by its class's FULL NAME, so
+      these classes live in namespace "Equipment" to match the API's wire names ("Equipment.EquipmentCreated", …). The
+      payloads are the API's own Equipment.Messages classes: one contract, read by Newtonsoft here and written by
+      System.Text.Json in the API.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Prism.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Modules\Equipment\Equipment.Messages\Equipment.Messages.csproj" />
+  </ItemGroup>
+
+</Project>

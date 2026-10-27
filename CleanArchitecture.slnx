@@ -67,8 +67,10 @@
   </Folder>
   <Folder Name="/samples/MessagingPocs/">
     <Project Path="samples/MessagingPocs/Poc.Shared/Poc.Shared.csproj" />
-    <Project Path="samples/MessagingPocs/Poc1.PrismRabbitMq/Poc1.PrismRabbitMq.csproj" />
-    <Project Path="samples/MessagingPocs/Poc2.PlainRabbitMq/Poc2.PlainRabbitMq.csproj" />
+    <Project Path="samples/MessagingPocs/Poc.Legacy.Events/Poc.Legacy.Events.csproj" />
+    <Project Path="samples/MessagingPocs/Poc.Net472/Poc.Net472.csproj" />
+    <Project Path="samples/MessagingPocs/Poc.Net8/Poc.Net8.csproj" />
+    <Project Path="samples/MessagingPocs/Poc.Net10/Poc.Net10.csproj" />
     <Project Path="samples/MessagingPocs/Poc3.SignalR/Poc3.SignalR.csproj" />
   </Folder>
 </Solution>

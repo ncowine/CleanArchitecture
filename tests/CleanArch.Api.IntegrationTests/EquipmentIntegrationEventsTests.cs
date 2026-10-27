@@ -4,13 +4,16 @@ using BuildingBlocks.RealTime;
 using Equipment.Application.Inventory;
 using Equipment.Domain;
 using Equipment.Infrastructure;
+using Equipment.Infrastructure.IntegrationEvents;
 using Equipment.Infrastructure.Persistence;
 using Equipment.Messages;
+using Messaging;
 using Messaging.Hosting;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Data;
 using SharedKernel.DataService;
 using Xunit;
@@ -102,6 +105,37 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
 
         using var check = _withoutBroker.CreateScope();
         Assert.Empty(await check.ServiceProvider.GetRequiredService<EquipmentDbContext>().Set<OutboxMessage>().ToListAsync());
+    }
+
+    [Fact]
+    public async Task A_legacy_EquipmentDisposed_deletes_through_the_command_and_a_repeat_is_harmless()
+    {
+        Guid id;
+        using (var scope = _withoutBroker.CreateScope())
+        {
+            id = await scope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateEquipment.Command("ThinkPad T14", EquipmentCategory.Laptop, "LAP-002"), default);
+        }
+
+        var disposed = new EquipmentDisposed { EquipmentId = id, AssetTag = "LAP-002", DisposedBy = "net472 POC" };
+        for (var delivery = 0; delivery < 2; delivery++)   // at-least-once: the same message twice
+        {
+            using var scope = _withoutBroker.CreateScope();
+            var handler = new EquipmentDisposedHandler(
+                scope.ServiceProvider.GetRequiredService<ISender>(), NullLogger<EquipmentDisposedHandler>.Instance);
+            await handler.Handle(disposed, new MessageContext(
+                "Poc.Legacy.Events.EquipmentDisposed", "Main", $"m{delivery}", null, delivery > 0,
+                new Dictionary<string, string>(), "Poc.Net472", "Poc.Legacy.Events.EquipmentDisposed"), default);
+        }
+
+        using (var check = _withoutBroker.CreateScope())
+        {
+            Assert.Null(await check.ServiceProvider.GetRequiredService<EquipmentDbContext>()
+                .Set<EquipmentAsset>().FindAsync(id));
+        }
+
+        // The same outgoing event as an HTTP delete, once.
+        Assert.Equal(new[] { nameof(EquipmentCreated), nameof(EquipmentDeleted) }, _signalR.Sent.Select(s => s.Event.Type));
     }
 
     private async Task<ServiceProvider> BuildAsync(bool withBroker)

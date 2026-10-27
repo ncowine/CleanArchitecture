@@ -71,8 +71,8 @@ flowchart TB
         P --> D --> B
     end
     MQ{{"RabbitMQ broker<br/>exchange CleanArch, routing key = wire name"}}
-    R1["POC 1 · WPF with Prism<br/>MessageEvent&lt;T&gt; on UI thread"]
-    R2["POC 2 · WPF, plain<br/>IMessageSubscriber, UI thread"]
+    R1["net472 / net8 POC · legacy Prism app<br/>PubSubEvent&lt;T&gt; named after the wire name"]
+    R2["net10 POC · modern WPF<br/>IMessageSubscriber, UI thread"]
     R3["Any other app<br/>binds its own queue"]
     T -- COMMIT --> DB
     DB -- polled --> P
@@ -332,12 +332,8 @@ RabbitMQ is on **only when `Messaging:Buses:Main` exists in configuration**. Tod
 }
 ```
 
-The host wires it up in `Program.cs`. This is the one place that decides *where* events go.
-
-> **Current state:** the API connects the bus only (`AddBus` + `AddTelemetry`) and publishes nothing — no
-> `Route<>` and no `AddEquipmentIntegrationEvents()`, so the "Section present" column below behaves like
-> "Section missing" except that the RabbitMQ connection is opened. The block below shows the full wiring with the
-> Equipment events turned on; add those lines back to enable them.
+The host wires it up in `Program.cs`. This is the one place that decides *where* events go (the `Handle<>` line for
+the one event the API receives is left out here; see the MessagingPocs README):
 
 ```csharp
 var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
@@ -382,16 +378,18 @@ keep the password out of `appsettings.json` (environment variable or secret stor
 ## Receiving
 
 A receiving app **binds its own queue to the API's exchange, `CleanArch`**, and registers the message classes it
-wants. The API knows nothing about it. The working examples are POC 1 and POC 2 in
-[`samples/MessagingPocs`](../../samples/MessagingPocs/README.md).
+wants. The API knows nothing about it. The working examples are in
+[`samples/MessagingPocs`](../../samples/MessagingPocs/README.md): `Poc.Net10` (modern, below as Option A) and
+`Poc.Net472` / `Poc.Net8` (legacy Prism apps, which receive the API's events as `PubSubEvent<T>` classes named after
+the wire names). That README also covers the one event the API receives, from the net472 app.
 
 ### What the receiver configures
 
 ```json
 "Messaging": { "Buses": { "Main": {
     "HostName": "localhost", ...,
-    "ExchangeName": "Poc.PlainApp",              // its own exchange (unused if it never publishes)
-    "ClientName": "Poc.PlainApp",
+    "ExchangeName": "Poc.Net10",                 // its own exchange (unused if it never publishes)
+    "ClientName": "Poc.Net10",
     "Subscriptions": [ { "Exchange": "CleanArch" } ]   // listen to the API's exchange
 } } }
 ```
@@ -413,7 +411,7 @@ on message from queue:
     ack                                              // broker deletes it
 ```
 
-### Option A: plain .NET 8 app (POC 2)
+### Option A: plain .NET app (`Poc.Net10`)
 
 The Generic Host runs messaging as a hosted service, and view models subscribe with `IMessageSubscriber`:
 
@@ -431,7 +429,7 @@ _subscriptions.Add(subscriber.Subscribe<EquipmentCreated>(List.Apply, _ui));  //
 foreach (var s in _subscriptions) s.Dispose();   // strong references: always unsubscribe
 ```
 
-### Option B: .NET 8 app that keeps Prism (POC 1)
+### Option B: .NET 8 app that keeps Prism (`Messaging.Prism`; no POC at present)
 
 `MessagingClient` hosts messaging inside a Prism app, and `UseEventAggregator` raises each message as a Prism event:
 
