@@ -8,7 +8,6 @@ using CleanArch.Api.Authentication;
 using CleanArch.Api.DownstreamDemo;
 using CleanArch.Api.Realtime;
 using Equipment.Infrastructure;
-using Equipment.Messages;
 using Equipment.Presentation;
 using Messaging.Hosting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -55,25 +54,19 @@ builder.Services
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 
-// Integration events for other applications, over RabbitMQ (docs/messaging/adr/0003). Only when a broker is
-// configured: without a "Messaging" section none of this runs, modules record no outbox events, and everything
-// else — SignalR included — works exactly as before. The modules say WHICH events they publish; this is the one
-// place that says WHERE they go. Handlers never see a transport.
+// RabbitMQ (docs/messaging/adr/0003). Only when a broker is configured: without a "Messaging" section none of this
+// runs. The bus connects but publishes nothing yet — no event is routed, so modules keep their do-nothing outbox.
+// To publish a module's events, add a .Route<TEvent>() per event here and call the module's
+// Add<Module>IntegrationEvents() (e.g. AddEquipmentIntegrationEvents) below. Handlers never see a transport.
 var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
 if (messagingBus.Exists())
 {
     builder.Services.AddMessaging(messaging => messaging
         .AddBus("Main", messagingBus)
-        .Route<EquipmentCreated>().And()
-        .Route<EquipmentUpdated>().And()
-        .Route<EquipmentDeleted>().And()
         .AddTelemetry());
 
-    // Equipment's outbox now records its events, and its processor relays them with a confirmed publish.
-    builder.Services.AddEquipmentIntegrationEvents();
-
     // Deliberately no messaging health check on /health: it reports Unhealthy while the broker is down, which would
-    // take the API out of service for an outage the outbox already absorbs (events wait and go out afterwards).
+    // take the API out of service for an outage the outbox absorbs once events are routed.
 }
 
 // Calling other APIs: each downstream gets a typed HttpClient and the ONE authentication method it accepts —
