@@ -57,11 +57,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         subscriptions.Add(subscriber.Subscribe<EquipmentUpdated>(List.Apply, ui));
         subscriptions.Add(subscriber.Subscribe<EquipmentDeleted>(List.Apply, ui));
 
-        bus.Log += (_, message) => ui.Post(_ => AddLog($"[bus] {message}"), null);
+        bus.Log += (sender, message) => ui.Post(state => AddLog($"[bus] {message}"), null);
 
         // ✅ DO (re)load whenever the connection comes (back) up: the queue goes with the connection.
         connectionWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        connectionWatch.Tick += async (_, _) => await CheckConnectionAsync(bus);
+        connectionWatch.Tick += async (sender, e) => await CheckConnectionAsync(bus);
         connectionWatch.Start();
     }
 
@@ -71,13 +71,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Title += " · SignalR";
 
         // SignalR raises these on thread-pool threads: post each to the UI thread.
-        live.Created += e => ui.Post(_ => List.Apply(e), null);
-        live.Updated += e => ui.Post(_ => List.Apply(e), null);
-        live.Deleted += e => ui.Post(_ => List.Apply(e), null);
-        live.StatusChanged += status => ui.Post(_ => Connection = $"SignalR: {status}", null);
+        live.Created += e => ui.Post(state => List.Apply(e), null);
+        live.Updated += e => ui.Post(state => List.Apply(e), null);
+        live.Deleted += e => ui.Post(state => List.Apply(e), null);
+        live.StatusChanged += status => ui.Post(state => Connection = $"SignalR: {status}", null);
 
         // Nothing is queued for a disconnected client, so reload after every reconnect.
-        live.Reconnected += () => ui.Post(async _ => await List.LoadAsync(), null);
+        live.Reconnected += () => ui.Post(async state => await List.LoadAsync(), null);
 
         // ✅ DO connect and join FIRST, then load (see EquipmentList.LoadAsync for why).
         if (await live.ConnectAsync(CancellationToken.None))

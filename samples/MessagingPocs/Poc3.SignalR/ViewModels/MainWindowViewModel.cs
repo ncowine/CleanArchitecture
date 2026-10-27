@@ -36,14 +36,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         // SignalR raises these on thread-pool threads.
         // ❌ DON'T update the list straight from them: WPF throws when a bound collection changes off the UI thread.
         // ✅ DO post every one to the UI thread. That also serialises them: they're applied one at a time, in order.
-        live.Created += e => ui.Post(_ => List.Apply(e), null);
-        live.Updated += e => ui.Post(_ => List.Apply(e), null);
-        live.Deleted += e => ui.Post(_ => List.Apply(e), null);
-        live.PresenceChanged += count => ui.Post(_ => Watchers = count, null);
-        live.StatusChanged += status => ui.Post(_ => Connection = status, null);
+        live.Created += e => ui.Post(state => List.Apply(e), null);
+        live.Updated += e => ui.Post(state => List.Apply(e), null);
+        live.Deleted += e => ui.Post(state => List.Apply(e), null);
+        live.PresenceChanged += count => ui.Post(state => Watchers = count, null);
+        live.StatusChanged += status => ui.Post(state => Connection = status, null);
 
         // After a reconnect the group has been re-joined; everything sent meanwhile is gone, so reload.
-        live.Reconnected += () => ui.Post(async _ => await List.LoadAsync(), null);
+        live.Reconnected += () => ui.Post(async state => await List.LoadAsync(), null);
     }
 
     public string Title { get; } = $"POC 3 — SignalR from the API (pid {Environment.ProcessId})";

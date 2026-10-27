@@ -51,12 +51,12 @@ public sealed class MainWindowViewModel : BindableBase
         events.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, ThreadOption.UIThread);
 
         bus = router.GetBus(App.BusName);
-        router.Log += (_, message) => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
+        router.Log += (sender, message) => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
 
         // ✅ DO (re)load whenever the connection comes (back) up: this app's queue is deleted with its connection, so
         //    events sent while it was down are gone.
         connectionWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        connectionWatch.Tick += async (_, _) => await CheckConnectionAsync();
+        connectionWatch.Tick += async (sender, e) => await CheckConnectionAsync();
         connectionWatch.Start();
 
         AddLaptopCommand = new DelegateCommand(async () => await RunAsync(() => api.CreateLaptopAsync(me), "asked the API to create a laptop; waiting for its event"));
