@@ -553,9 +553,9 @@ tools.
 
 1. RabbitMQ running on `localhost:5672`.
 2. `dotnet run --project src/Api/CleanArch.Api` — in Development, with the `Messaging` section.
-3. Open the three POC windows from [`samples/MessagingPocs`](../samples/MessagingPocs/README.md),
-   then add or delete equipment (Swagger, `curl`, or any window's buttons). POC 3 (SignalR)
-   updates at once; POC 1 and 2 (RabbitMQ) about 2 seconds later, once the outbox has polled.
+3. Open the POC windows from [`samples/MessagingPocs`](../samples/MessagingPocs/README.md),
+   then add or delete equipment (Swagger, `curl`, or any window's buttons). SignalR windows
+   update at once; RabbitMQ windows (net472, net8, net10) about 2 seconds later, once the outbox has polled.
 
 ### Telemetry
 

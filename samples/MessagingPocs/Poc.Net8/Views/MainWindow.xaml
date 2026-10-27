@@ -1,18 +1,22 @@
-<Window x:Class="Poc1.PrismRabbitMq.Views.MainWindow"
+<Window x:Class="Poc.Net8.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="{Binding Title}" Height="520" Width="760">
+        Title="{Binding Title}" Height="560" Width="820">
     <DockPanel Margin="12">
         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap">
-            <Run FontWeight="SemiBold" Text="Listening: " /><Run Text="{Binding Connection, Mode=OneWay}" />
+            <Run FontWeight="SemiBold" Text="RabbitMQ: " /><Run Text="{Binding Connection, Mode=OneWay}" />
         </TextBlock>
         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" Foreground="Gray" TextWrapping="Wrap"
-                   Text="Needs RabbitMQ and CleanArch.Api. Changes go to the API over HTTP; updates come back as RabbitMQ messages from the API's outbox (about 2 s later), raised as Prism events." />
+                   Text="Receives the API's events and the other legacy apps' events, as Prism events. Changes to equipment go to the API over HTTP; notes go to the other legacy apps over RabbitMQ." />
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-            <Button Content="Add a laptop (HTTP POST)" Command="{Binding AddLaptopCommand}" Padding="10,4" Margin="0,0,8,0" />
-            <Button Content="Delete selected (HTTP DELETE)" Command="{Binding DeleteSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />
+            <Button Content="Add a laptop (HTTP)" Command="{Binding AddLaptopCommand}" Padding="10,4" Margin="0,0,8,0" />
+            <Button Content="Delete selected (HTTP)" Command="{Binding DeleteSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />
             <Button Content="Reload (HTTP)" Command="{Binding ReloadCommand}" Padding="10,4" />
         </StackPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Button DockPanel.Dock="Right" Content="Send note on selected (RabbitMQ → legacy apps)" Command="{Binding SendNoteCommand}" Padding="10,4" Margin="8,0,0,0" />
+            <TextBox Text="{Binding NoteText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" />
+        </DockPanel>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="2*" />

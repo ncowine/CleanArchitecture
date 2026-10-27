@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A legacy app moved to .NET 8 that keeps the legacy event format: Prism, the legacy adapter (Common.RabbitMQ) and
+    the same PubSubEvent<T> classes as the net472 app (Poc.Legacy.Events). The code is the net472 app's, recompiled:
+    that is the point. Migrating the framework doesn't force a change to how the app's events travel.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Prism.DryIoc" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Poc.Shared\Poc.Shared.csproj" />
+    <ProjectReference Include="..\Poc.Legacy.Events\Poc.Legacy.Events.csproj" />
+    <ProjectReference Include="..\..\..\src\Common.RabbitMQ\Common.RabbitMQ.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,7 +1,7 @@
 using System.Windows;
-using Poc2.PlainRabbitMq.ViewModels;
+using Poc.Net8.ViewModels;
 
-namespace Poc2.PlainRabbitMq.Views;
+namespace Poc.Net8.Views;
 
 public partial class MainWindow : Window
 {

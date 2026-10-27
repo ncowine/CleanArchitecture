@@ -1,12 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    POC 2: a modern (.NET 8) WPF app that receives RabbitMQ messages with no Prism: the .NET Generic Host for startup,
-    DI and configuration, CommunityToolkit.Mvvm for the view model, and IMessageSubscriber from Messaging.Hosting.
+    A modern WPF app: .NET 10, no Prism, the modern event format ([Message] classes, Messaging.Hosting). It accepts
+    events from the API only, over RabbitMQ or SignalR (Events:Transport in appsettings.json), and changes data through
+    the API over HTTP. It never publishes.
+
+    Note what it does NOT reference: Common.RabbitMQ or Poc.Legacy.Events. It can't even name a legacy app's event.
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 

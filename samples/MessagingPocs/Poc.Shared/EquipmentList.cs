@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Collections.ObjectModel;
 using Equipment.Messages;
 
@@ -5,7 +6,7 @@ namespace Poc.Shared;
 
 /// <summary>
 /// Keeps a list of equipment current: load it over HTTP, then apply the API's events as they arrive. The same rules
-/// apply whichever transport delivers the events, so all three POCs use this.
+/// apply whichever transport delivers the events, so every POC uses this.
 /// </summary>
 /// <remarks>
 /// Call everything on the UI thread. That also serialises events: they're applied one at a time, in arrival order.

@@ -2,9 +2,8 @@ using System.Net;
 using System.Net.Http;
 using Equipment.Messages;
 using Microsoft.AspNetCore.SignalR.Client;
-using Poc.Shared;
 
-namespace Poc3.SignalR;
+namespace Poc.Shared;
 
 /// <summary>
 /// The SignalR connection to the API's hub (<c>/hubs/presence</c>): connects, keeps reconnecting, joins the equipment
@@ -35,7 +34,7 @@ public sealed class EquipmentLiveUpdates : IAsyncDisposable
 
         // ✅ DO register handlers BEFORE StartAsync, so nothing sent right after connecting is missed.
         // The method names are the server's event names (RealtimeEvent.Type, = the class name), matched exactly.
-        // The payloads are the API's Equipment.Messages classes — the SAME ones RabbitMQ carries to POC 1 and 2 — so
+        // The payloads are the API's Equipment.Messages classes — the SAME ones RabbitMQ carries to the other apps — so
         // there is one contract per event, whichever way a client listens.
         _connection.On<EquipmentCreated>(nameof(EquipmentCreated), e => Created?.Invoke(e));
         _connection.On<EquipmentUpdated>(nameof(EquipmentUpdated), e => Updated?.Invoke(e));

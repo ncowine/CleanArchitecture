@@ -9,15 +9,21 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- POC 1: Prism, the same line the legacy apps use. -->
+    <!-- The net472 and net8 apps (legacy format): Prism, the same line the legacy apps use, and appsettings.json
+         bound onto RabbitMQConfig. These versions match src/Messaging/Directory.Packages.props. -->
+    <PackageVersion Include="Prism.Core" Version="8.1.97" />
     <PackageVersion Include="Prism.DryIoc" Version="8.1.97" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
 
-    <!-- POC 2 and 3: MVVM without Prism, and the .NET Generic Host. -->
+    <!-- Poc.Shared on net472: HttpClient JSON helpers, built in from .NET 5. -->
+    <PackageVersion Include="System.Net.Http.Json" Version="8.0.1" />
+
+    <!-- The net10 app and POC 3: MVVM without Prism, and the .NET Generic Host. -->
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
 
-    <!-- POC 3: the SignalR client. -->
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.31" />
+    <!-- The SignalR client (Poc.Shared/SignalR). -->
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.33" />
   </ItemGroup>
 </Project>

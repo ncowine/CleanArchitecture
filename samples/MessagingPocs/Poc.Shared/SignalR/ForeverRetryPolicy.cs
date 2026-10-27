@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.SignalR.Client;
 
-namespace Poc3.SignalR;
+namespace Poc.Shared;
 
 /// <summary>
 /// Keeps reconnecting for as long as the app runs: quickly at first, then every 10 seconds.

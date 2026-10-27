@@ -17,12 +17,12 @@ namespace Poc3.SignalR;
 //   SignalR for "something changed". No broker account on the desktop, no broker port open to it, no messaging
 //   library to keep in step with the legacy apps.
 //   Not the right choice when the app needs events that only legacy apps publish: the API would have to receive and
-//   forward them first (POC 2 receives them directly).
+//   forward them first (the net472 and net8 apps receive them directly).
 //
 // HOW IT'S WIRED
 //   The API pushes EquipmentCreated / Updated / Deleted (the Equipment.Messages classes) to the "equipment" group on
 //   its hub right after each change commits (tutorials/65-real-time-notifications.md). This app joins that group.
-//   The same change also goes to RabbitMQ through the outbox for POC 1 and 2: one feature, two channels.
+//   The same change also goes to RabbitMQ through the outbox for the other apps: one feature, two channels.
 //
 // WHAT SIGNALR IS NOT
 //   ❌ Not a queue. If the app isn't connected when an event is sent, that event is gone. There's no replay.

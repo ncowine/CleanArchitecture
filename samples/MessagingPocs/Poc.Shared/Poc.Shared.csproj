@@ -1,17 +1,30 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    What all three POCs share, so each app is left with only the part that differs: how it LISTENS.
-    - EquipmentApi: loads and changes equipment over HTTP (every app changes data the same way: through the API).
+    What every POC shares, so each app is left with only the part that differs: how it LISTENS.
+    - EquipmentApi: loads and changes equipment over HTTP (every app changes the API's data the same way: over HTTP).
     - EquipmentList: keeps a list current — load, then apply events — with the ordering and idempotency rules.
-    - Equipment.Messages: the API's event classes. The same classes arrive over RabbitMQ (POC 1 and 2) and SignalR (POC 3).
+    - SignalR/: the connection to the API's hub (net8.0 and later only; used by POC 3 and the net10 app).
+    - Equipment.Messages: the API's event classes. The same classes arrive over RabbitMQ and SignalR.
+    Two targets: net472 for the .NET Framework app, net8.0 for the rest (the net10 app uses it too).
   -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Modules\Equipment\Equipment.Messages\Equipment.Messages.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <PackageReference Include="System.Net.Http.Json" />
+    <Reference Include="System.Net.Http" />
+    <Compile Remove="SignalR\**" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' != 'net472'">
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <Compile Remove="IsExternalInit.cs" />
   </ItemGroup>
 
 </Project>
