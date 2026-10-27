@@ -332,7 +332,12 @@ RabbitMQ is on **only when `Messaging:Buses:Main` exists in configuration**. Tod
 }
 ```
 
-The host wires it up in `Program.cs:62-77`. This is the one place that decides *where* events go:
+The host wires it up in `Program.cs`. This is the one place that decides *where* events go.
+
+> **Current state:** the API connects the bus only (`AddBus` + `AddTelemetry`) and publishes nothing — no
+> `Route<>` and no `AddEquipmentIntegrationEvents()`, so the "Section present" column below behaves like
+> "Section missing" except that the RabbitMQ connection is opened. The block below shows the full wiring with the
+> Equipment events turned on; add those lines back to enable them.
 
 ```csharp
 var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
