@@ -14,8 +14,8 @@ namespace Messaging.Hosting
     /// Configures messaging in <see cref="MessagingServiceCollectionExtensions.AddMessaging"/>:
     /// <code>
     /// messaging.AddBus("Legacy", configuration.GetSection("Messaging:Buses:Legacy"));
-    /// messaging.AddHandlers(typeof(EmployeeSavedHandler).Assembly);   // every IMessageHandler&lt;T&gt; in it
-    /// messaging.Handle&lt;EmployeeSaved, EmployeeSavedHandler&gt;().From("Modern");
+    /// messaging.AddHandlers(typeof(EmployeeSavedHandler).Assembly);   // every IMessageHandler&lt;T&gt; in it, every bus
+    /// messaging.AddHandlers(typeof(OrderSavedHandler).Assembly, "Modern");   // ...or only some buses
     /// messaging.AddMessages(typeof(OrderSaved).Assembly);      // receive every [Message] type in it, e.g. for a sink
     /// messaging.Subscribe("AppA", "AppA.Events.#");           // another application's exchange
     /// messaging.AddTelemetry();                               // server observability; off unless asked for
@@ -122,19 +122,8 @@ namespace Messaging.Hosting
         }
 
         /// <summary>
-        /// Registers <typeparamref name="THandler"/> as a scoped handler. Choose the buses it receives from with
-        /// <see cref="HandlerBuilder.From"/>.
-        /// </summary>
-        public HandlerBuilder Handle<TMessage, THandler>()
-            where THandler : class, IMessageHandler<TMessage>
-        {
-            Services.TryAddScoped<THandler>();
-            return new HandlerBuilder(this, typeof(TMessage), typeof(THandler), Invoke<TMessage, THandler>);
-        }
-
-        /// <summary>
-        /// Registers every <see cref="IMessageHandler{TMessage}"/> class in <paramref name="assembly"/>, as
-        /// <see cref="Handle{TMessage, THandler}"/> does for one.
+        /// Registers every <see cref="IMessageHandler{TMessage}"/> class in <paramref name="assembly"/> as a scoped
+        /// handler, resolved in its own DI scope for every message.
         /// </summary>
         /// <param name="busNames">The buses they receive from. None means every bus.</param>
         public MessagingBuilder AddHandlers(Assembly assembly, params string[] busNames)
@@ -189,16 +178,6 @@ namespace Messaging.Hosting
             });
 
             Services.AddKeyedSingleton(name, (provider, key) => MessagingServiceCollectionExtensions.CreateBus(provider, name));
-        }
-
-        internal static string[] CheckBusNames(string[] busNames)
-        {
-            if (busNames == null || busNames.Length == 0 || busNames.Any(string.IsNullOrWhiteSpace))
-            {
-                throw new ArgumentException("At least one bus name is required, and none may be empty.", nameof(busNames));
-            }
-
-            return busNames;
         }
     }
 }

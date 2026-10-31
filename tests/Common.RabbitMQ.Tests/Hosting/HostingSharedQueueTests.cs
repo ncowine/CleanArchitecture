@@ -64,8 +64,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                 };
 
                 ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
-                await using (TestHost first = await TestHost.Start(bus, service, messaging => messaging.Handle<CompatMessage, CompatMessageHandler>().From(CompatBus.Name), shared))
-                await using (TestHost second = await TestHost.Start(bus, service, messaging => messaging.Handle<CompatMessage, CompatMessageHandler>().From(CompatBus.Name), shared))
+                await using (TestHost first = await TestHost.Start(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
+                await using (TestHost second = await TestHost.Start(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
                 {
                     bus.DeleteOnDispose(first.Bus.QueueName, first.Bus.DeadLetterQueueName);
                     await bus.WaitUntilConnected();

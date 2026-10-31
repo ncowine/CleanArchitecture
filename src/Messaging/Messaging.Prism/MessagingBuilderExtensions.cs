@@ -10,7 +10,7 @@ namespace Messaging.Prism
         /// <summary>
         /// Raises every received message as <see cref="MessageEvent{TMessage}"/> on <paramref name="eventAggregator"/>, the
         /// application's Prism aggregator. Messages arrive for the types added with <see cref="MessagingBuilder.AddMessages"/>
-        /// or <see cref="MessagingBuilder.Handle{TMessage, THandler}"/>.
+        /// or <see cref="MessagingBuilder.AddHandlers"/>.
         /// </summary>
         public static MessagingBuilder UseEventAggregator(this MessagingBuilder builder, IEventAggregator eventAggregator)
         {
