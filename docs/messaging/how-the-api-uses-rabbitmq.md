@@ -299,7 +299,8 @@ DispatchAsync(rowId, type, content):
         throw OutboxDeliveryDeferredException   // tells the processor: retry later, don't count it
 ```
 
-The type list comes from `AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentCreated), ...)`. Two classes with
+The type list is every `[Message]` class in `Equipment.Messages`
+(`AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentCreated).Assembly)`). Two classes with
 the same short name are refused at startup, because the row's `Type` column couldn't tell them apart.
 
 ### Why it's split into three pieces
@@ -620,8 +621,8 @@ A message meant for legacy apps would follow the rules above instead.
 
 ## Worked example: adding a new event
 
-Say Equipment should tell other apps when an asset is **retired**. It takes five small changes, in four places. The
-handler change is two lines.
+Say Equipment should tell other apps when an asset is **retired**. It takes three steps: the contract, the
+handler (two lines) and the receiver. Nothing to register in the module or the host.
 
 **1. The contract** in `Equipment.Messages`:
 
@@ -650,15 +651,7 @@ public async Task<Unit> Handle(Command command, CancellationToken ct)
 }
 ```
 
-**3. The module** lists it as one of its outbox types, in `AddEquipmentIntegrationEvents`:
-
-```csharp
-services.AddOutboxPublishing<EquipmentDbContext>(
-    typeof(EquipmentCreated), typeof(EquipmentUpdated), typeof(EquipmentDeleted),
-    typeof(EquipmentRetired));   // new
-```
-
-**4. A receiver** subscribes. `AddMessages(typeof(EquipmentCreated).Assembly)` already picks up the new class, so only
+**3. A receiver** subscribes. `AddMessages(typeof(EquipmentCreated).Assembly)` already picks up the new class, so only
 the subscription is new:
 
 ```csharp
@@ -669,7 +662,7 @@ _subscriptions.Add(subscriber.Subscribe<EquipmentRetired>(List.Apply, _ui));
 
 | Skipped | Symptom |
 | --- | --- |
-| 3, the outbox type | Row is written, then fails with "Unknown outbox message type 'EquipmentRetired'" and is dead-lettered after 3 attempts |
+| The contract outside `Equipment.Messages` | Row is written, then fails with "Unknown outbox message type 'EquipmentRetired'" and is dead-lettered after 3 attempts |
 | The receiver's `AddMessages` | No binding for the new wire name; the queue never gets the message, and nothing errors |
 
 ### Check it works

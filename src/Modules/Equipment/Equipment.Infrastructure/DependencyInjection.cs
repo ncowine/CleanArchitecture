@@ -74,8 +74,8 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// Sends Equipment's integration events (<see cref="EquipmentCreated"/>, <see cref="EquipmentUpdated"/>,
-    /// <see cref="EquipmentDeleted"/>) to RabbitMQ through the module's outbox (docs/messaging/adr/0003): the handler
+    /// Sends Equipment's integration events (every <c>[Message]</c> class in Equipment.Messages, such as
+    /// <see cref="EquipmentCreated"/>) to RabbitMQ through the module's outbox (docs/messaging/adr/0003): the handler
     /// stages the event in the same transaction as the change, and the outbox processor relays it with a confirmed
     /// publish once committed.
     /// </summary>
@@ -89,10 +89,7 @@ public static class DependencyInjection
         services.RemoveAll<IEquipmentOutbox>();
         services.AddScoped<IEquipmentOutbox, EquipmentOutbox>();
 
-        services.AddOutboxPublishing<EquipmentDbContext>(
-            typeof(EquipmentCreated),
-            typeof(EquipmentUpdated),
-            typeof(EquipmentDeleted));
+        services.AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentCreated).Assembly);
 
         return services;
     }

@@ -504,14 +504,14 @@ public static IServiceCollection AddEquipmentIntegrationEvents(this IServiceColl
     services.AddScoped<OutboxWriter<EquipmentDbContext>>();
     services.RemoveAll<IEquipmentOutbox>();
     services.AddScoped<IEquipmentOutbox, EquipmentOutbox>();
-    services.AddOutboxPublishing<EquipmentDbContext>(
-        typeof(EquipmentCreated), typeof(EquipmentUpdated), typeof(EquipmentDeleted));
+    services.AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentCreated).Assembly);
     return services;
 }
 ```
 
 `AddOutboxPublishing` registers `MessagingOutboxDispatcher<EquipmentDbContext>` and the
-background processor. Every class listed needs `[Message]`. Two classes with the
+background processor, for every `[Message]` class in `Equipment.Messages` — a new event there is
+picked up with no change here. Two classes with the
 same short name are refused at startup, because the outbox couldn't tell them apart.
 
 > `AddOutboxAdmin<EquipmentDbContext>()` (dead-letter search and replay) isn't registered for
@@ -838,7 +838,7 @@ When connecting a new event:
 - [ ] Payload: public get/set properties only; names and types match the legacy payload
       where one exists.
 - [ ] The module has an outbox table (migration) and **its own** writer — not a second `IOutbox`.
-- [ ] `AddOutboxPublishing<TContext>(typeof(T))`, or the delegation in Onboarding's dispatcher.
+- [ ] The class is in the assembly given to `AddOutboxPublishing<TContext>`, or in the delegation in Onboarding's dispatcher.
 - [ ] The handler enqueues inside its unit of work — never calls a publisher directly.
 - [ ] Every receiver tolerates a duplicate.
 - [ ] A test with a fake `IConfirmedMessagePublisher` covers the row and what is sent.
@@ -854,7 +854,7 @@ When connecting a new event:
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Outbox rows stay undelivered; log says *Deferred outbox message* | The API can't reach the broker | Check the broker and credentials. Rows go out by themselves once it's back |
-| Rows dead-lettered with *Unknown outbox message type* | The class isn't in `AddOutboxPublishing`, or was renamed | Add it (or the old name), then replay |
+| Rows dead-lettered with *Unknown outbox message type* | The class isn't in the assembly given to `AddOutboxPublishing`, or was renamed | Move it there (or restore the old name), then replay |
 | An event goes out but a legacy app never sees it | Wrong wire name; a custom routing key; or it's on an exchange the app doesn't bind | Compare `event-type` with the legacy type's full name; check the queue's bindings in the management UI |
 | A legacy app receives it but fields are empty | Property names or types don't match the legacy payload | Match them exactly, including case |
 | A modern app receives nothing | Not subscribed to the API's exchange; the type isn't in `AddMessages`; or the app wasn't running when it was sent | Check `Subscriptions` and `AddMessages`; load state on start-up |

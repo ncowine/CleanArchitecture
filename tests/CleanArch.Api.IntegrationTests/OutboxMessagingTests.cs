@@ -2,6 +2,7 @@ using BuildingBlocks.Correlation;
 using BuildingBlocks.Messaging;
 using BuildingBlocks.Outbox;
 using BuildingBlocks.Outbox.Messaging;
+using Equipment.Messages;
 using Messaging.Hosting;
 using Messaging.RabbitMQ;
 using Microsoft.Data.Sqlite;
@@ -131,6 +132,20 @@ public sealed class OutboxMessagingTests : IAsyncLifetime
             new OutboxMessageTypes<OutboxTestDbContext>([typeof(EmployeeRetired), typeof(Other.EmployeeRetired)]));
 
         Assert.Contains(typeof(Other.EmployeeRetired).FullName!, error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_assembly_gives_every_Message_class_in_it()
+    {
+        var services = new ServiceCollection();
+        services.AddOutboxPublishing<OutboxTestDbContext>(typeof(EquipmentCreated).Assembly);
+        using var provider = services.BuildServiceProvider();
+        var types = provider.GetRequiredService<OutboxMessageTypes<OutboxTestDbContext>>();
+
+        Assert.True(types.TryGet(nameof(EquipmentCreated), out var created));
+        Assert.Equal(typeof(EquipmentCreated), created);
+        Assert.True(types.TryGet(nameof(EquipmentUpdated), out _));
+        Assert.True(types.TryGet(nameof(EquipmentDeleted), out _));
     }
 
     private MessagingOutboxDispatcher<OutboxTestDbContext> CreateDispatcher() =>
