@@ -57,7 +57,6 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                 await using (TestHost host = await TestHost.Start(bus, "compat-wpf", messaging => messaging
                     .AddMessages(typeof(CompatMessage).Assembly)
-                    .Route<CompatMessage>().And()
                     .UseEventAggregator(eventAggregator)))
                 {
                     await bus.WaitUntilConnected();
@@ -83,7 +82,6 @@ namespace Common.RabbitMQ.Tests.Hosting
                 EventAggregator eventAggregator = new EventAggregator();
 
                 await using (TestHost host = await TestHost.Start(bus, "compat-wpf", messaging => messaging
-                    .Route<CompatMessage>().And()
                     .UseEventAggregator(eventAggregator)))
                 {
                     await host.WaitUntilConnected();

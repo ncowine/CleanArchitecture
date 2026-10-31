@@ -28,7 +28,7 @@ namespace Poc.Net10;
 //   SignalR   the API's hub: at once, best effort. Needs the API only — the default choice for new apps (POC 3).
 //   The view model, the list and the event classes are the same either way; only the wiring below differs.
 //
-// ❌ DON'T publish from here (no Route<T>(), no IMessagePublisher). Modern apps only listen; changes go to the API.
+// ❌ DON'T publish from here (no IMessagePublisher). Modern apps only listen; changes go to the API.
 // ❌ DON'T add a legacy app's exchange to Subscriptions "just to see it". That ends the "API only" guarantee.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 public partial class App : Application

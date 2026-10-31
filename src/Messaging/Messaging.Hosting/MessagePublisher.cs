@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Messaging.RabbitMQ;
@@ -22,48 +23,34 @@ namespace Messaging.Hosting
             return PublishAsync(message, null, cancellationToken);
         }
 
-        /// <summary>
-        /// The routing key is, in order: <see cref="PublishOptions.RoutingKey"/>, the route's key
-        /// (<see cref="RouteBuilder{TMessage}.WithRoutingKey(Func{TMessage, string})"/>), the wire name.
-        /// </summary>
+        /// <summary>The routing key is <see cref="PublishOptions.RoutingKey"/>, or the wire name.</summary>
         public Task PublishAsync<TMessage>(TMessage message, PublishOptions options, CancellationToken cancellationToken = default)
         {
-            RouteRegistration route = GetRoute(message);
-            string wireName = WireNames.Get(message.GetType());
-            string routingKey = !string.IsNullOrEmpty(options?.RoutingKey) ? options.RoutingKey : route.RoutingKey?.Invoke(message);
-
-            foreach (string busName in registry.GetRouteBuses(route))
-            {
-                provider.GetRequiredKeyedService<RabbitMQBus>(busName).Enqueue(wireName, message, routingKey);
-            }
-
+            string routingKey = !string.IsNullOrEmpty(options?.RoutingKey) ? options.RoutingKey : null;
+            GetBus(message).Enqueue(WireNames.Get(message.GetType()), message, routingKey);
             return Task.CompletedTask;
         }
 
-        public async Task PublishConfirmedAsync(object message, string messageId, CancellationToken cancellationToken = default)
+        public Task PublishConfirmedAsync(object message, string messageId, CancellationToken cancellationToken = default)
         {
-            RouteRegistration route = GetRoute(message);
-            string wireName = WireNames.Get(message.GetType());
-            string routingKey = route.RoutingKey?.Invoke(message);
-
-            foreach (string busName in registry.GetRouteBuses(route))
-            {
-                await provider.GetRequiredKeyedService<RabbitMQBus>(busName)
-                    .PublishConfirmedAsync(wireName, message, routingKey, messageId, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            return GetBus(message).PublishConfirmedAsync(WireNames.Get(message.GetType()), message, null, messageId, cancellationToken);
         }
 
-        private RouteRegistration GetRoute(object message)
+        /// <summary>Every message goes to the application's only bus, as in the legacy router.</summary>
+        private RabbitMQBus GetBus(object message)
         {
             if (message == null)
             {
                 throw new ArgumentNullException(nameof(message));
             }
 
-            Type messageType = message.GetType();
-            return registry.GetRoute(messageType)
-                ?? throw new InvalidOperationException($"{messageType.Name} has no route. Add messaging.Route<{messageType.Name}>().");
+            if (registry.BusNames.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot publish {message.GetType().Name}: publishing needs exactly one bus and this application has {registry.BusNames.Count}.");
+            }
+
+            return provider.GetRequiredKeyedService<RabbitMQBus>(registry.BusNames.Single());
         }
     }
 }

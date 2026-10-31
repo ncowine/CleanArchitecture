@@ -33,7 +33,7 @@ services.AddMessaging(...)                 MessagingServiceCollectionExtensions.
        └─ the bus itself, created lazily   AddKeyedSingleton("Main", ... CreateBus)
 host starts
   └─ MessagingHostedService.StartAsync
-       ├─ registry.Validate()              MessagingRegistry: fails fast on unknown buses, missing routes, duplicate wire names
+       ├─ registry.Validate()              MessagingRegistry: fails fast on unknown buses, missing wire names, duplicate wire names
        └─ bus.Start(registrations)         RabbitMQBus.Start: starts the background loops (see Threads)
 ```
 
@@ -53,7 +53,7 @@ Legacy: event.PublishRemote(payload)       RemotePubSubEventExtensions.PublishRe
           └─ RabbitMQServiceRouter.Publish → RabbitMQService.Publish → bus.Enqueue(wire name, payload, routing key)
              (then raises the event locally too)
 Modern: publisher.PublishAsync(message)    MessagePublisher.PublishAsync
-          └─ looks up the route (which buses) → bus.Enqueue(...) on each
+          └─ the only bus → bus.Enqueue(...)
 
 RabbitMQBus.Enqueue
   └─ Prepare: serialize now, pick routing key and ID, observer.OnPublishing (TelemetryObserver adds correlation-id, traceparent)
@@ -139,7 +139,7 @@ Two places need care:
 
 | You want to | Change | Also update |
 |---|---|---|
-| Send a new message from the API | A class with `[Message("...")]` in the module's `*.Messages` project; `messaging.Route<T>()` in `Program.cs` | The receiving apps' `AddMessages(...)` |
+| Send a new message from the API | A class with `[Message("...")]` in the module's `*.Messages` project; the type in the module's `AddOutboxPublishing` | The receiving apps' `AddMessages(...)` |
 | Add a bus setting | `RabbitMQBusOptions`, used in `RabbitMQBus` | `RabbitMQConfig` and `RabbitMQService.CreateOptions` if legacy apps need it; the README's configuration reference |
 | Change what happens when a handler fails | `HandleWithRetries`, `FailedSettlement` | README "When things go wrong"; the `SharedQueueTests` |
 | Add a header to outgoing messages | An `IMessagingObserver.OnPublishing` (see `TelemetryObserver`) | Nothing in the engine: observer headers are added on top of the frozen ones |

@@ -16,15 +16,6 @@ namespace Common.RabbitMQ.Tests.Hosting
         private const int UnreachablePort = 1;
 
         [Fact]
-        public async Task RouteToUnknownBus_FailsAtStartup()
-        {
-            InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                StartUnreachable(messaging => messaging.Route<CompatMessage>().To("Nowhere")));
-
-            Assert.Contains("unknown bus 'Nowhere'", error.Message);
-        }
-
-        [Fact]
         public async Task HandlerOnUnknownBus_FailsAtStartup()
         {
             InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -34,22 +25,23 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task MessageWithoutWireName_FailsAtStartup()
+        public async Task AddHandlers_OnUnknownBus_FailsAtStartup()
         {
             InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                StartUnreachable(messaging => messaging.Route<UnnamedMessage>().To(CompatBus.Name)));
+                StartUnreachable(messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, "Nowhere")));
 
-            Assert.Contains("[Message(", error.Message);
+            Assert.Contains("CompatMessageHandler receives from unknown bus 'Nowhere'", error.Message);
         }
 
         [Fact]
-        public async Task PublishingAnUnroutedMessage_Throws()
+        public async Task PublishingAMessageWithoutWireName_Throws()
         {
             await using (TestHost host = await StartUnreachable(messaging => { }))
             {
                 IMessagePublisher publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
-                await Assert.ThrowsAsync<InvalidOperationException>(() => publisher.PublishAsync(new CompatMessage(), TestContext.Current.CancellationToken));
+                InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => publisher.PublishAsync(new UnnamedMessage(), TestContext.Current.CancellationToken));
+                Assert.Contains("[Message(", error.Message);
             }
         }
 

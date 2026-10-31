@@ -9,7 +9,6 @@ using CleanArch.Api.DownstreamDemo;
 using CleanArch.Api.Realtime;
 using Equipment.Infrastructure;
 using Equipment.Infrastructure.IntegrationEvents;
-using Equipment.Messages;
 using Equipment.Presentation;
 using Messaging.Hosting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -58,18 +57,16 @@ builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 
 // Integration events with other applications, over RabbitMQ (docs/messaging/adr/0003). Only when a broker is
 // configured: without a "Messaging" section none of this runs, modules record no outbox events, and everything
-// else — SignalR included — works exactly as before. The modules say WHICH events they publish and handle; this is
-// the one place that says WHERE they go. Command handlers never see a transport.
+// else — SignalR included — works exactly as before. Every event published goes to this one bus under its
+// wire name; command handlers never see a transport.
 var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
 if (messagingBus.Exists())
 {
     builder.Services.AddMessaging(messaging => messaging
         .AddBus("Main", messagingBus)
-        .Route<EquipmentCreated>().And()
-        .Route<EquipmentUpdated>().And()
-        .Route<EquipmentDeleted>().And()
-        // From a legacy desktop app's exchange (Subscriptions in appsettings), on the API's shared, retried queue.
-        .Handle<EquipmentDisposed, EquipmentDisposedHandler>().From("Main")
+        // Every IMessageHandler<T> in Equipment, e.g. EquipmentDisposed from a legacy desktop app's exchange
+        // (Subscriptions in appsettings), on the API's shared, retried queue.
+        .AddHandlers(typeof(EquipmentDisposedHandler).Assembly)
         .AddTelemetry());
 
     // Equipment's outbox now records its events, and its processor relays them with a confirmed publish.

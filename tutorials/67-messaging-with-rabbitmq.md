@@ -35,7 +35,7 @@ You don't need to know RabbitMQ; [chapter 3](#3-five-ideas-you-need) covers the 
 | 7 | [When things go wrong](#7-when-things-go-wrong) | Outages, bad messages, duplicates |
 | 8 | [Step 1 — Turn messaging on in the API](#8-step-1--turn-messaging-on-in-the-api) | Opt-in, from configuration |
 | 9 | [Step 2 — Define the message](#9-step-2--define-the-message) | A plain class and a wire name |
-| 10 | [Step 3 — Route it](#10-step-3--route-it) | Which bus, which routing key |
+| 10 | [Step 3 — Where it goes](#10-step-3--where-it-goes) | The only bus, keyed by the wire name |
 | 11 | [Step 4 — Send it through the module's outbox](#11-step-4--send-it-through-the-modules-outbox) | Two cases: a new outbox, or Onboarding's |
 | 12 | [Step 5 — See it working](#12-step-5--see-it-working) | Telemetry, health, the management UI |
 | 13 | [Receiving messages in the API](#13-receiving-messages-in-the-api) | Handlers, shared queues, retries |
@@ -167,7 +167,7 @@ flowchart TB
     end
     subgraph Msg["src/Messaging (copied, shared with legacy)"]
         AD["Common.RabbitMQ<br/>legacy adapter, API frozen"]
-        H["Messaging.Hosting<br/>DI, routes, handlers, telemetry"]
+        H["Messaging.Hosting<br/>DI, handlers, telemetry"]
         E["Messaging.RabbitMQ<br/><b>RabbitMQBus</b> — the only code that talks to RabbitMQ"]
         AB["Messaging.Abstractions<br/>[Message], interfaces"]
     end
@@ -182,7 +182,7 @@ flowchart TB
 |---|---|---|
 | `src/Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | `[Message("…")]`, `IMessagePublisher`, `IMessageHandler<T>`, `MessageContext`. No dependencies — message classes reference only this. |
 | `src/Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | **The engine**, `RabbitMQBus`: connects, reconnects, declares, publishes, consumes, retries, dead-letters. |
-| `src/Messaging/Messaging.Hosting` | net8.0 | Server-style setup: `AddMessaging`, routes, handlers, `IMessageSubscriber`, `IConfirmedMessagePublisher`, System.Text.Json, telemetry, health check. |
+| `src/Messaging/Messaging.Hosting` | net8.0 | Server-style setup: `AddMessaging`, handlers, `IMessageSubscriber`, `IConfirmedMessagePublisher`, System.Text.Json, telemetry, health check. |
 | `src/Messaging/Messaging.Prism` | net8.0 | Optional bridge for a .NET 8 app that wants to keep Prism's `IEventAggregator` style. |
 | `src/Common.RabbitMQ` | net472, net8.0 | **The legacy adapter**: the old `PublishRemote` / `IRabbitMQService` API on top of the engine. Public API is additions-only. |
 | `src/BuildingBlocks.Outbox.Messaging` | net10.0 | **The relay**: sends outbox rows to RabbitMQ with a confirmed publish. |
@@ -237,7 +237,7 @@ In plain words:
    first, and hands each to the module's dispatcher.
 3. **The relay** (`MessagingOutboxDispatcher`) turns the row back into its message class. The
    row stores the class's short name (`typeof(T).Name`) and its JSON.
-4. **The confirmed publish** looks up the message's route, sends it to RabbitMQ **straight
+4. **The confirmed publish** sends it to the only bus **straight
    away**, and waits for the broker's confirm. The row's ID travels as the AMQP message-id.
 5. **Only then** does the processor mark the row delivered. If the process stops at any point
    before that, the row is still there and goes out after the restart.
@@ -303,7 +303,6 @@ deferral, a broker restart would park perfectly good events in the dead-letter t
 
 | Situation | What happens |
 |---|---|
-| The message class has no `Route<T>()` | `InvalidOperationException: … has no route`. Counts as an attempt; after 3, the row is dead-lettered. Fix the registration, then replay it. |
 | The row's type isn't in `AddOutboxPublishing<T>(…)` | `Unknown outbox message type '…'`. Same: counts, then dead-letters. |
 | The broker rejects the message (a `nack`) | Counts as an attempt. Rare: usually a full queue on the receiving side. |
 | A shared queue's setting changed (e.g. `DeliveryLimit`) | The broker refuses the queue. The log says *Queue 'X' already exists with different settings…* and what to do. See [trap 17.6](#176-changing-a-shared-queues-settings). |
@@ -322,7 +321,7 @@ Messaging is **opt-in by configuration**. `Program.cs` registers it only when a 
 section exists; without one, the API behaves exactly as it did before RabbitMQ (SignalR
 included), and no outbox rows are written.
 
-**`src/Api/CleanArch.Api/Program.cs`** — the one place that says where events go:
+**`src/Api/CleanArch.Api/Program.cs`** — the bus every event goes to:
 
 ```csharp
 var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
@@ -330,9 +329,6 @@ if (messagingBus.Exists())
 {
     builder.Services.AddMessaging(messaging => messaging
         .AddBus("Main", messagingBus)
-        .Route<EquipmentCreated>().And()
-        .Route<EquipmentUpdated>().And()
-        .Route<EquipmentDeleted>().And()
         .AddTelemetry());
 
     // Equipment's outbox now records its events, and its processor relays them with a confirmed publish.
@@ -367,7 +363,7 @@ if (messagingBus.Exists())
 
 Every setting and its default is in the messaging guide's
 [configuration reference](../docs/messaging/README.md#configuration-reference). Configuration
-mistakes — a route to a bus that doesn't exist, a class without `[Message]` — stop the API at
+mistakes — a handler on a bus that doesn't exist, a class without `[Message]` — stop the API at
 startup with a list of what's wrong.
 
 ---
@@ -420,18 +416,16 @@ SignalR (the hub). A client reads `EquipmentCreated` the same way whichever it l
 
 ---
 
-## 10. Step 3 — Route it
+## 10. Step 3 — Where it goes
 
-A route says which bus a message goes to, and with which routing key. The API's three routes
-are in the `Program.cs` block above:
+Nowhere to register it. As in the legacy apps, every message goes to the application's only bus
+(`Main`), with its wire name as the routing key. A per-call key is the one option:
 
 ```csharp
-messaging.Route<EquipmentCreated>();                                    // the only bus; key = wire name
-messaging.Route<EquipmentCreated>().To("Main");                         // a named bus
-messaging.Route<OrderSaved>().WithRoutingKey(o => $"orders.{o.Region}.saved");  // key from the message
+await publisher.PublishAsync(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
 ```
 
-**Default key = wire name.** Keep it for anything a legacy app must receive: legacy apps bind
+**Keep the wire name as the key.** Keep it for anything a legacy app must receive: legacy apps bind
 one key per event (its full name), so a custom key never reaches them. Custom keys are for new
 subscribers that bind patterns such as `orders.*.saved`.
 
@@ -439,7 +433,7 @@ A routing-key convention is a contract with every subscriber. Changing it doesn'
 misread a message — they just stop *getting* it.
 
 **Division of labour:** the module says **which** events it publishes (the list in
-`AddEquipmentIntegrationEvents`); the host says **where** they go (routes and buses). Neither
+`AddEquipmentIntegrationEvents`); the host says **where** they go (its one bus). Neither
 the handler nor the domain knows RabbitMQ exists.
 
 ---
@@ -517,7 +511,7 @@ public static IServiceCollection AddEquipmentIntegrationEvents(this IServiceColl
 ```
 
 `AddOutboxPublishing` registers `MessagingOutboxDispatcher<EquipmentDbContext>` and the
-background processor. Every class listed needs `[Message]` and a route. Two classes with the
+background processor. Every class listed needs `[Message]`. Two classes with the
 same short name are refused at startup, because the outbox couldn't tell them apart.
 
 > `AddOutboxAdmin<EquipmentDbContext>()` (dead-letter search and replay) isn't registered for
@@ -611,7 +605,7 @@ public sealed class CustomerChangedHandler : IMessageHandler<CustomerChanged>
     }
 }
 
-messaging.Handle<CustomerChanged, CustomerChangedHandler>();
+messaging.AddHandlers(typeof(CustomerChangedHandler).Assembly);   // picks up every IMessageHandler<T> in it
 messaging.Subscribe("AppB");                  // bind the queue to AppB's exchange, one key per handled type
 messaging.Subscribe("AppB", "AppB.Events.#"); // …or a pattern
 ```
@@ -638,7 +632,7 @@ Two things to keep in mind:
 ## 14. Modern WPF apps: subscribe only
 
 A modern desktop app uses the .NET Generic Host, `Messaging.Hosting` and the same plain message
-classes as the API. It registers **no routes**, so it never publishes. Full walk-through:
+classes as the API. It never resolves `IMessagePublisher`, so it never publishes. Full walk-through:
 recipe C in the [messaging guide](../docs/messaging/README.md#c-a-modern-wpf-app-without-prism-net-8).
 
 > **Runnable comparison.** [`samples/MessagingPocs`](../samples/MessagingPocs/README.md) has three
@@ -732,7 +726,7 @@ legacy messages are persistent, and whether payload classes use Newtonsoft attri
 | `tests/Common.RabbitMQ.Tests` — `Golden` | Bodies are byte-for-byte what legacy apps expect | No |
 | `…/PublicApi` | The legacy adapter lost nothing; only approved additions | No |
 | `…/Broker` | The engine against a real broker: delivery, echo drop, queues, retries, dead-letters, the confirmed publish | Yes |
-| `…/Hosting` | `AddMessaging`, handlers, routes, `IMessageSubscriber`, `IConfirmedMessagePublisher` (net8 only) | Yes |
+| `…/Hosting` | `AddMessaging`, handlers, `IMessageSubscriber`, `IConfirmedMessagePublisher` (net8 only) | Yes |
 | `…/LegacyModel`, `…/Adapter` | The new code working with the model of the real legacy library | Yes |
 | `tests/CleanArch.Api.IntegrationTests` — `OutboxMessagingTests` | The real outbox writer and processor with a fake publisher: an outage longer than 3 attempts still delivers once, using 1 attempt | No |
 
@@ -843,7 +837,6 @@ When connecting a new event:
       explicit and namespace-free.
 - [ ] Payload: public get/set properties only; names and types match the legacy payload
       where one exists.
-- [ ] `Route<T>()` registered; default routing key if a legacy app receives it.
 - [ ] The module has an outbox table (migration) and **its own** writer — not a second `IOutbox`.
 - [ ] `AddOutboxPublishing<TContext>(typeof(T))`, or the delegation in Onboarding's dispatcher.
 - [ ] The handler enqueues inside its unit of work — never calls a publisher directly.
@@ -861,7 +854,6 @@ When connecting a new event:
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Outbox rows stay undelivered; log says *Deferred outbox message* | The API can't reach the broker | Check the broker and credentials. Rows go out by themselves once it's back |
-| Rows dead-lettered with *has no route* | The class isn't in `Route<T>()` | Add the route, then replay the rows |
 | Rows dead-lettered with *Unknown outbox message type* | The class isn't in `AddOutboxPublishing`, or was renamed | Add it (or the old name), then replay |
 | An event goes out but a legacy app never sees it | Wrong wire name; a custom routing key; or it's on an exchange the app doesn't bind | Compare `event-type` with the legacy type's full name; check the queue's bindings in the management UI |
 | A legacy app receives it but fields are empty | Property names or types don't match the legacy payload | Match them exactly, including case |
@@ -883,8 +875,7 @@ When connecting a new event:
 ```csharp
 // Program.cs — only when "Messaging:Buses:Main" is configured
 builder.Services.AddMessaging(m => m
-    .AddBus("Main", messagingBus)
-    .Route<EquipmentCreated>().And()          // …one route per event
+    .AddBus("Main", messagingBus)              // every event goes here, keyed by its wire name
     .AddTelemetry());
 builder.Services.AddEquipmentIntegrationEvents();   // the module's writer + outbox relay
 
@@ -959,7 +950,7 @@ src/Messaging/
 ├── Messaging.RabbitMQ/RabbitMQBus.cs                   the engine: Enqueue (buffered), PublishConfirmedAsync
 ├── Messaging.RabbitMQ/BrokerUnavailableException.cs    "try again later"
 ├── Messaging.Hosting/MessagingServiceCollectionExtensions.cs   AddMessaging
-├── Messaging.Hosting/MessagingBuilder.cs               AddBus, Route, Handle, Subscribe, AddMessages, AddTelemetry
+├── Messaging.Hosting/MessagingBuilder.cs               AddBus, Handle, Subscribe, AddMessages, AddTelemetry
 ├── Messaging.Hosting/MessagePublisher.cs               IMessagePublisher + IConfirmedMessagePublisher
 ├── Messaging.Hosting/IMessageSubscriber.cs             for desktop apps
 ├── Messaging.Hosting/MessagingHealthCheck.cs           Unhealthy while a bus is disconnected
@@ -983,7 +974,7 @@ src/Modules/Equipment/Equipment.Application/Abstractions/IEquipmentOutbox.cs
 src/Modules/Equipment/Equipment.Application/Inventory/  Create / Update / Delete: outbox + real-time
 src/Modules/Equipment/Equipment.Infrastructure/IntegrationEvents/   EquipmentOutbox, NoBrokerEquipmentOutbox
 src/Modules/Equipment/Equipment.Infrastructure/DependencyInjection.cs   AddEquipmentIntegrationEvents
-src/Api/CleanArch.Api/Program.cs                     AddMessaging + routes, only when configured
+src/Api/CleanArch.Api/Program.cs                     AddMessaging, only when configured
 
 tests/Common.RabbitMQ.Tests/           golden, public API, broker, hosting, legacy model
 tests/CleanArch.Api.IntegrationTests/OutboxMessagingTests.cs, EquipmentIntegrationEventsTests.cs

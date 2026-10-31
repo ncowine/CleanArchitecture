@@ -120,7 +120,7 @@ flowchart TB
     subgraph FrontDoors["Front doors (translation only)"]
         A["Common.RabbitMQ<br/>legacy adapter"]
         P["Messaging.Prism<br/>event aggregator bridge"]
-        H["Messaging.Hosting<br/>DI, routes, handlers, JSON, telemetry"]
+        H["Messaging.Hosting<br/>DI, handlers, JSON, telemetry"]
     end
     Core["Messaging.RabbitMQ<br/><b>RabbitMQBus</b> - the only code that talks to RabbitMQ"]
     B[("RabbitMQ broker")]
@@ -148,7 +148,7 @@ Two ideas explain almost everything:
 |---|---|---|---|---|
 | `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `IMessageHandler<T>`, `[Message]`, `MessageContext`, `IMessageSerializer`, `IMessagingObserver`. | Everything below. |
 | `Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | RabbitMQ.Client 7.1.2 | **The engine**: `RabbitMQBus` and its options. | All front doors. |
-| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | Server-style setup: `AddMessaging`, routes, handlers, `IMessageSubscriber`, System.Text.Json, telemetry, health checks, `MessagingClient`. | The API, modern WPF apps. |
+| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | Server-style setup: `AddMessaging`, handlers, `IMessageSubscriber`, System.Text.Json, telemetry, health checks, `MessagingClient`. | The API, modern WPF apps. |
 | `Messaging/Messaging.Prism` | net8.0 | Prism.Core, Messaging.Hosting | Optional bridge: plain message classes as Prism events (`MessageEvent<T>`). | Modern WPF apps that like the Prism style. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
 | `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Newtonsoft 12.0.3, the engine | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
@@ -401,7 +401,6 @@ MessagingClient client = MessagingClient.Create(services => services.AddMessagin
         options.ClientName = "MyApp";
     })
     .AddMessages(typeof(EmployeeSaved).Assembly)   // receive every [Message] class in it
-    .Route<EmployeeSaved>().And()                  // publish it to the only bus
     .UseEventAggregator(eventAggregator)));        // raise received messages as MessageEvent<T>
 
 containerRegistry.RegisterInstance(client);
@@ -438,8 +437,7 @@ protected override async void OnStartup(StartupEventArgs e)
 
     builder.Services.AddMessaging(messaging => messaging
         .AddBus("Modern", builder.Configuration.GetSection("Messaging:Buses:Modern"))
-        .AddMessages(typeof(EmployeeSaved).Assembly)      // receive every [Message] class in it
-        .Route<EmployeeSaved>().To("Modern"));
+        .AddMessages(typeof(EmployeeSaved).Assembly));    // receive every [Message] class in it
     builder.Services.AddSingleton<MainWindowViewModel>();
     builder.Services.AddSingleton<MainWindow>();
 
@@ -493,19 +491,15 @@ public class EmployeeSavedHandler : IMessageHandler<EmployeeSaved>
 
 ```csharp
 builder.Services.AddMessaging(messaging => messaging
-    .AddBus("Legacy", builder.Configuration.GetSection("Messaging:Buses:Legacy"))
-    .AddBus("Modern", builder.Configuration.GetSection("Messaging:Buses:Modern"))
-    .Route<EmployeeUpdated>().To("Legacy")                           // where to publish
-    .Route<EmployeeCacheRefreshed>().To("Modern")
-    .Handle<EmployeeUpdated, EmployeeUpdatedHandler>().From("Legacy") // what to handle, from where
-    .Handle<EmployeeSaved, EmployeeSavedHandler>().From("Modern")
+    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
+    .AddHandlers(typeof(EmployeeSavedHandler).Assembly)             // every IMessageHandler<T> in it
     .AddTelemetry());                                                // tracing, metrics, logs
 
 builder.Services.AddHealthChecks().AddMessaging();
 app.MapHealthChecks("/health");
 ```
 
-**3. Publish from anywhere:**
+**3. Publish from anywhere.** Nothing to register: every message goes to the only bus, keyed by its wire name.
 
 ```csharp
 await publisher.PublishAsync(new EmployeeCacheRefreshed { ... });
@@ -515,14 +509,13 @@ await publisher.PublishAsync(order, new PublishOptions { RoutingKey = "orders.eu
 **More options:**
 
 ```csharp
-messaging.Route<OrderSaved>().WithRoutingKey(o => $"orders.{o.Region}.saved");  // key from the message
 messaging.Subscribe("AppA", "AppA.Events.#");                                    // another app's exchange
 messaging.AddMessages(typeof(OrderSaved).Assembly);                              // receive without handlers
 services.AddSingleton<IMessageSink, MySink>();                                   // see every message
 using (CorrelationContext.Begin(requestId)) { ... }                              // correlation ID for published messages
 ```
 
-Configuration mistakes stop the app at startup with a clear list of what's wrong, for example a route to a bus that
+Configuration mistakes stop the app at startup with a clear list of what's wrong, for example a handler on a bus that
 doesn't exist or a class without `[Message]`.
 
 **4. In CleanArchitecture: publish events through the outbox** ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md)).
@@ -532,8 +525,7 @@ module's outbox instead. The event is saved in the same transaction as the chang
 waits for the broker's confirm:
 
 ```csharp
-// Program.cs, only when "Messaging" is configured: routes, then the module's integration events.
-messaging.Route<EquipmentCreated>().And().Route<EquipmentUpdated>().And().Route<EquipmentDeleted>();
+// Program.cs, only when "Messaging" is configured: the module's integration events.
 builder.Services.AddEquipmentIntegrationEvents();   // the module's own outbox writer + AddOutboxPublishing
 
 // In a handler, inside the unit of work (IEquipmentOutbox, not a second IOutbox, which Onboarding owns):
@@ -773,7 +765,7 @@ The full reasoning is in the two ADRs. The short version:
 | An app receives nothing | No matching binding, or a different vhost. | In the management UI, check the queue's bindings and the vhost. Check the routing key the sender used. |
 | Messages pile up in `*.dead-letter` | A handler keeps failing, or the body can't be read. | Read the message in the management UI (`x-first-death-reason` says why), fix the cause, then move it back. |
 | `/health` is Unhealthy | A bus is disconnected. | The response lists which bus. Check the broker and the credentials. |
-| A startup error: *Messaging is misconfigured* | A route or handler names an unknown bus, or a class has no `[Message]`. | The message lists every problem. Fix them in `AddMessaging`. |
+| A startup error: *Messaging is misconfigured* | A handler names an unknown bus, or a class has no `[Message]`. | The message lists every problem. Fix them in `AddMessaging`. |
 | `PublishRemoteTo` throws *does not support routing keys* | A custom `IRabbitMQService` that doesn't implement `IRoutingKeyPublisher`. | Use `RabbitMQService` or `RabbitMQServiceRouter`, or implement the interface. |
 | The build crashes with *OutOfMemoryException* or hangs | Stale MSBuild worker processes. | Run `dotnet build-server shutdown`, or build with `-nr:false`. |
 | Git Bash turns a vhost of `/` into `C:/Program Files/Git/` | Git Bash path conversion. | Set such environment variables from PowerShell instead. |

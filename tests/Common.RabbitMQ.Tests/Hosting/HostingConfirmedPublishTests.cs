@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Common.RabbitMQ.Tests.Broker;
 using Common.RabbitMQ.Tests.Golden;
-using Messaging;
 using Messaging.Hosting;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,10 +17,10 @@ namespace Common.RabbitMQ.Tests.Hosting
     public class HostingConfirmedPublishTests
     {
         [Fact]
-        public async Task ConfirmedPublisher_UsesTheRoutesKey_AndTheCallersMessageId()
+        public async Task ConfirmedPublisher_UsesTheWireNameAsKey_AndTheCallersMessageId()
         {
             await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>().WithRoutingKey(m => $"compat.{m.Id}")))
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => { }))
             {
                 await host.WaitUntilConnected();
                 WireCapture capture = await bus.Capture();
@@ -32,7 +31,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 CapturedMessage message = await capture.Next(TestBus.Timeout);
                 Assert.NotNull(message);
                 Assert.Equal("outbox-row-7", message.MessageId);
-                Assert.Equal($"compat.{CompatPayloads.Golden().Id}", message.RoutingKey);
+                Assert.Equal("Compat.Events.CompatEvent", message.RoutingKey);
                 Assert.Equal("Compat.Events.CompatEvent", message.Headers["event-type"]);
                 Assert.Equal(0, host.Bus.OutstandingCount);
             }
@@ -42,7 +41,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public async Task ConfirmedPublisher_WithTelemetry_SendsTheCurrentCorrelationId()
         {
             await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>().And().AddTelemetry()))
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.AddTelemetry()))
             {
                 await host.WaitUntilConnected();
                 WireCapture capture = await bus.Capture();
@@ -61,25 +60,12 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task ConfirmedPublisher_MessageWithoutARoute_Throws()
-        {
-            await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>()))
-            {
-                InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                    host.Services.GetRequiredService<IConfirmedMessagePublisher>().PublishConfirmedAsync(new UnroutedMessage(), null, TestContext.Current.CancellationToken));
-
-                Assert.Contains("has no route", error.Message);
-            }
-        }
-
-        [Fact]
         public async Task ConfirmedPublisher_DefaultKey_ReachesTheOriginalLibrary()
         {
             await using (TestBus bus = await TestBus.Create())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
-                await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>()))
+                await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => { }))
                 {
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
@@ -96,7 +82,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public async Task ConfirmedPublisher_WithoutAConnection_ThrowsBrokerUnavailable()
         {
             await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>(), options => options.Port = 1))
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => { }, options => options.Port = 1))
             {
                 await Assert.ThrowsAsync<BrokerUnavailableException>(() =>
                     host.Services.GetRequiredService<IConfirmedMessagePublisher>().PublishConfirmedAsync(GoldenMessage(), null, TestContext.Current.CancellationToken));
@@ -109,7 +95,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             string messageId = "outbox-row-" + Guid.NewGuid().ToString("N");
             using (PublishSpans spans = new PublishSpans())
             await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>().And().AddTelemetry(), options => options.Port = 1))
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.AddTelemetry(), options => options.Port = 1))
             {
                 await Assert.ThrowsAsync<BrokerUnavailableException>(() =>
                     host.Services.GetRequiredService<IConfirmedMessagePublisher>().PublishConfirmedAsync(GoldenMessage(), messageId, TestContext.Current.CancellationToken));
@@ -127,7 +113,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             string messageId = "outbox-row-" + Guid.NewGuid().ToString("N");
             using (PublishSpans spans = new PublishSpans())
             await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>().And().AddTelemetry()))
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.AddTelemetry()))
             using (CancellationTokenSource shutdown = new CancellationTokenSource())
             {
                 await host.WaitUntilConnected();
@@ -174,11 +160,6 @@ namespace Common.RabbitMQ.Tests.Hosting
             {
                 listener.Dispose();
             }
-        }
-
-        [Message("Compat.Tests.UnroutedMessage")]
-        private sealed class UnroutedMessage
-        {
         }
     }
 }

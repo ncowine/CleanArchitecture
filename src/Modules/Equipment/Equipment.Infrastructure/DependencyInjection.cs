@@ -80,9 +80,8 @@ public static class DependencyInjection
     /// publish once committed.
     /// </summary>
     /// <remarks>
-    /// Call from the host only when it has also called <c>AddMessaging</c> with a route for each of these classes — the
-    /// relay needs <c>IConfirmedMessagePublisher</c>. The module lists WHICH events it publishes; the host decides
-    /// WHERE they go (buses, routing keys).
+    /// Call from the host only when it has also called <c>AddMessaging</c>: the relay needs
+    /// <c>IConfirmedMessagePublisher</c>.
     /// </remarks>
     public static IServiceCollection AddEquipmentIntegrationEvents(this IServiceCollection services)
     {

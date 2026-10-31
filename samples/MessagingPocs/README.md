@@ -172,7 +172,7 @@ Each is explained where it happens in the code.
 - ❌ Subscribing to a type the bus doesn't receive. Register it (`AddMessages`) or it never fires.
 - ❌ Forgetting to dispose `IMessageSubscriber` subscriptions. Strong references: closed windows leak.
 - ❌ Adding a legacy app's exchange to `Subscriptions`. That ends "API only".
-- ❌ Publishing. No `Route<T>()`, no `IMessagePublisher`: modern apps only listen.
+- ❌ Publishing. No `IMessagePublisher`: modern apps only listen.
 
 **SignalR (net10 in SignalR mode, POC 3)**
 
@@ -210,7 +210,7 @@ setup-exchanges.ps1  creates the four exchanges
 ```
 
 On the API side: `src/Modules/Equipment/Equipment.Infrastructure/IntegrationEvents/EquipmentDisposed*.cs`, the
-`Handle<>` line in `src/Api/CleanArch.Api/Program.cs`, and `Subscriptions` in its `appsettings.Development.json`.
+`AddHandlers` line in `src/Api/CleanArch.Api/Program.cs`, and `Subscriptions` in its `appsettings.Development.json`.
 
 ## Clean-up
 

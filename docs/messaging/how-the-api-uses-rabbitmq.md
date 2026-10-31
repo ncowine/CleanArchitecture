@@ -135,30 +135,30 @@ other projects translate between your code and that engine. It lives in `src/Mes
 | --- | --- | --- |
 | `Messaging.Abstractions` | `[Message]`, `IMessagePublisher`, `IMessageHandler<T>`, `MessageContext`. No dependencies. | Contracts, every app |
 | `Messaging.RabbitMQ` | `RabbitMQBus`, the engine: connect, declare, publish, consume, retry, reconnect. Knows nothing about DI or Prism. | Everything, indirectly |
-| `Messaging.Hosting` | DI registration (`AddMessaging`), routes, handlers, subscribers, JSON, telemetry, `MessagingClient` for desktop apps | The API, modern WPF apps |
+| `Messaging.Hosting` | DI registration (`AddMessaging`), handlers, subscribers, JSON, telemetry, `MessagingClient` for desktop apps | The API, modern WPF apps |
 | `Messaging.Prism` | Bridges received messages to Prism's `IEventAggregator` as `MessageEvent<T>` | Modern WPF apps that keep Prism |
 | `BuildingBlocks.Outbox.Messaging` | The outbox relay: `MessagingOutboxDispatcher<TContext>` | The API only |
 
-### Bus, route, handler, subscriber
+### Bus, handler, subscriber
 
-Four words cover the configuration. All of it happens in one `AddMessaging` call:
+Three words cover the configuration. All of it happens in one `AddMessaging` call:
 
 ```csharp
 services.AddMessaging(messaging => messaging
     .AddBus("Main", config.GetSection("Messaging:Buses:Main"))  // a connection + this app's exchange
-    .Route<EquipmentCreated>().And()                             // EquipmentCreated is published on that bus
-    .Handle<OrderSaved, OrderSavedHandler>().From("Main")       // a server class runs per received OrderSaved
+    .AddHandlers(typeof(OrderSavedHandler).Assembly)            // every IMessageHandler<T> in it, on every bus
     .Subscribe("OtherApp", "OtherApp.Events.#")                 // also receive from another app's exchange
     .AddTelemetry());                                            // traces, metrics, correlation-id header
 ```
 
 - **Bus**: one connection to a broker plus this app's own exchange. An app can have several; the API has one, `Main`.
-- **Route**: which bus a message class is published on, and with which routing key (the wire name by default).
+- **Publishing** needs no registration: every message goes to the only bus, with its wire name as the routing key
+  (`PublishOptions.RoutingKey` overrides it for one call). With several buses, publishing throws.
 - **Handler**: an `IMessageHandler<T>` class, resolved in its own DI scope for every received message. For servers.
 - **Subscriber**: `IMessageSubscriber.Subscribe<T>(callback)` at runtime, for view models and other code that isn't a
   DI handler.
 
-The API only publishes, so it uses buses and routes. Handlers and subscribers are for receivers.
+The API mostly publishes, so it mostly uses the bus. Handlers and subscribers are for receivers.
 
 ### Two ways to publish
 
@@ -332,7 +332,7 @@ RabbitMQ is on **only when `Messaging:Buses:Main` exists in configuration**. Tod
 }
 ```
 
-The host wires it up in `Program.cs`. This is the one place that decides *where* events go (the `Handle<>` line for
+The host wires it up in `Program.cs`. This is the one place that decides *where* events go (the `AddHandlers` line for
 the one event the API receives is left out here; see the MessagingPocs README):
 
 ```csharp
@@ -341,9 +341,6 @@ if (messagingBus.Exists())
 {
     builder.Services.AddMessaging(messaging => messaging
         .AddBus("Main", messagingBus)
-        .Route<EquipmentCreated>().And()
-        .Route<EquipmentUpdated>().And()
-        .Route<EquipmentDeleted>().And()
         .AddTelemetry());
 
     builder.Services.AddEquipmentIntegrationEvents();   // the module says WHICH events it publishes
@@ -453,7 +450,7 @@ eventAggregator.GetEvent<MessageEvent<EquipmentCreated>>()
   drops. Events sent while it was disconnected are gone, so reload the list from the API on reconnect.
 - **Prism holds weak references.** Subscribe with a method group on a long-lived object, not a lambda that captures a
   local, or the subscription silently disappears at the next garbage collection.
-- **Desktop apps only listen.** No `Route<T>()` and no publisher. Changes go to the API over HTTP. Give desktop apps a
+- **Desktop apps only listen.** No publisher. Changes go to the API over HTTP. Give desktop apps a
   restricted broker account that can't publish to `CleanArch`.
 
 ### Desktop vs server queues
@@ -487,7 +484,7 @@ written because the change rolled back.
 | Broker blocks publishers (memory or disk alarm), or the link is half-open | No confirm within 30 s → `BrokerUnavailableException` → deferred | Sent later, possibly twice |
 | API shutting down while the processor polls | Bus already stopped → `BrokerUnavailableException` → deferred | Sent after restart |
 | No queue is bound for the routing key | Published as mandatory, so the broker returns it; logged as "No queue is bound …" | Marked sent; nobody received it |
-| No route for the class, bad JSON, unknown type | Counts as a failed attempt; retried every 2 s | Dead-lettered after 3 attempts (`DeadLetteredOnUtc` set) |
+| No `[Message]` on the class, bad JSON, unknown type | Counts as a failed attempt; retried every 2 s | Dead-lettered after 3 attempts (`DeadLetteredOnUtc` set) |
 | Broker confirms, then the API crashes before saving `ProcessedOnUtc` | Row still looks unsent; it's published again after restart | **Duplicate**, same message-id |
 | Receiver's handler throws (server, shared queue) | Retried 3 times, 1 s apart, in the receiver | Receiver's `<queue>.dead-letter` |
 | Receiver's handler throws (desktop) | Logged and acked, as legacy apps always did | Dropped |
@@ -661,14 +658,7 @@ services.AddOutboxPublishing<EquipmentDbContext>(
     typeof(EquipmentRetired));   // new
 ```
 
-**4. The host** routes it, in `Program.cs`:
-
-```csharp
-.Route<EquipmentDeleted>().And()
-.Route<EquipmentRetired>().And()   // new
-```
-
-**5. A receiver** subscribes. `AddMessages(typeof(EquipmentCreated).Assembly)` already picks up the new class, so only
+**4. A receiver** subscribes. `AddMessages(typeof(EquipmentCreated).Assembly)` already picks up the new class, so only
 the subscription is new:
 
 ```csharp
@@ -680,7 +670,6 @@ _subscriptions.Add(subscriber.Subscribe<EquipmentRetired>(List.Apply, _ui));
 | Skipped | Symptom |
 | --- | --- |
 | 3, the outbox type | Row is written, then fails with "Unknown outbox message type 'EquipmentRetired'" and is dead-lettered after 3 attempts |
-| 4, the route | The publish fails because the class has no bus; also dead-lettered after 3 attempts |
 | The receiver's `AddMessages` | No binding for the new wire name; the queue never gets the message, and nothing errors |
 
 ### Check it works
