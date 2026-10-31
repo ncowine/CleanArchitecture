@@ -14,15 +14,7 @@ namespace Common.RabbitMQ
         /// </param>
         public static void PublishRemote<TPayload>(this RemotePubSubEvent<TPayload> remoteEvent, TPayload payload, IRabbitMQService rabbitMQService = null)
         {
-            if (remoteEvent == null)
-            {
-                throw new ArgumentNullException(nameof(remoteEvent));
-            }
-
-            // Queue (and serialize) the remote message first so local subscribers can't change what gets sent.
-            IRabbitMQService service = rabbitMQService ?? RabbitMQServiceProvider.Resolve();
-            service.Publish(remoteEvent.GetType(), payload);
-
+            Send(remoteEvent, payload, rabbitMQService);
             remoteEvent.Publish(payload);
         }
 
@@ -33,14 +25,7 @@ namespace Common.RabbitMQ
         /// </summary>
         public static void PublishRemote<TPayload>(this PubSubEvent<TPayload> pubSubEvent, TPayload payload, IRabbitMQService rabbitMQService = null)
         {
-            if (pubSubEvent == null)
-            {
-                throw new ArgumentNullException(nameof(pubSubEvent));
-            }
-
-            IRabbitMQService service = rabbitMQService ?? RabbitMQServiceProvider.Resolve();
-            service.Publish(pubSubEvent.GetType(), payload);
-
+            Send(pubSubEvent, payload, rabbitMQService);
             pubSubEvent.Publish(payload);
         }
 
@@ -50,6 +35,40 @@ namespace Common.RabbitMQ
         /// Legacy subscribers bind full names, so they don't receive custom keys.
         /// </summary>
         public static void PublishRemoteTo<TPayload>(this PubSubEvent<TPayload> pubSubEvent, string routingKey, TPayload payload, IRabbitMQService rabbitMQService = null)
+        {
+            SendTo(pubSubEvent, routingKey, payload, rabbitMQService);
+            pubSubEvent.Publish(payload);
+        }
+
+        /// <summary>
+        /// As <c>PublishRemote</c>, but only to other applications: local subscribers are not called. Works for
+        /// <see cref="RemotePubSubEvent{TPayload}"/> and registered plain events alike.
+        /// </summary>
+        public static void PublishRemoteOnly<TPayload>(this PubSubEvent<TPayload> pubSubEvent, TPayload payload, IRabbitMQService rabbitMQService = null)
+        {
+            Send(pubSubEvent, payload, rabbitMQService);
+        }
+
+        /// <summary>As <see cref="PublishRemoteTo{TPayload}"/>, but only to other applications: local subscribers are not called.</summary>
+        public static void PublishRemoteOnlyTo<TPayload>(this PubSubEvent<TPayload> pubSubEvent, string routingKey, TPayload payload, IRabbitMQService rabbitMQService = null)
+        {
+            SendTo(pubSubEvent, routingKey, payload, rabbitMQService);
+        }
+
+        // Each public method queues (and serializes) the remote message BEFORE raising it locally, so local subscribers
+        // can't change what gets sent.
+        private static void Send<TPayload>(PubSubEvent<TPayload> pubSubEvent, TPayload payload, IRabbitMQService rabbitMQService)
+        {
+            if (pubSubEvent == null)
+            {
+                throw new ArgumentNullException(nameof(pubSubEvent));
+            }
+
+            IRabbitMQService service = rabbitMQService ?? RabbitMQServiceProvider.Resolve();
+            service.Publish(pubSubEvent.GetType(), payload);
+        }
+
+        private static void SendTo<TPayload>(PubSubEvent<TPayload> pubSubEvent, string routingKey, TPayload payload, IRabbitMQService rabbitMQService)
         {
             if (pubSubEvent == null)
             {
@@ -63,7 +82,6 @@ namespace Common.RabbitMQ
             }
 
             routingPublisher.Publish(pubSubEvent.GetType(), payload, routingKey);
-            pubSubEvent.Publish(payload);
         }
     }
 }
