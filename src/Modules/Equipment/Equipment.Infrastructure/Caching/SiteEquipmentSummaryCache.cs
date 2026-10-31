@@ -60,6 +60,14 @@ public sealed class SiteEquipmentSummaryCache : DataCache<Guid, GetSiteEquipment
         Notify(targets, ChangeType.Deleted);
     }
 
+    /// <summary>
+    /// Call from a message-bus handler when the site itself changed (e.g. its name) — see
+    /// <see cref="IntegrationEvents.SiteRenamedHandler"/>. Unlike <see cref="OnEquipmentChanged"/> this refetches at
+    /// once (<see cref="ChangeType.Updated"/>): a message only arrives after its sender committed, so there is no
+    /// open write to race.
+    /// </summary>
+    public void OnSiteChanged(Guid siteId) => Notify(siteId, ChangeType.Updated);
+
     protected override async Task InitAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();

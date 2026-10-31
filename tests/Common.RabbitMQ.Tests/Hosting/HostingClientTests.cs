@@ -14,18 +14,18 @@ using Xunit;
 namespace Common.RabbitMQ.Tests.Hosting
 {
     /// <summary>
-    /// Messaging.Hosting for modern clients (ADR 0002, delivery plan step 8): routes without a bus, routing keys per route
-    /// and per call, subscriptions in code, telemetry opt-in, receiving without handlers, and <see cref="MessagingClient"/>.
+    /// Messaging.Hosting for modern clients (ADR 0002, delivery plan step 8): publishing to the only bus, routing keys per
+    /// call, subscriptions in code, telemetry opt-in, receiving without handlers, and <see cref="MessagingClient"/>.
     /// </summary>
     public class HostingClientTests
     {
         private const string WireName = "Compat.Events.CompatEvent";
 
         [Fact]
-        public async Task WithoutTelemetry_OnlyTheBaselineHeadersAreSent_AndTheOnlyBusIsTheRoute()
+        public async Task WithoutTelemetry_OnlyTheBaselineHeadersAreSent_ToTheOnlyBus()
         {
             await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>()))
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => { }))
             {
                 await host.WaitUntilConnected();
                 WireCapture capture = await bus.Capture();
@@ -41,27 +41,10 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task Route_WithRoutingKey_ComputedFromTheMessage()
+        public async Task PublishOptions_RoutingKey_OverridesTheWireName()
         {
             await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>().WithRoutingKey(m => $"compat.{m.Id}")))
-            {
-                await host.WaitUntilConnected();
-                WireCapture capture = await bus.Capture();
-
-                await host.Services.GetRequiredService<IMessagePublisher>().PublishAsync(GoldenMessage(), TestContext.Current.CancellationToken);
-
-                CapturedMessage message = await capture.Next(TestBus.Timeout);
-                Assert.Equal("compat.42", message?.RoutingKey);
-                Assert.Equal(WireName, message.Headers[WireHeaders.MessageType]);
-            }
-        }
-
-        [Fact]
-        public async Task PublishOptions_RoutingKey_OverridesTheRoute()
-        {
-            await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.Route<CompatMessage>().WithRoutingKey("route.key")))
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => { }))
             {
                 await host.WaitUntilConnected();
                 WireCapture capture = await bus.Capture();
@@ -71,7 +54,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 await publisher.PublishAsync(GoldenMessage(), TestContext.Current.CancellationToken);
 
                 Assert.Equal("call.key", (await capture.Next(TestBus.Timeout))?.RoutingKey);
-                Assert.Equal("route.key", (await capture.Next(TestBus.Timeout))?.RoutingKey);
+                Assert.Equal(WireName, (await capture.Next(TestBus.Timeout))?.RoutingKey);
             }
         }
 
@@ -110,8 +93,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 await bus.WaitUntilConnected();
 
                 using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
-                    .AddBus(CompatBus.Name, options => Configure(options, bus))
-                    .Route<CompatMessage>())))
+                    .AddBus(CompatBus.Name, options => Configure(options, bus)))))
                 {
                     await client.StartAsync(TestContext.Current.CancellationToken);
 
@@ -123,15 +105,14 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task RouteWithoutABus_WithSeveralBuses_FailsAtStartup()
+        public async Task Publishing_WithSeveralBuses_Throws()
         {
             using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("First", Unreachable)
-                .AddBus("Second", Unreachable)
-                .Route<CompatMessage>().And())))
+                .AddBus("Second", Unreachable))))
             {
-                InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => client.StartAsync(TestContext.Current.CancellationToken));
-                Assert.Contains("has no bus", error.Message);
+                InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => client.Publisher.PublishAsync(GoldenMessage(), TestContext.Current.CancellationToken));
+                Assert.Contains("exactly one bus", error.Message);
             }
         }
 

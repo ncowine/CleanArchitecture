@@ -6,15 +6,13 @@ using Messaging.RabbitMQ;
 namespace Messaging.Hosting
 {
     /// <summary>
-    /// What <see cref="MessagingBuilder"/> configured: the buses, where and with which routing key each message type is
-    /// published (routes), which message types are received and by which handlers, and subscriptions added in code.
-    /// Routing belongs to the host, not the contract (ADR 0001, section 1; ADR 0002, section 5).
+    /// What <see cref="MessagingBuilder"/> configured: the buses, which message types are received and by which handlers,
+    /// and subscriptions added in code. Publishing needs nothing here: every message goes to the only bus.
     /// </summary>
     internal sealed class MessagingRegistry
     {
         /// <summary>Bus name → its serializer; null means the System.Text.Json default.</summary>
         private readonly Dictionary<string, IMessageSerializer> buses = new Dictionary<string, IMessageSerializer>(StringComparer.Ordinal);
-        private readonly Dictionary<Type, RouteRegistration> routes = new Dictionary<Type, RouteRegistration>();
         private readonly List<HandlerRegistration> handlers = new List<HandlerRegistration>();
         private readonly List<MessageTypeRegistration> messageTypes = new List<MessageTypeRegistration>();
         private readonly List<PendingSubscription> subscriptions = new List<PendingSubscription>();
@@ -37,30 +35,6 @@ namespace Messaging.Hosting
         public IMessageSerializer GetSerializer(string busName)
         {
             return buses[busName];
-        }
-
-        /// <summary>The route for <paramref name="messageType"/>, created on first use.</summary>
-        public RouteRegistration Route(Type messageType)
-        {
-            if (!routes.TryGetValue(messageType, out RouteRegistration route))
-            {
-                route = new RouteRegistration(messageType);
-                routes.Add(messageType, route);
-            }
-
-            return route;
-        }
-
-        /// <returns>The route of <paramref name="messageType"/>, or null when it has none.</returns>
-        public RouteRegistration GetRoute(Type messageType)
-        {
-            return routes.TryGetValue(messageType, out RouteRegistration route) ? route : null;
-        }
-
-        /// <summary>The buses a route publishes to: its own list, or the only bus when the list is empty.</summary>
-        public IReadOnlyList<string> GetRouteBuses(RouteRegistration route)
-        {
-            return route.Buses.Count > 0 ? route.Buses : buses.Keys.ToList();
         }
 
         public void AddHandler(HandlerRegistration handler)
@@ -87,7 +61,7 @@ namespace Messaging.Hosting
 
         public IEnumerable<HandlerRegistration> GetHandlers(Type messageType, string busName)
         {
-            return handlers.Where(h => h.MessageType == messageType && h.Buses.Contains(busName, StringComparer.Ordinal));
+            return handlers.Where(h => h.MessageType == messageType && Receives(h.Buses, busName));
         }
 
         /// <summary>
@@ -97,10 +71,10 @@ namespace Messaging.Hosting
         public IEnumerable<MessageRegistration> GetMessageRegistrations(string busName)
         {
             IEnumerable<Type> handled = handlers
-                .Where(h => h.Buses.Contains(busName, StringComparer.Ordinal))
+                .Where(h => Receives(h.Buses, busName))
                 .Select(h => h.MessageType);
             IEnumerable<Type> added = messageTypes
-                .Where(m => m.Buses.Count == 0 || m.Buses.Contains(busName, StringComparer.Ordinal))
+                .Where(m => Receives(m.Buses, busName))
                 .Select(m => m.MessageType);
 
             return handled.Concat(added)
@@ -112,17 +86,6 @@ namespace Messaging.Hosting
         public void Validate()
         {
             List<string> errors = new List<string>();
-
-            foreach (RouteRegistration route in routes.Values)
-            {
-                if (route.Buses.Count == 0 && buses.Count != 1)
-                {
-                    errors.Add($"{route.MessageType.Name} has no bus and this application has {buses.Count}. Use Route<{route.MessageType.Name}>().To(...).");
-                }
-
-                errors.AddRange(UnknownBuses(route.Buses).Select(b => $"{route.MessageType.Name} is routed to unknown bus '{b}'."));
-                errors.AddRange(MissingWireName(route.MessageType));
-            }
 
             foreach (HandlerRegistration handler in handlers)
             {
@@ -160,6 +123,12 @@ namespace Messaging.Hosting
             {
                 throw new InvalidOperationException("Messaging is misconfigured:\n" + string.Join("\n", errors.Distinct()));
             }
+        }
+
+        /// <summary>No buses means every bus.</summary>
+        private static bool Receives(IReadOnlyCollection<string> buses, string busName)
+        {
+            return buses.Count == 0 || buses.Contains(busName, StringComparer.Ordinal);
         }
 
         private IEnumerable<string> UnknownBuses(IEnumerable<string> busNames)

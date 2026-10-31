@@ -30,7 +30,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 ICompatEndpoint current = bus.AddEndpoint(CompatBuild.Current, "compat-current");
                 ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-server", messaging => messaging.Route<CompatMessage>().To(CompatBus.Name).AddTelemetry()))
+                await using (TestHost host = await TestHost.Start(bus, "compat-server", messaging => messaging.AddTelemetry()))
                 {
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
@@ -95,6 +95,28 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
+        public async Task AddHandlers_FindsTheAssemblysHandlers_OnTheOnlyBus()
+        {
+            await using (TestBus bus = await TestBus.Create())
+            {
+                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+
+                await using (TestHost host = await TestHost.Start(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly)))
+                {
+                    await bus.WaitUntilConnected();
+                    await host.WaitUntilConnected();
+
+                    baseline.PublishRemote(CompatPayloads.Golden());
+
+                    HandledMessage handled = await host.Handled.Next(TestBus.Timeout);
+                    Assert.NotNull(handled);
+                    Assert.Equal(CompatPayloads.Golden().Id, handled.Message.Id);
+                    Assert.Equal(CompatBus.Name, handled.Context.BusName);
+                }
+            }
+        }
+
+        [Fact]
         public async Task HandlerRepublishes_WithTheIncomingCorrelationId()
         {
             await using (TestBus bus = await TestBus.Create())
@@ -102,7 +124,6 @@ namespace Common.RabbitMQ.Tests.Hosting
                 ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
 
                 await using (TestHost host = await TestHost.Start(bus, "compat-server", messaging => messaging
-                    .Route<CompatMessage>().To(CompatBus.Name)
                     .Handle<CompatMessage, CompatMessageHandler>().From(CompatBus.Name).AddTelemetry()))
                 {
                     await bus.WaitUntilConnected();
@@ -144,7 +165,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 ActivitySource.AddActivityListener(listener);
 
                 await using (TestBus bus = await TestBus.Create())
-                await using (TestHost sender = await TestHost.Start(bus, "compat-sender", messaging => messaging.Route<CompatMessage>().To(CompatBus.Name).AddTelemetry()))
+                await using (TestHost sender = await TestHost.Start(bus, "compat-sender", messaging => messaging.AddTelemetry()))
                 await using (TestHost receiver = await TestHost.Start(bus, "compat-receiver", messaging => messaging.Handle<CompatMessage, CompatMessageHandler>().From(CompatBus.Name).AddTelemetry()))
                 {
                     await sender.WaitUntilConnected();

@@ -1,9 +1,12 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Messaging.Hosting
 {
@@ -11,8 +14,7 @@ namespace Messaging.Hosting
     /// Configures messaging in <see cref="MessagingServiceCollectionExtensions.AddMessaging"/>:
     /// <code>
     /// messaging.AddBus("Legacy", configuration.GetSection("Messaging:Buses:Legacy"));
-    /// messaging.Route&lt;EmployeeUpdated&gt;().To("Legacy", "Modern");
-    /// messaging.Route&lt;OrderSaved&gt;().WithRoutingKey(o =&gt; $"orders.{o.Region}.saved");   // the only bus
+    /// messaging.AddHandlers(typeof(EmployeeSavedHandler).Assembly);   // every IMessageHandler&lt;T&gt; in it
     /// messaging.Handle&lt;EmployeeSaved, EmployeeSavedHandler&gt;().From("Modern");
     /// messaging.AddMessages(typeof(OrderSaved).Assembly);      // receive every [Message] type in it, e.g. for a sink
     /// messaging.Subscribe("AppA", "AppA.Events.#");           // another application's exchange
@@ -21,6 +23,9 @@ namespace Messaging.Hosting
     /// </summary>
     public sealed class MessagingBuilder
     {
+        private static readonly MethodInfo AddHandlerMethod =
+            typeof(MessagingBuilder).GetMethod(nameof(AddHandler), BindingFlags.NonPublic | BindingFlags.Instance);
+
         internal MessagingBuilder(IServiceCollection services, MessagingRegistry registry)
         {
             Services = services;
@@ -56,12 +61,6 @@ namespace Messaging.Hosting
             AddBus(name, serializer);
             Services.AddOptions<RabbitMQBusOptions>(name).Configure(configure);
             return this;
-        }
-
-        /// <summary>Where, and with which routing key, <typeparamref name="TMessage"/> is published.</summary>
-        public RouteBuilder<TMessage> Route<TMessage>()
-        {
-            return new RouteBuilder<TMessage>(this, Registry.Route(typeof(TMessage)));
         }
 
         /// <summary>
@@ -129,12 +128,46 @@ namespace Messaging.Hosting
         public HandlerBuilder Handle<TMessage, THandler>()
             where THandler : class, IMessageHandler<TMessage>
         {
-            Services.AddScoped<THandler>();
-            return new HandlerBuilder(
-                this,
-                typeof(TMessage),
-                typeof(THandler),
-                (handler, message, context, cancellationToken) => ((THandler)handler).Handle((TMessage)message, context, cancellationToken));
+            Services.TryAddScoped<THandler>();
+            return new HandlerBuilder(this, typeof(TMessage), typeof(THandler), Invoke<TMessage, THandler>);
+        }
+
+        /// <summary>
+        /// Registers every <see cref="IMessageHandler{TMessage}"/> class in <paramref name="assembly"/>, as
+        /// <see cref="Handle{TMessage, THandler}"/> does for one.
+        /// </summary>
+        /// <param name="busNames">The buses they receive from. None means every bus.</param>
+        public MessagingBuilder AddHandlers(Assembly assembly, params string[] busNames)
+        {
+            if (assembly == null)
+            {
+                throw new ArgumentNullException(nameof(assembly));
+            }
+
+            foreach (Type handlerType in assembly.GetTypes().Where(t => t.IsClass && !t.IsAbstract && !t.ContainsGenericParameters))
+            {
+                foreach (Type handlerInterface in handlerType.GetInterfaces().Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IMessageHandler<>)))
+                {
+                    AddHandlerMethod
+                        .MakeGenericMethod(handlerInterface.GetGenericArguments()[0], handlerType)
+                        .Invoke(this, new object[] { busNames ?? new string[0] });
+                }
+            }
+
+            return this;
+        }
+
+        private void AddHandler<TMessage, THandler>(string[] busNames)
+            where THandler : class, IMessageHandler<TMessage>
+        {
+            Services.TryAddScoped<THandler>();
+            Registry.AddHandler(new HandlerRegistration(typeof(TMessage), typeof(THandler), busNames, Invoke<TMessage, THandler>));
+        }
+
+        private static Task Invoke<TMessage, THandler>(object handler, object message, MessageContext context, CancellationToken cancellationToken)
+            where THandler : IMessageHandler<TMessage>
+        {
+            return ((THandler)handler).Handle((TMessage)message, context, cancellationToken);
         }
 
         private void AddBus(string name, IMessageSerializer serializer)
