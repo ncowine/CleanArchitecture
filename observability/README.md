@@ -221,7 +221,7 @@ Recycle the app pool, then generate a little traffic.
 | Traces arriving | Grafana → Explore → Tempo → Search → last 15 minutes |
 | Logs arriving | Grafana → Explore → Loki → `{service_name="CleanArch.Api"}` |
 | Audit arriving | Kibana → Discover, data view `cleanarch-audit-*` (log in as `elastic`) |
-| Dashboard | Grafana → "CleanArch.Api — Service Overview" |
+| Dashboard | Grafana → "CleanArch.Api - Service Overview" |
 
 The dashboard reads top to bottom: a verdict, traffic, which endpoint, why,
 dependencies, features and background work, runtime, and one request by id.

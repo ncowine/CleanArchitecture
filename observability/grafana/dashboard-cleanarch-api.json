@@ -1,7 +1,7 @@
 {
   "id": null,
   "uid": "cleanarch-api",
-  "title": "CleanArch.Api — Service Overview",
+  "title": "CleanArch.Api - Service Overview",
   "tags": [
     "cleanarch",
     "otel",
@@ -227,7 +227,7 @@
     {
       "type": "row",
       "id": 1,
-      "title": "Is it healthy right now?",
+      "title": "Overview",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -989,7 +989,7 @@
     {
       "type": "row",
       "id": 14,
-      "title": "What is the traffic doing?",
+      "title": "Traffic",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1491,7 +1491,7 @@
     {
       "type": "row",
       "id": 19,
-      "title": "Which endpoint is the problem?",
+      "title": "Endpoints",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1504,7 +1504,7 @@
     {
       "type": "table",
       "id": 20,
-      "title": "Endpoints — traffic, errors, latency",
+      "title": "Traffic, errors and latency by route",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1873,7 +1873,7 @@
     {
       "type": "row",
       "id": 21,
-      "title": "What is failing: logs and traces",
+      "title": "Errors",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2240,7 +2240,7 @@
     {
       "type": "row",
       "id": 27,
-      "title": "Dependencies and the edge: is it us or them?",
+      "title": "Dependencies",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -3259,7 +3259,7 @@
     {
       "type": "row",
       "id": 35,
-      "title": "Features and background work",
+      "title": "Features & background jobs",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -3591,7 +3591,7 @@
     {
       "type": "stat",
       "id": 39,
-      "title": "Dead-lettered — total",
+      "title": "Dead-lettered (total)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3650,7 +3650,7 @@
     {
       "type": "row",
       "id": 58,
-      "title": "Messaging (RabbitMQ): is the API connected, and are events flowing?",
+      "title": "Messaging (RabbitMQ)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -3735,8 +3735,7 @@
           },
           "expr": "min(up{job=\"rabbitmq\"})"
         }
-      ],
-      "description": "Whether Prometheus can scrape RabbitMQ (rabbitmq_prometheus plugin). Down means the broker, its host or the plugin is gone: nothing is published or received by any application. Alert: \"RabbitMQ broker unreachable\"."
+      ]
     },
     {
       "type": "stat",
@@ -3814,8 +3813,7 @@
           "expr": "min by (messaging_connection_role) (messaging_client_connected)",
           "legendFormat": "{{messaging_connection_role}}"
         }
-      ],
-      "description": "The API's own two connections: consumer (receiving) and publisher (sending). Either Disconnected while the broker is reachable points at the API side: credentials, vhost permissions, network. The API keeps serving requests; outbox events wait in its database and go out after it reconnects. Alert: \"API disconnected from RabbitMQ\"."
+      ]
     },
     {
       "type": "stat",
@@ -3875,8 +3873,7 @@
           },
           "expr": "sum(rabbitmq_queue_messages{queue=\"cleanarch.api.main.dead-letter\"}) or vector(0)"
         }
-      ],
-      "description": "Messages in cleanarch.api.main.dead-letter: received but never handled (failed every attempt, or unreadable). Nothing retries them. Read them in the RabbitMQ management UI (Queues), fix the cause, then move them back or purge. Alert: \"Messages dead-lettered\"."
+      ]
     },
     {
       "type": "stat",
@@ -3936,13 +3933,12 @@
           },
           "expr": "sum(rabbitmq_queue_messages_ready{queue=\"cleanarch.api.main\"}) or vector(0)"
         }
-      ],
-      "description": "Messages in cleanarch.api.main the API has not taken yet. Climbing means handlers are slower than arrivals, or the consumer is disconnected."
+      ]
     },
     {
       "type": "timeseries",
       "id": 64,
-      "title": "Events/sec: published and received",
+      "title": "Events/sec",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -4030,8 +4026,7 @@
           "expr": "sum(rate(messaging_client_consumed_messages_total[$__rate_interval])) or vector(0)",
           "legendFormat": "received"
         }
-      ],
-      "description": "Messages the broker confirmed, and messages received for handlers. A line dropping to zero while traffic continues is the first sign events stopped flowing. Outbox events go out after their transaction commits, so publishing lags the request by up to the outbox poll interval."
+      ]
     },
     {
       "type": "timeseries",
@@ -4124,8 +4119,7 @@
           "expr": "sum by (messaging_destination_name, error_type) (rate(messaging_process_duration_seconds_count{error_type!=\"\"}[$__rate_interval]))",
           "legendFormat": "handle {{messaging_destination_name}}: {{error_type}}"
         }
-      ],
-      "description": "Publish failures (the broker did not confirm; the outbox retries) and handler failures (retried, then dead-lettered). Empty is good. The reason is the exception type; the log panel below has the message."
+      ]
     },
     {
       "type": "timeseries",
@@ -4209,8 +4203,7 @@
           "expr": "histogram_quantile(0.95, sum by (le, messaging_destination_name) (rate(messaging_process_duration_seconds_bucket{error_type=\"\"}[$__rate_interval])))",
           "legendFormat": "{{messaging_destination_name}}"
         }
-      ],
-      "description": "Deserializing and handling one message, successful attempts only. A rise here comes before a backlog."
+      ]
     },
     {
       "type": "logs",
@@ -4246,8 +4239,7 @@
           "queryType": "range",
           "expr": "{service_name=\"CleanArch.Api\"} |~ \"connected\\\\.|connection lost|could not connect|failed; retrying|dead-letter queue|acknowledged and dropped\""
         }
-      ],
-      "description": "Why the tiles above changed: connections lost and regained, failed connects with the broker's reason, and messages retried, dead-lettered or dropped."
+      ]
     },
     {
       "type": "row",
@@ -4265,7 +4257,7 @@
     {
       "type": "table",
       "id": 56,
-      "title": "Caches — hit rate, throughput, evictions, size",
+      "title": "Caches",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -4573,7 +4565,7 @@
     {
       "type": "timeseries",
       "id": 57,
-      "title": "Cache hit/miss/eviction rate — history",
+      "title": "Cache hit/miss/eviction rate",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -4675,7 +4667,7 @@
     {
       "type": "row",
       "id": 47,
-      "title": "Runtime health",
+      "title": "Runtime",
       "collapsed": true,
       "gridPos": {
         "h": 1,
@@ -4771,7 +4763,7 @@
         {
           "type": "timeseries",
           "id": 41,
-          "title": "Memory — working set vs GC heap",
+          "title": "Memory: working set vs GC heap",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -5326,7 +5318,7 @@
     {
       "type": "row",
       "id": 51,
-      "title": "Investigate one request: paste a trace id or correlation id",
+      "title": "Request lookup",
       "collapsed": true,
       "gridPos": {
         "h": 1,
@@ -5338,7 +5330,7 @@
         {
           "type": "text",
           "id": 48,
-          "title": "How to use this section",
+          "title": "How to use",
           "gridPos": {
             "h": 5,
             "w": 24,
@@ -5347,7 +5339,7 @@
           },
           "options": {
             "mode": "markdown",
-            "content": "**Paste an id into the `find` variable at the top of the dashboard, then widen the time range to cover when it happened.**\n\n| Where the id comes from | What it looks like | Which panel below answers |\n|---|---|---|\n| `X-Correlation-ID` response header (every response has one) | `a8faac35-f23e-…` | **Logs for one request** |\n| `traceId` inside an RFC 7807 error body — `00-<trace id>-<span id>-01` | paste **only the middle part** | both panels |\n| `TraceID` field on any log line in **What is failing** | 32 hex characters | **The trace** |\n| `correlationId` on an audit record in Kibana | `a8faac35-f23e-…` | **Logs for one request** |\n\nThe logs panel matches either id. The trace panel needs a trace id and will error on a correlation id, which is expected rather than a broken panel.\n\nA red error triangle on **The trace** usually means the id is not in Tempo at all: Tempo answers 404 and Grafana shows that as an error, not as \"No data\". Check you copied all 32 characters, and remember Tempo has its own retention — an id from yesterday may simply be gone."
+            "content": "Paste a trace id or correlation id into **find** at the top, and set the time range to cover the request.\n\n| Id from | Looks like | Panel |\n|---|---|---|\n| `X-Correlation-ID` response header | `a8faac35-f23e-...` | **Logs for one request** |\n| `traceId` in an RFC 7807 error body (`00-<trace id>-<span id>-01`) | use the middle part only | both |\n| `TraceID` on a log line in **Errors** | 32 hex chars | **The trace** |\n| `correlationId` on an audit record in Kibana | `a8faac35-f23e-...` | **Logs for one request** |\n\nThe logs panel takes either id. The trace panel only takes a trace id; a correlation id makes it error.\n\nA red triangle on **The trace** means Tempo doesn't have that trace (404). Check all 32 chars were copied and that it's within Tempo's retention."
           }
         },
         {
