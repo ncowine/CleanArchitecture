@@ -59,7 +59,7 @@ Come back for the rest when you hit the problem it solves.
 | Work out whether it's us or a dependency | [95 §10](95-reading-your-telemetry.md#10-eighteen-real-scenarios) |
 | Follow one request through logs, traces and the audit trail | [95 §9](95-reading-your-telemetry.md#9-the-golden-thread--one-request-across-all-four) |
 | Write a PromQL / LogQL / TraceQL query | [95 §§5–7](95-reading-your-telemetry.md#16-cheat-sheet) |
-| Get alerted instead of watching a dashboard | [95 §13](95-reading-your-telemetry.md#13-the-four-alerts-worth-having) |
+| Get alerted instead of watching a dashboard | [95 §13](95-reading-your-telemetry.md#13-the-alerts-worth-having) |
 
 ### Threads that run through several guides
 

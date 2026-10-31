@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using BuildingBlocks.Messaging;
 using BuildingBlocks.Outbox;
 using BuildingBlocks.RealTime;
@@ -32,6 +33,7 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
     private readonly string _referenceDbPath = Path.Combine(Path.GetTempPath(), $"reference-events-{Guid.NewGuid():N}.db");
     private readonly RecordingRealtimeNotifier _signalR = new();
     private readonly RecordingPublisher _rabbitMq = new();
+    private static readonly ActivitySource Request = new("Tests.Request");
     private ServiceProvider _withBroker = null!;
     private ServiceProvider _withoutBroker = null!;
 
@@ -55,10 +57,21 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
     [Fact]
     public async Task Creating_equipment_notifies_SignalR_at_commit_and_RabbitMQ_through_the_outbox()
     {
+        // Stands in for the OpenTelemetry SDK: records the request's span and the outbox's delivery spans.
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name is "Tests.Request" or OutboxDiagnostics.ActivitySourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+        };
+        ActivitySource.AddActivityListener(listener);
+
         Guid id;
         string? requestCorrelationId;
+        string requestTraceParent;
+        using (var request = Request.StartActivity("POST /api/equipment", ActivityKind.Server)!)
         using (var scope = _withBroker.CreateScope())
         {
+            requestTraceParent = request.Id!;
             requestCorrelationId = scope.ServiceProvider.GetRequiredService<BuildingBlocks.Correlation.ICorrelationContext>().CorrelationId;
             id = await scope.ServiceProvider.GetRequiredService<ISender>().Send(
                 new CreateEquipment.Command("ThinkPad X1", EquipmentCategory.Laptop, "LAP-001"), default);
@@ -76,11 +89,12 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
         Assert.Equal(nameof(EquipmentCreated), row.Type);
         Assert.Null(row.ProcessedOnUtc);
         Assert.Equal(requestCorrelationId, row.CorrelationId);
+        Assert.Equal(requestTraceParent, row.TraceParent);
 
         // The outbox processor (polling every 2 s) relays it with a confirmed publish.
         await RunOutboxProcessorUntilAsync(() => _rabbitMq.Published.Count == 1);
 
-        var (message, messageId, correlationId) = Assert.Single(_rabbitMq.Published);
+        var (message, messageId, correlationId, publishedUnder) = Assert.Single(_rabbitMq.Published);
         var created = Assert.IsType<EquipmentCreated>(message);
         Assert.Equal(id, created.Id);
         Assert.Equal("ThinkPad X1", created.Name);
@@ -89,6 +103,12 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
         Assert.Equal("Available", created.Status);
         Assert.Equal(row.Id.ToString("N"), messageId);
         Assert.Equal(requestCorrelationId, correlationId);
+
+        // The publish ran under the outbox's delivery span, in the request's trace: one trace, end to end.
+        Assert.NotNull(publishedUnder);
+        Assert.Equal(OutboxDiagnostics.ActivitySourceName, publishedUnder.Source.Name);
+        Assert.Equal(ActivityContext.Parse(requestTraceParent, null).TraceId, publishedUnder.TraceId);
+        Assert.Equal(ActivityContext.Parse(requestTraceParent, null).SpanId, publishedUnder.ParentSpanId);
         Assert.NotNull((await SingleOutboxRowAsync()).ProcessedOnUtc);
     }
 
@@ -221,13 +241,13 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
 
     private sealed class RecordingPublisher : IConfirmedMessagePublisher
     {
-        public List<(object Message, string? MessageId, string? CorrelationId)> Published { get; } = [];
+        public List<(object Message, string? MessageId, string? CorrelationId, Activity? Activity)> Published { get; } = [];
 
         public Task PublishConfirmedAsync(object message, string? messageId, CancellationToken cancellationToken = default)
         {
             lock (Published)
             {
-                Published.Add((message, messageId, MessagingCorrelation.Current));
+                Published.Add((message, messageId, MessagingCorrelation.Current, Activity.Current));
             }
 
             return Task.CompletedTask;

@@ -66,6 +66,9 @@ internal static class ObservabilityExtensions
                 .AddSource(OnBehalfOfDiagnostics.ActivitySourceName)
                 // RabbitMQ publishes and receives (only emitted when messaging is configured).
                 .AddSource(MessagingTelemetry.Name)
+                // A span per outbox delivery, parented to the request that wrote the row, so request -> publish ->
+                // consume is one trace despite the outbox's delay.
+                .AddSource(OutboxDiagnostics.ActivitySourceName)
                 // A child span per database query. Without it a slow handler is one opaque block: you can
                 // see the request took four seconds but not that 3.9 of them were a single SELECT — or
                 // that it was forty small queries in a loop, which is a different bug with a different fix.
