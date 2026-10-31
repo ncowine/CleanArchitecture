@@ -5328,21 +5328,6 @@
       },
       "panels": [
         {
-          "type": "text",
-          "id": 48,
-          "title": "How to use",
-          "gridPos": {
-            "h": 5,
-            "w": 24,
-            "x": 0,
-            "y": 144
-          },
-          "options": {
-            "mode": "markdown",
-            "content": "Paste a trace id or correlation id into **find** at the top, and set the time range to cover the request.\n\n| Id from | Looks like | Panel |\n|---|---|---|\n| `X-Correlation-ID` response header | `a8faac35-f23e-...` | **Logs for one request** |\n| `traceId` in an RFC 7807 error body (`00-<trace id>-<span id>-01`) | use the middle part only | both |\n| `TraceID` on a log line in **Errors** | 32 hex chars | **The trace** |\n| `correlationId` on an audit record in Kibana | `a8faac35-f23e-...` | **Logs for one request** |\n\nThe logs panel takes either id. The trace panel only takes a trace id; a correlation id makes it error.\n\nA red triangle on **The trace** means Tempo doesn't have that trace (404). Check all 32 chars were copied and that it's within Tempo's retention."
-          }
-        },
-        {
           "type": "logs",
           "id": 49,
           "title": "Logs for one request",
@@ -5354,7 +5339,7 @@
             "h": 12,
             "w": 24,
             "x": 0,
-            "y": 149
+            "y": 142
           },
           "options": {
             "showTime": true,
@@ -5390,7 +5375,7 @@
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 161
+            "y": 154
           },
           "targets": [
             {
