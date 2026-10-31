@@ -72,7 +72,11 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
             message.Attempts++;
             using var activity = StartDeliveryActivity(message, context);
             // Restore the originating correlation id so the consumer's work and logs trace back to the
-            // request that produced this message.
+            // request that produced this message. The log scope puts it on this delivery's log lines, as the
+            // request's own lines have it, so looking the request up finds them too.
+            using var logScope = message.CorrelationId is null
+                ? null
+                : _logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = message.CorrelationId });
             if (message.CorrelationId is not null)
             {
                 correlation.Set(message.CorrelationId);
@@ -84,6 +88,7 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
                 message.ProcessedOnUtc = DateTime.UtcNow;
                 message.Error = null;
                 OutboxDiagnostics.Delivered.Add(1, new KeyValuePair<string, object?>("db", context));
+                OutboxLog.Delivered(_logger, message.Id, message.Type, context, message.Attempts);
             }
             catch (OutboxDeliveryDeferredException exception)
             {
@@ -138,6 +143,9 @@ internal static partial class OutboxLog
 {
     [LoggerMessage(Level = LogLevel.Error, Message = "Outbox processing tick failed for {Context}.")]
     public static partial void TickFailed(ILogger logger, Exception exception, string context);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Delivered outbox message {MessageId} ({MessageType}) for {Context} on attempt {Attempts}.")]
+    public static partial void Delivered(ILogger logger, Guid messageId, string messageType, string context, int attempts);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to deliver outbox message {MessageId} ({MessageType}) for {Context} on attempt {Attempts}; will retry.")]
     public static partial void DeliveryFailed(ILogger logger, Exception exception, Guid messageId, string messageType, string context, int attempts);
