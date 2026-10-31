@@ -563,6 +563,21 @@ everything else.
 A rising `outbox_dead_lettered_total` needs a person. Deferred rows during a broker outage don't show up as failures;
 they show up as a growing backlog of unsent rows.
 
+The trace follows the same path as the correlation id. `OutboxWriter` stores the request's W3C `traceparent` on the
+row (`OutboxMessage.TraceParent`), and the processor starts an `outbox deliver <Type>` span (source
+`CleanArch.Outbox`) with it as the parent. The `publish` span nests under that, and its `traceparent` header carries
+the trace to the consumer's `process` span, so one Tempo trace shows:
+
+```
+POST /api/equipment                          (request)
+  └ outbox deliver EquipmentCreated          (seconds later, or hours after a broker outage)
+      └ publish Equipment.Messages...        (ends when the broker confirms)
+          └ process Equipment.Messages...    (in the receiving app)
+```
+
+A failed or deferred attempt marks its span as an error, and each retry is a new span in the same trace. Rows written
+outside a trace (or before the column existed) start a trace of their own, as before.
+
 ## Legacy compatibility
 
 Old and new apps talk because **they share one engine and one wire format, and agree on wire names**. A legacy app

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using BuildingBlocks.Correlation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -69,6 +70,7 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
         foreach (var message in messages)
         {
             message.Attempts++;
+            using var activity = StartDeliveryActivity(message, context);
             // Restore the originating correlation id so the consumer's work and logs trace back to the
             // request that produced this message.
             if (message.CorrelationId is not null)
@@ -89,12 +91,14 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
                 // the rest of the batch keeps its order and isn't tried against the same outage.
                 message.Attempts--;
                 message.Error = exception.Message;
+                activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
                 OutboxLog.DeliveryDeferred(_logger, exception, message.Id, message.Type, context);
                 break;
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 message.Error = exception.Message;
+                activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
 
                 if (message.Attempts >= MaxDeliveryAttempts)
                 {
@@ -111,6 +115,22 @@ internal sealed class OutboxProcessor<TContext> : BackgroundService where TConte
         }
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// A span for one delivery attempt, continuing the trace of the request that wrote the row. The publish (and,
+    /// through its traceparent header, the consumer) nests under it, so request -> publish -> consume is one trace.
+    /// </summary>
+    private static Activity? StartDeliveryActivity(OutboxMessage message, string context)
+    {
+        ActivityContext.TryParse(message.TraceParent, null, isRemote: true, out var parent);
+
+        var activity = OutboxDiagnostics.ActivitySource.StartActivity($"outbox deliver {message.Type}", ActivityKind.Internal, parent);
+        activity?.SetTag("outbox.db", context);
+        activity?.SetTag("outbox.message.id", message.Id);
+        activity?.SetTag("outbox.message.type", message.Type);
+        activity?.SetTag("outbox.attempt", message.Attempts);
+        return activity;
     }
 }
 

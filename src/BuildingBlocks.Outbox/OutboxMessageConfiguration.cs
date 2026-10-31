@@ -19,6 +19,7 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
         builder.Property(message => message.OccurredOnUtc).IsRequired();
         builder.Property(message => message.Attempts).IsRequired();
         builder.Property(message => message.CorrelationId).HasMaxLength(100);
+        builder.Property(message => message.TraceParent).HasMaxLength(100);
 
         // The dispatcher polls for messages that are neither delivered nor dead-lettered.
         builder.HasIndex(message => new { message.ProcessedOnUtc, message.DeadLetteredOnUtc });

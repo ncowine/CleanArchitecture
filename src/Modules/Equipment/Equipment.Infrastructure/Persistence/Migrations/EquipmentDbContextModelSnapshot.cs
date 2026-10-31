@@ -46,6 +46,10 @@ namespace Equipment.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("ProcessedOnUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(200)

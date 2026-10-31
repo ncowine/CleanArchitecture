@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using BuildingBlocks.Correlation;
 using Microsoft.EntityFrameworkCore;
@@ -38,6 +39,7 @@ public sealed class OutboxWriter<TContext> : IOutbox where TContext : DbContext
             Content = JsonSerializer.Serialize(integrationEvent),
             OccurredOnUtc = DateTime.UtcNow,
             CorrelationId = _correlation.CorrelationId,
+            TraceParent = Activity.Current is { IdFormat: ActivityIdFormat.W3C } current ? current.Id : null,
         });
     }
 }

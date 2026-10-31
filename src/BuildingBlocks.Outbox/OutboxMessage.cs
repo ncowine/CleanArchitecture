@@ -18,6 +18,12 @@ public sealed class OutboxMessage
     /// <summary>Correlation id of the operation that produced this message — carried across the async hop.</summary>
     public string? CorrelationId { get; set; }
 
+    /// <summary>
+    /// W3C traceparent of the operation that produced this message, so its delivery continues the same trace
+    /// (request -> outbox -> publish -> consume). Null when there was no trace.
+    /// </summary>
+    public string? TraceParent { get; set; }
+
     /// <summary>How many delivery attempts have been made so far.</summary>
     public int Attempts { get; set; }
 
