@@ -17,5 +17,8 @@ namespace Messaging.Hosting
 
         /// <summary>Histogram, seconds: deserializing and handling one message.</summary>
         public const string ProcessDuration = "messaging.process.duration";
+
+        /// <summary>Gauge: 1 while a bus's connection is open, 0 while not, per bus and role (consumer, publisher).</summary>
+        public const string Connected = "messaging.client.connected";
     }
 }

@@ -595,7 +595,7 @@ sudo chown -R $USER:$USER /opt/cleanarch
     │   ├── dashboards/
     │   │   └── dashboards.yaml   tells Grafana to auto-import the folder below
     │   └── alerting/
-    │       └── cleanarch-api.yaml the four alert rules
+    │       └── cleanarch-api.yaml the seven alert rules
     └── dashboards/
         └── cleanarch-api.json    the dashboard itself
 ```
@@ -1281,7 +1281,7 @@ Grafana can evaluate alert rules on its own. Prometheus can do that too, but
 Prometheus cannot *notify* anyone — that needs a second program called
 Alertmanager, with its own configuration and its own delivery settings. Grafana
 is already running, already knows where Prometheus is, and already knows how to
-send email. One program instead of two, for the same four alerts.
+send email. One program instead of two, for the same seven alerts.
 
 ```bash
 mkdir -p ../grafana/provisioning/alerting

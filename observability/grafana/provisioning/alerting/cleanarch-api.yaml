@@ -5,7 +5,7 @@
 # Prometheus can evaluate alerting rules, but it cannot notify anyone — that needs a separate
 # Alertmanager process, its own config file and its own receivers. Grafana is already running,
 # already has Prometheus as a data source, and already has contact points and notification
-# policies. One component instead of two, for the same four alerts.
+# policies. One component instead of two, for the same seven alerts.
 #
 # WHAT FIRES, AND WHAT DOES NOT
 # These alert on SYMPTOMS a caller would notice, never on causes. "5% of requests are failing"
@@ -21,7 +21,7 @@
 # An exec error is not a failing service — it is Grafana being unable to ASK. Prometheus is
 # booting, replaying its write-ahead log (503 for the whole replay), restarting, or unreachable.
 # With `Alerting` or `Error` here, every restart of the stack raised a DatasourceError against
-# all four rules and told on-call the service was down while it was serving traffic normally.
+# every rule and told on-call the service was down while it was serving traffic normally.
 #
 # The honest cost: while Prometheus is unreachable, none of these rules can fire, so a
 # permanently dead Prometheus produces silence rather than a page. No rule that queries
@@ -38,7 +38,8 @@
 # still show as Firing in the UI — they just do not reach anybody.
 #
 # NOTE ON `job="cleanarch-api"`: that is the job_name from prometheus.yml. If you renamed the
-# scrape job, rename it in ServiceDown too, or the alert silently never fires.
+# scrape job, rename it in ServiceDown too, or the alert silently never fires. The same goes for
+# `job="rabbitmq"` in the two RabbitMQ rules.
 
 apiVersion: 1
 
@@ -212,6 +213,126 @@ groups:
               expr: sum(increase(outbox_dead_lettered_total[1h])) or vector(0)
           - refId: THRESHOLD
             relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # ── 5. The broker is gone ─────────────────────────────────────────────────
+      - uid: cleanarch-rabbitmq-unreachable
+        title: RabbitMQ broker unreachable
+        condition: THRESHOLD
+        # Five minutes, like Service down: a broker restart takes well under that, and the
+        # outbox holds every event meanwhile.
+        for: 5m
+        # As in Service down: `up` is written by Prometheus on every scrape, so no data means
+        # the rabbitmq job is not being scraped at all. Remove this rule if you have no broker.
+        noDataState: Alerting
+        execErrState: OK
+        labels:
+          severity: critical
+          service: RabbitMQ
+        annotations:
+          summary: Prometheus cannot reach RabbitMQ
+          description: >-
+            No application can publish or receive. The broker, its host, or the
+            rabbitmq_prometheus plugin (port 15692) is down. Outbox events wait and go out
+            once it is back; messages for the API's handlers are not delivered meanwhile.
+          runbook_url: https://github.com/your-org/CleanArchitecture/blob/main/tutorials/95-reading-your-telemetry.md#messaging-rabbitmq
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: min(up{job="rabbitmq"})
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # ── 6. The API lost the broker ────────────────────────────────────────────
+      - uid: cleanarch-messaging-disconnected
+        title: API disconnected from RabbitMQ
+        condition: THRESHOLD
+        for: 5m
+        # No data means messaging is off, or the API is down — Service down covers that.
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: critical
+          service: CleanArch.Api
+        annotations:
+          summary: CleanArch.Api's consumer or publisher connection to RabbitMQ is down
+          description: >-
+            The broker is reachable, so the cause is on the API side: credentials, vhost
+            permissions, or the network between them. The API keeps serving requests and the
+            outbox holds its events, but nothing is received until it reconnects. The
+            "Connection & dead-letter log" panel has the broker's reason.
+          runbook_url: https://github.com/your-org/CleanArchitecture/blob/main/tutorials/95-reading-your-telemetry.md#messaging-rabbitmq
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              # Silent while the broker itself is down: RabbitMQ broker unreachable already
+              # fired, and one outage should page once.
+              expr: min(messaging_client_connected{job="cleanarch-api"}) unless on() (min(up{job="rabbitmq"}) < 1)
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: THRESHOLD
+              type: threshold
+              expression: QUERY
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # ── 7. Received work was given up on ──────────────────────────────────────
+      - uid: cleanarch-messages-dead-lettered
+        title: Messages dead-lettered
+        condition: THRESHOLD
+        for: 1m
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: warning
+          service: CleanArch.Api
+        annotations:
+          summary: Messages are waiting in the API's dead-letter queue
+          description: >-
+            {{ $values.QUERY.Value }} message(s) the API received but never handled: every attempt failed, or the body was
+            unreadable. Nothing retries them. Read them in the RabbitMQ management UI (Queues ->
+            cleanarch.api.main.dead-letter), fix the cause, then move them back or purge. The
+            alert stays firing until the queue is empty, by design.
+          runbook_url: https://github.com/your-org/CleanArchitecture/blob/main/tutorials/95-reading-your-telemetry.md#messaging-rabbitmq
+        data:
+          - refId: QUERY
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: QUERY
+              instant: true
+              range: false
+              editorMode: code
+              expr: sum(rabbitmq_queue_messages{queue="cleanarch.api.main.dead-letter"}) or vector(0)
+          - refId: THRESHOLD
+            relativeTimeRange: { from: 600, to: 0 }
             datasourceUid: __expr__
             model:
               refId: THRESHOLD

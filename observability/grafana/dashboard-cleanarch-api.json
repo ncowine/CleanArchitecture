@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 10,
+  "version": 12,
   "refresh": "10s",
   "editable": true,
   "graphTooltip": 1,
@@ -3650,7 +3650,7 @@
     {
       "type": "row",
       "id": 58,
-      "title": "Messaging (RabbitMQ): are events getting out and in?",
+      "title": "Messaging (RabbitMQ): is the API connected, and are events flowing?",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -3661,16 +3661,16 @@
       "panels": []
     },
     {
-      "type": "timeseries",
+      "type": "stat",
       "id": 59,
-      "title": "Published/sec by event",
+      "title": "Broker reachable",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 7,
-        "w": 8,
+        "h": 4,
+        "w": 5,
         "x": 0,
         "y": 102
       },
@@ -3678,6 +3678,285 @@
         "defaults": {
           "unit": "short",
           "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Down",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "noValue": "Not scraped"
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "background",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "min(up{job=\"rabbitmq\"})"
+        }
+      ],
+      "description": "Whether Prometheus can scrape RabbitMQ (rabbitmq_prometheus plugin). Down means the broker, its host or the plugin is gone: nothing is published or received by any application. Alert: \"RabbitMQ broker unreachable\"."
+    },
+    {
+      "type": "stat",
+      "id": 60,
+      "title": "API connection to broker",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 7,
+        "x": 5,
+        "y": 102
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Disconnected",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Connected",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "noValue": "Messaging off"
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "background",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "min by (messaging_connection_role) (messaging_client_connected)",
+          "legendFormat": "{{messaging_connection_role}}"
+        }
+      ],
+      "description": "The API's own two connections: consumer (receiving) and publisher (sending). Either Disconnected while the broker is reachable points at the API side: credentials, vhost permissions, network. The API keeps serving requests; outbox events wait in its database and go out after it reconnects. Alert: \"API disconnected from RabbitMQ\"."
+    },
+    {
+      "type": "stat",
+      "id": 62,
+      "title": "Dead-lettered",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 102
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "background",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rabbitmq_queue_messages{queue=\"cleanarch.api.main.dead-letter\"}) or vector(0)"
+        }
+      ],
+      "description": "Messages in cleanarch.api.main.dead-letter: received but never handled (failed every attempt, or unreadable). Nothing retries them. Read them in the RabbitMQ management UI (Queues), fix the cause, then move them back or purge. Alert: \"Messages dead-lettered\"."
+    },
+    {
+      "type": "stat",
+      "id": 63,
+      "title": "Waiting to be handled",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 102
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "background",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calc": "lastNotNull",
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rabbitmq_queue_messages_ready{queue=\"cleanarch.api.main\"}) or vector(0)"
+        }
+      ],
+      "description": "Messages in cleanarch.api.main the API has not taken yet. Climbing means handlers are slower than arrivals, or the consumer is disconnected."
+    },
+    {
+      "type": "timeseries",
+      "id": 64,
+      "title": "Events/sec: published and received",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 106
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
             "mode": "palette-classic"
           },
           "custom": {
@@ -3739,25 +4018,34 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (messaging_destination_name) (rate(messaging_client_sent_messages_total{error_type=\"\"}[$__rate_interval]))",
-          "legendFormat": "{{messaging_destination_name}}"
+          "expr": "sum(rate(messaging_client_sent_messages_total{error_type=\"\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "published"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(messaging_client_consumed_messages_total[$__rate_interval])) or vector(0)",
+          "legendFormat": "received"
         }
       ],
-      "description": "Messages the broker confirmed, by wire name. Outbox events are published only after their transaction commits, so this lags the request that caused them by up to the outbox poll interval."
+      "description": "Messages the broker confirmed, and messages received for handlers. A line dropping to zero while traffic continues is the first sign events stopped flowing. Outbox events go out after their transaction commits, so publishing lags the request by up to the outbox poll interval."
     },
     {
       "type": "timeseries",
-      "id": 60,
-      "title": "Publish failures/sec by event & reason",
+      "id": 65,
+      "title": "Failures/sec by event & reason",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 7,
+        "h": 8,
         "w": 8,
         "x": 8,
-        "y": 102
+        "y": 106
       },
       "fieldConfig": {
         "defaults": {
@@ -3824,110 +4112,34 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (messaging_destination_name, error_type) (rate(messaging_client_sent_messages_total{error_type!=\"\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "{{messaging_destination_name}} {{error_type}}"
-        }
-      ],
-      "description": "Publishes the broker did not confirm. The outbox keeps the row and retries it; buffered publishes stay buffered. Sustained failures usually mean the broker is down (see the connection log panel)."
-    },
-    {
-      "type": "timeseries",
-      "id": 61,
-      "title": "Received/sec by event",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 102
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "showPoints": "never",
-            "pointSize": 5,
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisSoftMin": 0,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "expr": "sum by (messaging_destination_name, error_type) (rate(messaging_client_sent_messages_total{error_type!=\"\"}[$__rate_interval]))",
+          "legendFormat": "publish {{messaging_destination_name}}: {{error_type}}"
         },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
         {
-          "refId": "A",
+          "refId": "B",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (messaging_destination_name) (rate(messaging_client_consumed_messages_total[$__rate_interval]))",
-          "legendFormat": "{{messaging_destination_name}}"
+          "expr": "sum by (messaging_destination_name, error_type) (rate(messaging_process_duration_seconds_count{error_type!=\"\"}[$__rate_interval]))",
+          "legendFormat": "handle {{messaging_destination_name}}: {{error_type}}"
         }
       ],
-      "description": "Messages taken off the API's queue and passed to handlers (e.g. EquipmentDisposed, SiteRenamed)."
+      "description": "Publish failures (the broker did not confirm; the outbox retries) and handler failures (retried, then dead-lettered). Empty is good. The reason is the exception type; the log panel below has the message."
     },
     {
       "type": "timeseries",
-      "id": 62,
+      "id": 66,
       "title": "Handling p95 by event",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 7,
+        "h": 8,
         "w": 8,
-        "x": 0,
-        "y": 109
+        "x": 16,
+        "y": 106
       },
       "fieldConfig": {
         "defaults": {
@@ -3998,106 +4210,21 @@
           "legendFormat": "{{messaging_destination_name}}"
         }
       ],
-      "description": "Deserializing and handling one message, successful attempts only."
-    },
-    {
-      "type": "timeseries",
-      "id": 63,
-      "title": "Handling failures/sec by event & reason",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 109
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "showPoints": "never",
-            "pointSize": 5,
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisSoftMin": 0,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (messaging_destination_name, error_type) (rate(messaging_process_duration_seconds_count{error_type!=\"\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "{{messaging_destination_name}} {{error_type}}"
-        }
-      ],
-      "description": "A handler threw. On the API's shared queue the message is retried, then dead-lettered: the log panel says which."
+      "description": "Deserializing and handling one message, successful attempts only. A rise here comes before a backlog."
     },
     {
       "type": "logs",
-      "id": 64,
-      "title": "Broker connection & dead-letters (Loki)",
+      "id": 67,
+      "title": "Connection & dead-letter log",
       "datasource": {
         "type": "loki",
         "uid": "loki"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 109
+        "w": 24,
+        "x": 0,
+        "y": 114
       },
       "options": {
         "showTime": true,
@@ -4120,371 +4247,7 @@
           "expr": "{service_name=\"CleanArch.Api\"} |~ \"connected\\\\.|connection lost|could not connect|failed; retrying|dead-letter queue|acknowledged and dropped\""
         }
       ],
-      "description": "Connections lost and regained, failed connects, and messages retried, dead-lettered or dropped. There is no connection-state metric: these log lines are the record."
-    },
-    {
-      "type": "stat",
-      "id": 65,
-      "title": "API dead-letter queue (broker)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 0,
-        "y": 116
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "graphMode": "none",
-        "colorMode": "background",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calc": "lastNotNull",
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rabbitmq_queue_messages{queue=\"cleanarch.api.main.dead-letter\"}) or vector(0)"
-        }
-      ],
-      "description": "Messages waiting in cleanarch.api.main.dead-letter: received but never handled (failed every attempt, or unreadable). Nothing retries them. Read them in the RabbitMQ management UI (Queues), fix the cause, then move them back or purge. From RabbitMQ itself (rabbitmq_prometheus plugin), not the API."
-    },
-    {
-      "type": "stat",
-      "id": 66,
-      "title": "API queue consumers (broker)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 4,
-        "y": 116
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "graphMode": "none",
-        "colorMode": "background",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calc": "lastNotNull",
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rabbitmq_queue_consumers{queue=\"cleanarch.api.main\"}) or vector(0)"
-        }
-      ],
-      "description": "Consumers on cleanarch.api.main, one per running API instance. Zero means no instance is receiving: messages pile up in the queue (see backlog) until one starts."
-    },
-    {
-      "type": "stat",
-      "id": 67,
-      "title": "Broker connections (all apps)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 8,
-        "y": 116
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "graphMode": "none",
-        "colorMode": "background",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calc": "lastNotNull",
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rabbitmq_connections) or vector(0)"
-        }
-      ],
-      "description": "Every client connected to the broker, not just the API: the API holds two (publisher and consumer), and so does each running desktop app."
-    },
-    {
-      "type": "timeseries",
-      "id": 68,
-      "title": "API queue backlog (broker)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 12,
-        "y": 116
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "showPoints": "never",
-            "pointSize": 5,
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisSoftMin": 0,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rabbitmq_queue_messages_ready{queue=\"cleanarch.api.main\"}) or vector(0)",
-          "legendFormat": "ready"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rabbitmq_queue_messages_unacked{queue=\"cleanarch.api.main\"}) or vector(0)",
-          "legendFormat": "unacked"
-        }
-      ],
-      "description": "Ready: waiting for the API. Unacked: handed to the API, not finished yet. A ready count that keeps growing means the API is not keeping up, or not consuming at all."
-    },
-    {
-      "type": "timeseries",
-      "id": 69,
-      "title": "API queue in vs out/sec (broker)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 18,
-        "y": 116
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "showPoints": "never",
-            "pointSize": 5,
-            "spanNulls": false,
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "axisSoftMin": 0,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rate(rabbitmq_queue_exchange_messages_published_total{queue=\"cleanarch.api.main\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "into queue"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rate(rabbitmq_queue_messages_delivered_ack_total{queue=\"cleanarch.api.main\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "delivered to API"
-        }
-      ],
-      "description": "Into the API's queue vs delivered to the API, as the broker counts them. Should match \"Received/sec\" above; a gap means messages are waiting or being redelivered."
+      "description": "Why the tiles above changed: connections lost and regained, failed connects with the broker's reason, and messages retried, dead-lettered or dropped."
     },
     {
       "type": "row",
@@ -4495,7 +4258,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 123
+        "y": 121
       },
       "panels": []
     },
@@ -4511,7 +4274,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 124
+        "y": 122
       },
       "targets": [
         {
@@ -4819,7 +4582,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 134
+        "y": 132
       },
       "fieldConfig": {
         "defaults": {
@@ -4918,7 +4681,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 142
+        "y": 140
       },
       "panels": [
         {
@@ -5569,7 +5332,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 143
+        "y": 141
       },
       "panels": [
         {

@@ -19,6 +19,7 @@ namespace Messaging.Hosting
         private readonly MessagingRegistry registry;
         private readonly ILogger<MessagingHostedService> logger;
         private readonly List<RabbitMQBus> started = new List<RabbitMQBus>();
+        private BusGauges gauges;
 
         public MessagingHostedService(IServiceProvider provider, MessagingRegistry registry, ILogger<MessagingHostedService> logger)
         {
@@ -39,11 +40,19 @@ namespace Messaging.Hosting
                 started.Add(bus);
             }
 
+            if (registry.TelemetryEnabled)
+            {
+                gauges = new BusGauges(started.ToArray());
+            }
+
             return Task.CompletedTask;
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
+            gauges?.Dispose();
+            gauges = null;
+
             foreach (RabbitMQBus bus in started)
             {
                 bus.Dispose();

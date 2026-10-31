@@ -50,14 +50,15 @@ observability/
   grafana/ dashboard-cleanarch-api.json      provisioning/   ← shared by both
              provisioning/datasources/   where Grafana looks for data
              provisioning/dashboards/    auto-import the dashboard
-             provisioning/alerting/      four alert rules — see below
+             provisioning/alerting/      seven alert rules — see below
 ```
 
 ## Alerts
 
 [`grafana/provisioning/alerting/cleanarch-api.yaml`](grafana/provisioning/alerting/cleanarch-api.yaml)
-defines four rules: high error rate, high latency, service down, and outbox
-dead-lettering. Both compose files already mount `../grafana/provisioning`, so
+defines seven rules: high error rate, high latency, service down, outbox
+dead-lettering, RabbitMQ broker unreachable, API disconnected from RabbitMQ, and
+messages dead-lettered on the broker. Both compose files already mount `../grafana/provisioning`, so
 Docker picks them up with nothing to do. Running Grafana natively, copy the file
 to `<grafana>/conf/provisioning/alerting/` and restart — provisioning is read at
 startup only.
@@ -65,7 +66,7 @@ startup only.
 They evaluate immediately but notify nobody until a contact point is configured;
 an example is commented out at the bottom of the file. The reasoning behind the
 rules, and why they are Grafana rules rather than Prometheus ones, is in
-[`../tutorials/95-reading-your-telemetry.md`](../tutorials/95-reading-your-telemetry.md#13-the-four-alerts-worth-having).
+[`../tutorials/95-reading-your-telemetry.md`](../tutorials/95-reading-your-telemetry.md#13-the-alerts-worth-having).
 
 ### Getting an alert to actually email you
 

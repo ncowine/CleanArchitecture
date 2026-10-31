@@ -368,7 +368,9 @@ working API, and no outbox rows pile up with nothing to send them.
 
 There's deliberately **no messaging health check on `/health`**. It would report Unhealthy while the broker is down
 and take the API out of the load balancer, for an outage the outbox already absorbs: events wait and go out
-afterwards.
+afterwards. Instead, the connection state is a metric (`messaging_client_connected`), shown on the dashboard's messaging row
+and alerted on by "API disconnected from RabbitMQ" and "RabbitMQ broker unreachable" in
+`observability/grafana/provisioning/alerting/cleanarch-api.yaml`.
 
 For production, `guest`/`guest` only works from the broker's own machine. Give the API its own broker account and
 keep the password out of `appsettings.json` (environment variable or secret store).
