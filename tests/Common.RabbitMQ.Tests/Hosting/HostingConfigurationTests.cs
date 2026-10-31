@@ -16,15 +16,6 @@ namespace Common.RabbitMQ.Tests.Hosting
         private const int UnreachablePort = 1;
 
         [Fact]
-        public async Task HandlerOnUnknownBus_FailsAtStartup()
-        {
-            InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                StartUnreachable(messaging => messaging.Handle<CompatMessage, CompatMessageHandler>().From("Nowhere")));
-
-            Assert.Contains("unknown bus 'Nowhere'", error.Message);
-        }
-
-        [Fact]
         public async Task AddHandlers_OnUnknownBus_FailsAtStartup()
         {
             InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>

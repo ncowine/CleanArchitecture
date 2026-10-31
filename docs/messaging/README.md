@@ -372,6 +372,8 @@ a default routing key per event, used by `PublishRemote`.
 ```csharp
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);                   // local subscribers + other apps
 eventAggregator.GetEvent<OrderSaved>().PublishRemoteTo("orders.eu.saved", order); // with a custom routing key
+eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnly(order);               // other apps only, not local subscribers
+eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnlyTo("orders.eu.saved", order); // other apps only, custom key
 eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UIThread);
 ```
 
@@ -412,10 +414,12 @@ await client.StartAsync();                         // connects in the background
 
 ```csharp
 eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().Subscribe(OnSaved, ThreadOption.UIThread);
-eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemote(saved);
+eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemote(saved);      // other apps + local subscribers
+eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemoteOnly(saved);  // other apps only
 ```
 
-`PublishRemote` finds the publisher through Prism's container, just like the legacy version.
+`PublishRemote` finds the publisher through Prism's container, just like the legacy version. `PublishRemoteTo` and
+`PublishRemoteOnlyTo` take a routing key first.
 
 ### C. A modern WPF app without Prism (.NET 8)
 
@@ -665,6 +669,7 @@ foreach ($v in 'legacy','modern') {
   & "$sbin\rabbitmqctl.bat" set_permissions -p $v guest '.*' '.*' '.*'
 }
 & "$sbin\rabbitmq-plugins.bat" enable rabbitmq_management     # then open http://localhost:15672 (guest / guest)
+& "$sbin\rabbitmq-plugins.bat" enable rabbitmq_prometheus     # broker metrics on :15692, for the Grafana dashboard
 ```
 
 ### 4. Build and run the demo

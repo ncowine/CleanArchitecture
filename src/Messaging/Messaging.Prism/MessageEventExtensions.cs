@@ -12,21 +12,40 @@ namespace Messaging.Prism
         /// <param name="publisher">Optional. When null it is resolved from Prism's <see cref="ContainerLocator"/>.</param>
         public static void PublishRemote<TMessage>(this MessageEvent<TMessage> messageEvent, TMessage message, IMessagePublisher publisher = null)
         {
-            Publish(messageEvent, message, null, publisher);
+            Send(messageEvent, message, null, publisher);
+            messageEvent.Publish(message);
         }
 
         /// <summary>As <see cref="PublishRemote{TMessage}"/>, routed with <paramref name="routingKey"/> (ADR 0002, section 3).</summary>
         public static void PublishRemoteTo<TMessage>(this MessageEvent<TMessage> messageEvent, string routingKey, TMessage message, IMessagePublisher publisher = null)
+        {
+            Send(messageEvent, message, RoutedTo(routingKey), publisher);
+            messageEvent.Publish(message);
+        }
+
+        /// <summary>As <see cref="PublishRemote{TMessage}"/>, but only to other applications: local subscribers are not called.</summary>
+        public static void PublishRemoteOnly<TMessage>(this MessageEvent<TMessage> messageEvent, TMessage message, IMessagePublisher publisher = null)
+        {
+            Send(messageEvent, message, null, publisher);
+        }
+
+        /// <summary>As <see cref="PublishRemoteTo{TMessage}"/>, but only to other applications: local subscribers are not called.</summary>
+        public static void PublishRemoteOnlyTo<TMessage>(this MessageEvent<TMessage> messageEvent, string routingKey, TMessage message, IMessagePublisher publisher = null)
+        {
+            Send(messageEvent, message, RoutedTo(routingKey), publisher);
+        }
+
+        private static PublishOptions RoutedTo(string routingKey)
         {
             if (string.IsNullOrWhiteSpace(routingKey))
             {
                 throw new ArgumentException("A routing key is required.", nameof(routingKey));
             }
 
-            Publish(messageEvent, message, new PublishOptions { RoutingKey = routingKey }, publisher);
+            return new PublishOptions { RoutingKey = routingKey };
         }
 
-        private static void Publish<TMessage>(MessageEvent<TMessage> messageEvent, TMessage message, PublishOptions options, IMessagePublisher publisher)
+        private static void Send<TMessage>(MessageEvent<TMessage> messageEvent, TMessage message, PublishOptions options, IMessagePublisher publisher)
         {
             if (messageEvent == null)
             {
@@ -39,7 +58,6 @@ namespace Messaging.Prism
 
             // Buffering completes synchronously; the broker gets the message in the background.
             resolved.PublishAsync(message, options).GetAwaiter().GetResult();
-            messageEvent.Publish(message);
         }
     }
 }

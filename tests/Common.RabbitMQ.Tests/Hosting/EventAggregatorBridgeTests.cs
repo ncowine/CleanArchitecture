@@ -106,7 +106,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 Received<CompatMessage> received = Listen(eventAggregator);
 
                 await using (TestHost host = await TestHost.Start(bus, "compat-wpf", messaging => messaging
-                    .Handle<CompatMessage, CompatMessageHandler>().From(CompatBus.Name)
+                    .AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name)
                     .UseEventAggregator(eventAggregator)))
                 {
                     await bus.WaitUntilConnected();

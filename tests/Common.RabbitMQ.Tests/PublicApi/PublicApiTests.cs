@@ -32,6 +32,10 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "method Common.RabbitMQ.RabbitMQServiceRouter.Publish(System.Type, System.Object, System.String) : System.Void",
             "property Common.RabbitMQ.RabbitMQConfig.RoutingKeys : System.Collections.Generic.Dictionary<System.String, System.String> { get; set; }",
 
+            // Remote only: send to other applications without raising the event locally.
+            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemoteOnly<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
+            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemoteOnlyTo<TPayload>(Prism.Events.PubSubEvent<TPayload>, System.String, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
+
             // Section 2: exchange type and subscriptions.
             "property Common.RabbitMQ.RabbitMQConfig.ExchangeType : System.String { get; set; }",
             "property Common.RabbitMQ.RabbitMQConfig.Subscriptions : System.Collections.Generic.List<Common.RabbitMQ.RabbitMQSubscription> { get; set; }",

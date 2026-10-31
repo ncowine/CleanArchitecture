@@ -32,3 +32,10 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ['api-host:5235']
+
+  # RabbitMQ's own metrics (rabbitmq_prometheus plugin: rabbitmq-plugins enable rabbitmq_prometheus).
+  # /metrics/per-object gives one series per queue; the default /metrics only has broker-wide totals.
+  - job_name: rabbitmq
+    metrics_path: /metrics/per-object
+    static_configs:
+      - targets: ['api-host:15692']       # the broker on your machine, like the API
