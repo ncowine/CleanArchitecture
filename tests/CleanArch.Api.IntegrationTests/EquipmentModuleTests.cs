@@ -4,9 +4,11 @@ using Equipment.Application.Inventory;
 using Equipment.Contracts;
 using Equipment.Domain;
 using Equipment.Infrastructure;
+using Equipment.Infrastructure.IntegrationEvents;
 using Equipment.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Data;
 using SharedKernel.DataService;
@@ -189,6 +191,37 @@ public sealed class EquipmentModuleTests : IAsyncLifetime
         Assert.Equal(1, refreshed!.AvailableCount);
         Assert.False(refreshed.CountByCategory.ContainsKey("Laptop"));
         Assert.Equal(1, refreshed.CountByCategory["Monitor"]);
+    }
+
+    [Fact]
+    public async Task A_SiteRenamed_message_refreshes_the_site_name_in_the_cached_summary()
+    {
+        var london = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+        using var scope = _provider.CreateScope();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        Assert.Equal("London HQ", (await sender.Send(new GetSiteEquipmentSummary.Query(london), default))!.SiteName);
+
+        // The owner renames the site in its own database. Both caches (the site and the summary) still hide it.
+        await scope.ServiceProvider.GetRequiredService<ReferenceDbContext>().Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE Sites SET Name = 'London Campus' WHERE Id = {london}");
+        Assert.Equal("London HQ", (await sender.Send(new GetSiteEquipmentSummary.Query(london), default))!.SiteName);
+
+        var handler = ActivatorUtilities.CreateInstance<SiteRenamedHandler>(scope.ServiceProvider);
+        await handler.Handle(
+            new SiteRenamed { SiteId = london, Name = "London Campus" },
+            new MessageContext("ReferenceData.SiteRenamed", "Main", "m1", null, false,
+                new Dictionary<string, string>(), "ReferenceData", "ReferenceData.SiteRenamed"),
+            default);
+
+        // The refetch runs on the cache's background change channel, so poll.
+        var refreshed = await WaitForAsync(async () =>
+        {
+            var current = await sender.Send(new GetSiteEquipmentSummary.Query(london), default);
+            return current!.SiteName == "London Campus" ? current : null;
+        });
+
+        Assert.NotNull(refreshed);
     }
 
     private static async Task<T?> WaitForAsync<T>(Func<Task<T?>> probe, int timeoutMs = 2000, int pollMs = 25)

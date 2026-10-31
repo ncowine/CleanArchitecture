@@ -19,9 +19,11 @@ public static class DependencyInjection
         services.AddDbContext<ReferenceDbContext>(options => options.UseSqlite(connectionString));
 
         services.AddScoped<ReferenceDataService>();
-        services.AddScoped<IReferenceDataService>(provider => new CachedReferenceDataService(
+        services.AddScoped(provider => new CachedReferenceDataService(
             provider.GetRequiredService<ReferenceDataService>(),
             provider.GetRequiredService<HybridCache>()));
+        services.AddScoped<IReferenceDataService>(provider => provider.GetRequiredService<CachedReferenceDataService>());
+        services.AddScoped<IReferenceDataCache>(provider => provider.GetRequiredService<CachedReferenceDataService>());
 
         return services;
     }
