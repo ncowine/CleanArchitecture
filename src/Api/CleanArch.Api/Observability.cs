@@ -108,6 +108,14 @@ internal static class ObservabilityExtensions
                 .AddMeter("System.Runtime")
                 .AddMeter(OutboxDiagnostics.MeterName)
                 .AddMeter(MessagingTelemetry.Name)
+                // The messaging library records handling time in SECONDS but declares no buckets, so it gets
+                // OpenTelemetry's defaults (0, 5, 10, 25 …), which are sized for milliseconds: every message lands
+                // in the first bucket and p95 reads as 4.75s however fast the handler is. These are the same
+                // boundaries ASP.NET Core uses for http.server.request.duration.
+                .AddView(MessagingTelemetry.ProcessDuration, new ExplicitBucketHistogramConfiguration
+                {
+                    Boundaries = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10],
+                })
                 // Every DataCache<,> publishes on this one shared meter, tagged with which cache it is
                 // (see CacheMetrics.cs) — so a new cache is covered automatically, with no wildcard and
                 // nothing to keep in sync here.

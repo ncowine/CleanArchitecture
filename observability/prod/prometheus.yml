@@ -51,3 +51,10 @@ scrape_configs:
     #   X-Api-Key:
     #     values:
     #       - 'PASTE_THE_MINTED_API_KEY'
+
+  # RabbitMQ's own metrics (rabbitmq_prometheus plugin: rabbitmq-plugins enable rabbitmq_prometheus).
+  # /metrics/per-object gives one series per queue; the default /metrics only has broker-wide totals.
+  - job_name: rabbitmq
+    metrics_path: /metrics/per-object
+    static_configs:
+      - targets: ['api-host:15692']       # <-- the broker host, if it is not the app server

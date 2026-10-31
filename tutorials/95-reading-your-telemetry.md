@@ -359,6 +359,32 @@ running.
 **Dead-lettered — total** — any number above zero is unfinished business: a domain event
 raised and never acted on. Nothing retries it for you. See scenario 11.
 
+### Messaging (RabbitMQ): are events getting out and in?
+
+Empty unless the API runs with a `Messaging` section (a broker configured). Every panel is split
+by **event** — the wire name, such as `Equipment.EquipmentCreated`.
+
+| Panel | Healthy | Unhealthy |
+|---|---|---|
+| **Published/sec by event** | follows the writes that raise each event, a poll interval behind | Flat while writes happen: the outbox isn't relaying. Read it with **Outbox dispatch** above — delivered there should match published here |
+| **Publish failures/sec** | zero, or a blip that recovers | Sustained: the broker is down or refusing. Nothing is lost — rows wait in the outbox — but nothing reaches other apps either |
+| **Received/sec by event** | the events other apps send (`EquipmentDisposed`, `SiteRenamed`) | Zero when you know an app sent one: its exchange isn't in `Subscriptions`, or the wire names differ |
+| **Handling p95 by event** | milliseconds | Seconds: the handler is slow, and the next messages queue behind it |
+| **Handling failures/sec** | zero | A handler throws. The API's queue retries, then dead-letters — the log panel says which |
+| **Broker connection & dead-letters** | a *connected* line at startup | *connection lost* / *could not connect* repeating, or *dead-letter queue* lines. The API has no connection metric; these lines are the record |
+
+The last line of panels comes from **RabbitMQ itself** (the `rabbitmq_prometheus` plugin, scraped
+on `:15692/metrics/per-object`), so it shows what the API cannot see from inside: messages that are
+waiting, not ones that were handled. They are filtered to the API's queue, `cleanarch.api.main`.
+
+| Panel | Healthy | Unhealthy |
+|---|---|---|
+| **API dead-letter queue** | 0 | Anything above zero: messages that failed every attempt or couldn't be read. Nothing retries them — read them in the management UI (`:15672` → Queues), fix the cause, then move them back or purge |
+| **API queue consumers** | one per running API instance | 0: no instance is receiving, and messages pile up in the backlog until one starts |
+| **Broker connections** | 2 for the API, plus 2 per running desktop app | Dropping to 0 with the API up: the API lost the broker (check the log panel) |
+| **API queue backlog** | ready near 0 | *Ready* climbing: the API isn't keeping up, or isn't consuming. *Unacked* stuck high: a handler is hanging |
+| **API queue in vs out/sec** | the two lines on top of each other, and equal to **Received/sec** | *In* above *delivered to API*: messages are waiting |
+
 ### Runtime health (collapsed)
 
 Open it when **Is it healthy** points inward — CPU, memory or thread-pool queue red.
@@ -500,6 +526,13 @@ Scraped from `http://localhost:5235/metrics`. This is the real list, not a sampl
 | `dotnet_monitor_lock_contentions_total` | — | Lock contention |
 | `dns_lookup_duration_seconds` | — | DNS, when a dependency is "slow" for no reason |
 | `outbox_delivered_total`, `outbox_failed_total`, `outbox_dead_lettered_total` | — | The one business metric this app defines ([50 §7](50-instrumenting-an-application.md#7-step-4--add-your-own-metric)) |
+| `messaging_client_sent_messages_total` | `messaging_destination_name`, `messaging_bus_name`, `error_type` | RabbitMQ publishes, confirmed or failed (failed ones carry `error_type`) |
+| `messaging_client_consumed_messages_total` | `messaging_destination_name`, `messaging_bus_name` | Messages received and passed to handlers |
+| `messaging_process_duration_seconds_*` | `messaging_destination_name`, `messaging_bus_name`, `error_type` | Time to handle one message; failed attempts carry `error_type` |
+| `rabbitmq_queue_messages`, `_ready`, `_unacked` | `queue`, `vhost` | From the broker: messages in a queue, waiting, and handed out but not acknowledged |
+| `rabbitmq_queue_consumers` | `queue`, `vhost` | From the broker: consumers on a queue |
+| `rabbitmq_queue_exchange_messages_published_total`, `rabbitmq_queue_messages_delivered_ack_total` | `queue`, `exchange` | From the broker: messages into a queue, and delivered from it (acknowledged mode, which the API uses) |
+| `rabbitmq_connections`, `rabbitmq_channels` | — | From the broker: every client, not just the API |
 
 > **Where the names come from.** OpenTelemetry names these with dots
 > (`http.server.request.duration`). Prometheus 3 can keep dots, but the dashboard expects the

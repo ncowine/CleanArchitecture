@@ -665,6 +665,7 @@ foreach ($v in 'legacy','modern') {
   & "$sbin\rabbitmqctl.bat" set_permissions -p $v guest '.*' '.*' '.*'
 }
 & "$sbin\rabbitmq-plugins.bat" enable rabbitmq_management     # then open http://localhost:15672 (guest / guest)
+& "$sbin\rabbitmq-plugins.bat" enable rabbitmq_prometheus     # broker metrics on :15692, for the Grafana dashboard
 ```
 
 ### 4. Build and run the demo
