@@ -164,7 +164,7 @@ The API mostly publishes, so it mostly uses the bus. Handlers and subscribers ar
 
 The engine has two publish paths. The difference is what "done" means.
 
-| | `IMessagePublisher.PublishAsync` | `IConfirmedMessagePublisher.PublishConfirmedAsync` |
+| | `IMessagePublisher.Publish` | `IConfirmedMessagePublisher.PublishConfirmedAsync` |
 | --- | --- | --- |
 | Returns when | The message is serialized and in an in-memory buffer | The broker has confirmed it |
 | Broker down | Message waits in the buffer | Throws `BrokerUnavailableException` |
@@ -174,7 +174,7 @@ The engine has two publish paths. The difference is what "done" means.
 In pseudo code:
 
 ```
-PublishAsync(message):
+Publish(message):
     bytes = serialize(message)                // now, so later edits don't change what's sent
     buffer.add(bytes, wireName, routingKey)
     return                                    // caller carries on immediately

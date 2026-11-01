@@ -31,7 +31,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             {
                 IMessagePublisher publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
-                InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => publisher.PublishAsync(new UnnamedMessage(), TestContext.Current.CancellationToken));
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => publisher.Publish(new UnnamedMessage()));
                 Assert.Contains("[Message(", error.Message);
             }
         }

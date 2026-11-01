@@ -52,7 +52,7 @@ calls the hosted service's `StartAsync` itself.
 Legacy: event.PublishRemote(payload)       RemotePubSubEventExtensions.PublishRemote
           └─ RabbitMQServiceRouter.Publish → RabbitMQService.Publish → bus.Enqueue(wire name, payload, routing key)
              (then raises the event locally too)
-Modern: publisher.PublishAsync(message)    MessagePublisher.PublishAsync
+Modern: publisher.Publish(message)         MessagePublisher.Publish
           └─ the only bus → bus.Enqueue(...)
 
 RabbitMQBus.Enqueue
@@ -107,7 +107,7 @@ dispatcher.Dispatch is where the front doors differ (IInboundDispatcher):
 |---|---|---|
 | `KeepConnected` ×2, `OutstandingQueue` | Thread-pool loops started by `Start` | The connection loops check every `ReconnectDelay` (5 s), the buffer loop every `OutstandingPollInterval` (100 ms) when idle. All exit when `Dispose` cancels the bus's token. |
 | `OnMessageReceived`, so every handler, sink and Prism publish | A RabbitMQ.Client thread, **one message at a time per bus** (the client's default) | **Never the UI thread.** UI code must marshal: Prism `ThreadOption.UIThread`, or pass a `SynchronizationContext` to `IMessageSubscriber.Subscribe`. |
-| `Enqueue`, `PublishAsync`, `Subscribe` | Whatever thread calls them | Safe from any thread: `subscriptions` and `outstandingMessages` are concurrent collections. |
+| `Enqueue`, `Publish`, `Subscribe` | Whatever thread calls them | Safe from any thread: `subscriptions` and `outstandingMessages` are concurrent collections. |
 | `PublishConfirmedAsync` | The outbox processor | Shares the publisher channel with `OutstandingQueue`. That's safe because RabbitMQ.Client 7 serializes publishes on a channel. |
 
 Two places need care:

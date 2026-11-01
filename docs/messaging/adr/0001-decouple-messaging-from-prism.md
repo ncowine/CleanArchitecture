@@ -60,7 +60,7 @@ The legacy projects keep their paths. Legacy apps reference them by relative `Pr
 
 #### Messaging.Abstractions
 
-- `IMessagePublisher`: `Task PublishAsync<T>(T message, CancellationToken)`
+- `IMessagePublisher`: `void Publish<T>(T message)`. Synchronous since 2026-11-01: it only buffers, so a `Task` gave callers nothing to wait for (see PROVENANCE.md)
 - `IMessageHandler<T>`: `Task Handle(T message, MessageContext context, CancellationToken)`
 - `MessageContext`: message ID, correlation ID, headers, bus name, redelivery flag
 - `[Message("wire-name")]`: the message's stable identity on the wire

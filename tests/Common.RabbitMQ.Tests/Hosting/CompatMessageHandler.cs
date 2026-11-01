@@ -28,11 +28,11 @@ namespace Common.RabbitMQ.Tests.Hosting
             this.publisher = publisher;
         }
 
-        public async Task Handle(CompatMessage message, MessageContext context, CancellationToken cancellationToken)
+        public Task Handle(CompatMessage message, MessageContext context, CancellationToken cancellationToken)
         {
             if (message.Name == Fail)
             {
-                throw new InvalidOperationException("Handler failed on purpose.");
+                return Task.FromException(new InvalidOperationException("Handler failed on purpose."));
             }
 
             handled.Add(new HandledMessage
@@ -46,8 +46,10 @@ namespace Common.RabbitMQ.Tests.Hosting
 
             if (message.Name == Republish)
             {
-                await publisher.PublishAsync(new CompatMessage { Id = message.Id, Name = Republished, UpdatedAt = message.UpdatedAt }, cancellationToken);
+                publisher.Publish(new CompatMessage { Id = message.Id, Name = Republished, UpdatedAt = message.UpdatedAt });
             }
+
+            return Task.CompletedTask;
         }
     }
 }

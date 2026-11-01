@@ -37,9 +37,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                     WireCapture capture = await bus.Capture();
 
                     CompatPayload payload = CompatPayloads.Golden();
-                    await host.Services.GetRequiredService<IMessagePublisher>().PublishAsync(
-                        new CompatMessage { Id = payload.Id, Name = payload.Name, UpdatedAt = payload.UpdatedAt },
-                        TestContext.Current.CancellationToken);
+                    host.Services.GetRequiredService<IMessagePublisher>().Publish(
+                        new CompatMessage { Id = payload.Id, Name = payload.Name, UpdatedAt = payload.UpdatedAt });
 
                     CompatibilityMatrixTests.AssertPayload(payload, await current.Received.Next(TestBus.Timeout));
                     CompatibilityMatrixTests.AssertPayload(payload, await baseline.Received.Next(TestBus.Timeout));
@@ -176,7 +175,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     using (CorrelationContext.Begin("corr-request"))
                     {
                         traceId = request.TraceId;
-                        await sender.Services.GetRequiredService<IMessagePublisher>().PublishAsync(new CompatMessage { Id = 1, Name = "traced" }, TestContext.Current.CancellationToken);
+                        sender.Services.GetRequiredService<IMessagePublisher>().Publish(new CompatMessage { Id = 1, Name = "traced" });
 
                         // The publish span must not replace the caller's current activity.
                         Assert.Same(request, Activity.Current);
