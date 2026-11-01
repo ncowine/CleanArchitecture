@@ -7,7 +7,7 @@ using Prism.Events;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>Raises each received message as its Prism event: <c>GetEvent&lt;T&gt;().Publish(payload)</c>, on the consumer's thread.</summary>
+    /// <summary>Raises each received message as its Prism event, through <see cref="IEventAggregator.GetEvent{TEventType}"/>, on the consumer's thread.</summary>
     internal sealed class PrismDispatcher : IInboundDispatcher
     {
         private readonly IEventAggregator eventAggregator;

@@ -18,7 +18,7 @@ public static class AuditChangeTrackingRegistration
     }
 
     /// <summary>
-    /// Attaches the audit interceptor to a DbContext. Use inside the <c>(sp, options) =&gt; ...</c> overload of
+    /// Attaches the audit interceptor to a DbContext. Use inside the <c>(sp, options) => ...</c> overload of
     /// <c>AddDbContext</c> so the scoped interceptor (and its per-request audit scope) resolve correctly.
     /// </summary>
     public static DbContextOptionsBuilder UseAuditChangeTracking(

@@ -12,14 +12,14 @@ namespace Messaging.Hosting
 {
     /// <summary>
     /// Configures messaging in <see cref="MessagingServiceCollectionExtensions.AddMessaging"/>:
-    /// <code>
+    /// <code><![CDATA[
     /// messaging.AddBus("Legacy", configuration.GetSection("Messaging:Buses:Legacy"));
-    /// messaging.AddHandlers(typeof(EmployeeSavedHandler).Assembly);   // every IMessageHandler&lt;T&gt; in it, every bus
+    /// messaging.AddHandlers(typeof(EmployeeSavedHandler).Assembly);   // every IMessageHandler<T> in it, every bus
     /// messaging.AddHandlers(typeof(OrderSavedHandler).Assembly, "Modern");   // ...or only some buses
     /// messaging.AddMessages(typeof(OrderSaved).Assembly);      // receive every [Message] type in it, e.g. for a sink
     /// messaging.Subscribe("AppA", "AppA.Events.#");           // another application's exchange
     /// messaging.AddTelemetry();                               // server observability; off unless asked for
-    /// </code>
+    /// ]]></code>
     /// </summary>
     public sealed class MessagingBuilder
     {

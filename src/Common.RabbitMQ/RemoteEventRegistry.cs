@@ -10,8 +10,8 @@ namespace Common.RabbitMQ
     /// Knows which Prism events can travel between applications.
     /// <list type="bullet">
     /// <item>The constructor finds every <see cref="RemotePubSubEvent{TPayload}"/> (each needs <see cref="RemoteEventAttribute"/>);
-    /// plain <c>PubSubEvent&lt;T&gt;</c> events are ignored. Unchanged from the first release.</item>
-    /// <item><see cref="Add"/> finds every <c>PubSubEvent&lt;T&gt;</c> in an assembly, with no attribute or base class needed
+    /// plain <see cref="PubSubEvent{TPayload}"/> events are ignored. Unchanged from the first release.</item>
+    /// <item><see cref="Add"/> finds every <see cref="PubSubEvent{TPayload}"/> in an assembly, with no attribute or base class needed
     /// (ADR 0002, section 4): <c>new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly)</c>.</item>
     /// </list>
     /// </summary>
@@ -61,7 +61,7 @@ namespace Common.RabbitMQ
         public IReadOnlyCollection<RemoteEventDescriptor> Events => eventsByType.Values;
 
         /// <summary>
-        /// Registers every concrete <c>PubSubEvent&lt;T&gt;</c> in <paramref name="assembly"/> as able to travel between
+        /// Registers every concrete <see cref="PubSubEvent{TPayload}"/> in <paramref name="assembly"/> as able to travel between
         /// applications, found by its full type name. No attribute or special base class is needed; events that are only
         /// raised locally are registered too, harmlessly. An event already registered keeps its registration.
         /// </summary>

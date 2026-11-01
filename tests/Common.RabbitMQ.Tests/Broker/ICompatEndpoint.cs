@@ -18,7 +18,7 @@ namespace Common.RabbitMQ.Tests.Broker
         /// <summary>Every <see cref="CompatEvent"/> raised on this endpoint's event aggregator, local or remote.</summary>
         ReceivedPayloads Received { get; }
 
-        /// <summary><c>GetEvent&lt;CompatEvent&gt;().PublishRemote(payload, service)</c>.</summary>
+        /// <summary>Calls <c>PublishRemote(payload, service)</c> on <see cref="CompatEvent"/>.</summary>
         void PublishRemote(CompatPayload payload);
     }
 }

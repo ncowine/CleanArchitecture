@@ -13,7 +13,7 @@ public static class DependencyInjection
     /// Registers the dispatcher (<see cref="ISender"/>) and the global pipeline behaviors that wrap
     /// every request, in outermost-to-innermost order. Call once at the composition root.
     /// Register handlers per module with <see cref="AddHandlersFromAssembly"/>; modules append their
-    /// own behaviors (e.g. a transaction) by registering more <c>IPipelineBehavior&lt;,&gt;</c> after this.
+    /// own behaviors (e.g. a transaction) by registering more <see cref="IPipelineBehavior{TRequest, TResponse}"/> after this.
     /// </summary>
     public static IServiceCollection AddMediator(this IServiceCollection services)
     {

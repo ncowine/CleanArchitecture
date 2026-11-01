@@ -38,7 +38,7 @@ namespace Common.RabbitMQ
         public string BusName { get; }
 
         /// <summary>
-        /// Equivalent to <c>eventAggregator.GetEvent&lt;EventType&gt;().Publish(payload)</c>.
+        /// Same as getting the <see cref="EventType"/> event from <see cref="IEventAggregator.GetEvent{TEventType}"/> and publishing <paramref name="payload"/> on it.
         /// </summary>
         public void PublishLocal(IEventAggregator eventAggregator, object payload)
         {
