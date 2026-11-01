@@ -30,7 +30,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 await host.WaitUntilConnected();
                 WireCapture capture = await bus.Capture();
 
-                await host.Services.GetRequiredService<IMessagePublisher>().PublishAsync(GoldenMessage(), TestContext.Current.CancellationToken);
+                host.Services.GetRequiredService<IMessagePublisher>().Publish(GoldenMessage());
 
                 CapturedMessage message = await capture.Next(TestBus.Timeout);
                 Assert.NotNull(message);
@@ -50,8 +50,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                 WireCapture capture = await bus.Capture();
                 IMessagePublisher publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
-                await publisher.PublishAsync(GoldenMessage(), new PublishOptions { RoutingKey = "call.key" }, TestContext.Current.CancellationToken);
-                await publisher.PublishAsync(GoldenMessage(), TestContext.Current.CancellationToken);
+                publisher.Publish(GoldenMessage(), new PublishOptions { RoutingKey = "call.key" });
+                publisher.Publish(GoldenMessage());
 
                 Assert.Equal("call.key", (await capture.Next(TestBus.Timeout))?.RoutingKey);
                 Assert.Equal(WireName, (await capture.Next(TestBus.Timeout))?.RoutingKey);
@@ -97,7 +97,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 {
                     await client.StartAsync(TestContext.Current.CancellationToken);
 
-                    await client.Publisher.PublishAsync(GoldenMessage(), TestContext.Current.CancellationToken);
+                    client.Publisher.Publish(GoldenMessage());
 
                     CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await baseline.Received.Next(TestBus.Timeout));
                 }
@@ -105,13 +105,13 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task Publishing_WithSeveralBuses_Throws()
+        public void Publishing_WithSeveralBuses_Throws()
         {
             using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("First", Unreachable)
                 .AddBus("Second", Unreachable))))
             {
-                InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => client.Publisher.PublishAsync(GoldenMessage(), TestContext.Current.CancellationToken));
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => client.Publisher.Publish(GoldenMessage()));
                 Assert.Contains("exactly one bus", error.Message);
             }
         }

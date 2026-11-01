@@ -18,17 +18,16 @@ namespace Messaging.Hosting
             this.registry = registry;
         }
 
-        public Task PublishAsync<TMessage>(TMessage message, CancellationToken cancellationToken = default)
+        public void Publish<TMessage>(TMessage message)
         {
-            return PublishAsync(message, null, cancellationToken);
+            Publish(message, null);
         }
 
         /// <summary>The routing key is <see cref="PublishOptions.RoutingKey"/>, or the wire name.</summary>
-        public Task PublishAsync<TMessage>(TMessage message, PublishOptions options, CancellationToken cancellationToken = default)
+        public void Publish<TMessage>(TMessage message, PublishOptions options)
         {
             string routingKey = !string.IsNullOrEmpty(options?.RoutingKey) ? options.RoutingKey : null;
             GetBus(message).Enqueue(WireNames.Get(message.GetType()), message, routingKey);
-            return Task.CompletedTask;
         }
 
         public Task PublishConfirmedAsync(object message, string messageId, CancellationToken cancellationToken = default)

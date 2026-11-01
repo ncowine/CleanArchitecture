@@ -64,7 +64,7 @@ What ADR 0001 got right still holds. The core and the server already identify a 
   messaging.Route<OrderSaved>().WithRoutingKey(o => $"orders.{o.Region}.saved");
 
   // ...or for one call
-  await publisher.PublishAsync(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
+  publisher.Publish(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
   ```
 
   ```csharp

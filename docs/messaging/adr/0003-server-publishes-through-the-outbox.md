@@ -16,7 +16,7 @@ limits").
 - **The API** is where new publishing happens. It already has a transactional outbox (`BuildingBlocks.Outbox`): the
   business change and the event are saved in one transaction, and a background processor delivers the event. But the
   processor marks a row delivered as soon as its dispatcher returns. If the dispatcher called
-  `IMessagePublisher.PublishAsync`, which only buffers, a row could be marked delivered while the message was still
+  `IMessagePublisher.Publish`, which only buffers, a row could be marked delivered while the message was still
   in memory, and a restart would lose it for good.
 - **Modern WPF apps** only subscribe. They don't publish.
 

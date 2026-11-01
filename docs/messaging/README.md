@@ -65,8 +65,8 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
   that translates between how an app thinks and the engine:
   - **Old WPF apps** use Prism events: `eventAggregator.GetEvent<OrderSaved>().PublishRemote(order)`.
   - **New WPF apps** use plain classes, still through Prism: `GetEvent<MessageEvent<OrderSaved>>().PublishRemote(order)`.
-    Or they use **no Prism at all**: `IMessagePublisher.PublishAsync(order)` and `IMessageSubscriber.Subscribe<OrderSaved>(...)`.
-  - **The server** uses handlers: `IMessagePublisher.PublishAsync(order)` and `IMessageHandler<OrderSaved>`.
+    Or they use **no Prism at all**: `IMessagePublisher.Publish(order)` and `IMessageSubscriber.Subscribe<OrderSaved>(...)`.
+  - **The server** uses handlers: `IMessagePublisher.Publish(order)` and `IMessageHandler<OrderSaved>`.
 - **Sending is fire-and-forget.** A message is put in a buffer instantly and delivered in the background, even if
   RabbitMQ is briefly down.
 - **Receiving has two modes.** Desktop apps each get their **own copy** of every message. Server instances **share
@@ -193,7 +193,7 @@ sequenceDiagram
     participant Bus as RabbitMQBus
     participant Buffer as Outgoing buffer
     participant Broker as RabbitMQ
-    App->>FrontDoor: PublishRemote / PublishAsync
+    App->>FrontDoor: PublishRemote / Publish
     FrontDoor->>Bus: Enqueue(wire name, message, routing key)
     Bus->>Bus: serialize to JSON now
     Bus->>Bus: observer may add headers (trace, correlation)
@@ -463,7 +463,7 @@ public MainWindowViewModel(IMessagePublisher publisher, IMessageSubscriber subsc
     subscription = subscriber.Subscribe<EmployeeSaved>(OnSaved, SynchronizationContext.Current);
 }
 
-await publisher.PublishAsync(new EmployeeSaved { Id = 7, Name = "Ada" });
+publisher.Publish(new EmployeeSaved { Id = 7, Name = "Ada" });
 ```
 
 **Things to know about `IMessageSubscriber`:**
@@ -506,8 +506,8 @@ app.MapHealthChecks("/health");
 **3. Publish from anywhere.** Nothing to register: every message goes to the only bus, keyed by its wire name.
 
 ```csharp
-await publisher.PublishAsync(new EmployeeCacheRefreshed { ... });
-await publisher.PublishAsync(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
+publisher.Publish(new EmployeeCacheRefreshed { ... });
+publisher.Publish(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
 ```
 
 **More options:**
@@ -524,7 +524,7 @@ doesn't exist or a class without `[Message]`.
 
 **4. In CleanArchitecture: publish events through the outbox** ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md)).
 
-`PublishAsync` only buffers, so a restart can lose a message. Events other applications rely on go through the
+`Publish` only buffers, so a restart can lose a message. Events other applications rely on go through the
 module's outbox instead. The event is saved in the same transaction as the change, and delivered with a publish that
 waits for the broker's confirm:
 

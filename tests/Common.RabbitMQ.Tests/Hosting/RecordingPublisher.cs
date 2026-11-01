@@ -1,6 +1,4 @@
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using Messaging;
 
 namespace Common.RabbitMQ.Tests.Hosting
@@ -11,15 +9,14 @@ namespace Common.RabbitMQ.Tests.Hosting
         /// <summary>The routing key of each send; null when none was given.</summary>
         public List<string> RoutingKeys { get; } = new List<string>();
 
-        public Task PublishAsync<TMessage>(TMessage message, CancellationToken cancellationToken = default)
+        public void Publish<TMessage>(TMessage message)
         {
-            return PublishAsync(message, null, cancellationToken);
+            Publish(message, null);
         }
 
-        public Task PublishAsync<TMessage>(TMessage message, PublishOptions options, CancellationToken cancellationToken = default)
+        public void Publish<TMessage>(TMessage message, PublishOptions options)
         {
             RoutingKeys.Add(options?.RoutingKey);
-            return Task.CompletedTask;
         }
     }
 }

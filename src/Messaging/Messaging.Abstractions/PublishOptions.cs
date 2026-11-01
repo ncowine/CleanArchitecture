@@ -1,6 +1,6 @@
 namespace Messaging
 {
-    /// <summary>Per-call settings for <see cref="IMessagePublisher.PublishAsync{TMessage}(TMessage, PublishOptions, System.Threading.CancellationToken)"/>.</summary>
+    /// <summary>Per-call settings for <see cref="IMessagePublisher.Publish{TMessage}(TMessage, PublishOptions)"/>.</summary>
     public sealed class PublishOptions
     {
         /// <summary>

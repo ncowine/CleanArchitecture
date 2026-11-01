@@ -242,9 +242,9 @@ In plain words:
 5. **Only then** does the processor mark the row delivered. If the process stops at any point
    before that, the row is still there and goes out after the restart.
 
-### Why not just call `IMessagePublisher.PublishAsync`?
+### Why not just call `IMessagePublisher.Publish`?
 
-Because `PublishAsync` returns as soon as the message is in an **in-memory buffer**; a
+Because `Publish` returns as soon as the message is in an **in-memory buffer**; a
 background loop sends it later. Legacy apps have always worked like that. For the outbox it
 would be a quiet disaster: the processor would mark the row delivered while the message was
 still in memory, a restart would lose it, and nothing would ever retry it — the outbox would
@@ -422,7 +422,7 @@ Nowhere to register it. As in the legacy apps, every message goes to the applica
 (`Main`), with its wire name as the routing key. A per-call key is the one option:
 
 ```csharp
-await publisher.PublishAsync(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
+publisher.Publish(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
 ```
 
 **Keep the wire name as the key.** Keep it for anything a legacy app must receive: legacy apps bind
@@ -772,10 +772,10 @@ and start-up steps: [Running it on your machine](../docs/messaging/README.md#run
 
 ## 17. The traps
 
-### 17.1 Calling `IMessagePublisher.PublishAsync` from the API
+### 17.1 Calling `IMessagePublisher.Publish` from the API
 
 It buffers and returns; a restart loses whatever is in the buffer. The API sends events
-through its outbox, always ([chapter 5](#why-not-just-call-imessagepublisherpublishasync)).
+through its outbox, always ([chapter 5](#why-not-just-call-imessagepublisherpublish)).
 
 ### 17.2 A second module registering `IOutbox`
 
