@@ -11,12 +11,13 @@
         </TextBlock>
         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" Foreground="Gray" TextWrapping="Wrap"
                    Text="Receives the API's events and the other legacy apps' events, as Prism events. Changes to equipment go to the API over HTTP; notes go to the other legacy apps; a disposal goes to the API (and the legacy apps) over RabbitMQ." />
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <Button Content="Add a laptop (HTTP)" Command="{Binding AddLaptopCommand}" Padding="10,4" Margin="0,0,8,0" />
             <Button Content="Delete selected (HTTP)" Command="{Binding DeleteSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />
             <Button Content="Reload (HTTP)" Command="{Binding ReloadCommand}" Padding="10,4" Margin="0,0,8,0" />
-            <Button Content="Dispose of selected (RabbitMQ → API)" Command="{Binding DisposeSelectedCommand}" Padding="10,4" />
-        </StackPanel>
+            <Button Content="Dispose of selected (RabbitMQ → API)" Command="{Binding DisposeSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />
+            <Button Content="Flag selected (RabbitMQ, tuple → POC API)" Command="{Binding FlagSelectedCommand}" Padding="10,4" />
+        </WrapPanel>
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <Button DockPanel.Dock="Right" Content="Send note on selected (RabbitMQ → legacy apps)" Command="{Binding SendNoteCommand}" Padding="10,4" Margin="8,0,0,0" />
             <TextBox Text="{Binding NoteText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" />
