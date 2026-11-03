@@ -16,6 +16,9 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
 
+    <!-- Poc.Shared: BusLog, the window's logger. The same version as src/Messaging/Directory.Packages.props. -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+
     <!-- Poc.Shared on net472: HttpClient JSON helpers, built in from .NET 5. -->
     <PackageVersion Include="System.Net.Http.Json" Version="8.0.1" />
 

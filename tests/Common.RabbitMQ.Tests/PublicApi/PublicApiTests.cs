@@ -10,14 +10,27 @@ namespace Common.RabbitMQ.Tests.PublicApi
 {
     /// <summary>
     /// The public surface of Common.RabbitMQ against the baseline build: legacy apps compile and bind against it.
-    /// Nothing may be removed or changed (ADR 0001, section 1). Additions are allowed only as listed in
-    /// <see cref="ApprovedAdditions"/>, so every new public member is a reviewed decision (ADR 0002, delivery step 7).
+    /// Nothing may be removed or changed (ADR 0001, section 1) unless listed in <see cref="ApprovedRemovals"/>. Additions
+    /// are allowed only as listed in <see cref="ApprovedAdditions"/>, so every change is a reviewed decision (ADR 0002,
+    /// delivery step 7).
     /// </summary>
     public class PublicApiTests
     {
+        /// <summary>Public API removed after the baseline. A legacy app that used one must change when it takes this version.</summary>
+        private static readonly string[] ApprovedRemovals =
+        {
+            // Replaced by the Logger properties below (ADR 0001, amended 2026-11-03).
+            "event Common.RabbitMQ.RabbitMQService.Log : System.EventHandler<System.String>",
+            "event Common.RabbitMQ.RabbitMQServiceRouter.Log : System.EventHandler<System.String>",
+        };
+
         /// <summary>Public API added after the baseline, each for a reason recorded in ADR 0002.</summary>
         private static readonly string[] ApprovedAdditions =
         {
+            // Logging through ILogger instead of the Log event (ADR 0001, amended 2026-11-03).
+            "property Common.RabbitMQ.RabbitMQService.Logger : Microsoft.Extensions.Logging.ILogger { get; set; }",
+            "property Common.RabbitMQ.RabbitMQServiceRouter.Logger : Microsoft.Extensions.Logging.ILogger { get; set; }",
+
             // Section 4: events found by assembly, plain PubSubEvent<T>.
             "method Common.RabbitMQ.RemoteEventRegistry.Add(System.Reflection.Assembly, System.String = null) : Common.RabbitMQ.RemoteEventRegistry",
             "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
@@ -51,7 +64,7 @@ namespace Common.RabbitMQ.Tests.PublicApi
             HashSet<string> expected = PublicApiReader.Read(typeof(BaselineService).Assembly);
             HashSet<string> actual = PublicApiReader.Read(typeof(RabbitMQService).Assembly);
 
-            List<string> removed = expected.Except(actual).OrderBy(s => s).ToList();
+            List<string> removed = expected.Except(actual).Except(ApprovedRemovals).OrderBy(s => s).ToList();
 
             Assert.True(removed.Count == 0, "Public API removed or changed:\n  " + string.Join("\n  ", removed));
         }
@@ -86,7 +99,7 @@ namespace Common.RabbitMQ.Tests.PublicApi
             HashSet<string> api = PublicApiReader.Read(typeof(RabbitMQService).Assembly);
 
             Assert.Contains("ctor Common.RabbitMQ.RabbitMQService(Prism.Events.IEventAggregator, Common.RabbitMQ.RemoteEventRegistry)", api);
-            Assert.Contains("event Common.RabbitMQ.RabbitMQService.Log : System.EventHandler<System.String>", api);
+            Assert.Contains("method Common.RabbitMQ.RabbitMQService.Publish(System.Type, System.Object) : System.Void", api);
             Assert.Contains("implements Common.RabbitMQ.RabbitMQService : Common.RabbitMQ.IRabbitMQService", api);
         }
     }

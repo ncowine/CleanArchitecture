@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace Messaging.Hosting
 {
@@ -17,15 +16,13 @@ namespace Messaging.Hosting
     {
         private readonly IServiceProvider provider;
         private readonly MessagingRegistry registry;
-        private readonly ILogger<MessagingHostedService> logger;
         private readonly List<RabbitMQBus> started = new List<RabbitMQBus>();
         private BusGauges gauges;
 
-        public MessagingHostedService(IServiceProvider provider, MessagingRegistry registry, ILogger<MessagingHostedService> logger)
+        public MessagingHostedService(IServiceProvider provider, MessagingRegistry registry)
         {
             this.provider = provider;
             this.registry = registry;
-            this.logger = logger;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
@@ -35,7 +32,6 @@ namespace Messaging.Hosting
             foreach (string busName in registry.BusNames)
             {
                 RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>(busName);
-                bus.Log += OnBusLog;
                 bus.Start(registry.GetMessageRegistrations(busName));
                 started.Add(bus);
             }
@@ -56,17 +52,10 @@ namespace Messaging.Hosting
             foreach (RabbitMQBus bus in started)
             {
                 bus.Dispose();
-                bus.Log -= OnBusLog;
             }
 
             started.Clear();
             return Task.CompletedTask;
-        }
-
-        private void OnBusLog(object sender, string message)
-        {
-            // Connection and failure events are logged at the right level by the telemetry observer.
-            logger.LogDebug("[{Bus}] {Message}", ((RabbitMQBus)sender).BusName, message);
         }
     }
 }

@@ -6,9 +6,9 @@ namespace Messaging.Hosting
 {
     /// <summary>
     /// Subscribes code to received messages at runtime, without handler classes or Prism: for example a WPF view model.
-    /// <code>
-    /// subscriber.Subscribe&lt;EmployeeUpdated&gt;(OnUpdated, SynchronizationContext.Current);   // runs on the UI thread
-    /// </code>
+    /// <code><![CDATA[
+    /// subscriber.Subscribe<EmployeeUpdated>(OnUpdated, SynchronizationContext.Current);   // runs on the UI thread
+    /// ]]></code>
     /// A message type must be received for its subscribers to be called: add it with
     /// <see cref="MessagingBuilder.AddMessages"/> or a handler. Dispose the returned object to unsubscribe.
     /// Subscriptions are held strongly, so a subscriber that goes away must dispose them.

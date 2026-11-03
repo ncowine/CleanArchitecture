@@ -15,7 +15,7 @@ namespace Messaging.Hosting
     /// Messaging for an application without a .NET host, such as a WPF app on Prism and DryIoc (ADR 0002, section 5).
     /// Configure it like a server, start it, and hand <see cref="Publisher"/> to the application's own container:
     /// <code>
-    /// MessagingClient client = MessagingClient.Create(services =&gt; services.AddMessaging(messaging =&gt; ...));
+    /// MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => ...));
     /// containerRegistry.RegisterInstance(client.Publisher);
     /// await client.StartAsync();
     /// </code>

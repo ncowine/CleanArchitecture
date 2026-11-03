@@ -4,6 +4,7 @@
 - **Date:** 2026-09-26
 - **Amended:** 2026-09-26. Legacy projects stay at their current paths, and every library that legacy apps load targets net472 explicitly (sections 1 and 7).
 - **Amended by:** [ADR 0002](0002-exchange-per-owner-and-configurable-routing.md) (2026-09-26), for sections 1–3 and the step-0 test baseline: one exchange per application, configurable exchange types and routing keys, and events found by assembly. Where the two conflict, ADR 0002 wins.
+- **Amended:** 2026-11-03. The core logs through `ILogger`, so it depends on `Microsoft.Extensions.Logging.Abstractions`, and the `Log` event is gone from `RabbitMQBus`, `RabbitMQService` and `RabbitMQServiceRouter`. A plain string event had no levels, structure or stack traces, and legacy apps are already taking `Microsoft.Extensions.*` packages for `appsettings.json`. **This is a breaking change for a legacy app that subscribes to `Log`:** it sets `Logger` instead. An app that sets nothing still gets its messages in Trace output. Non-SDK apps must install the new package and its dependencies themselves.
 
 ## Context
 
@@ -42,7 +43,7 @@
 ```
 src/Messaging/                     the product, with no legacy concepts
   Messaging.Abstractions           net472;netstandard2.0;net8.0, 0 dependencies
-  Messaging.RabbitMQ               net472;netstandard2.0;net8.0, depends on RabbitMQ.Client only
+  Messaging.RabbitMQ               net472;netstandard2.0;net8.0, depends on RabbitMQ.Client and Microsoft.Extensions.Logging.Abstractions
   Messaging.Hosting                net8.0, Microsoft.Extensions 8.0 (a net8 client can opt in without being forced up)
 
 src/Contracts/
@@ -71,7 +72,7 @@ The legacy projects keep their paths. Legacy apps reference them by relative `Pr
 
 - Owns connections, reconnect loops, the outgoing buffer, topology, the wire-name registry and inbound dispatch through an `IInboundDispatcher`.
 - Calls `IMessagingObserver` at each stage. The default is a no-op.
-- Takes no dependency on Prism, Newtonsoft, `Microsoft.Extensions.*` or OpenTelemetry.
+- Takes no dependency on Prism, Newtonsoft, or OpenTelemetry, nor on `Microsoft.Extensions.*` apart from `Logging.Abstractions` (amended 2026-11-03).
 
 #### Messaging.Hosting (server)
 
@@ -142,7 +143,7 @@ The legacy projects keep their paths. Legacy apps reference them by relative `Pr
 - Newtonsoft.Json 12.0.3 carries advisory GHSA-5crp-9r3c-p9vr (deeply nested JSON can cause a stack overflow, fixed in 13.0.1). It's accepted as a legacy constraint. The server doesn't use Newtonsoft (see section 4). Apps that can move to 13.x may bind up.
 - `AssemblyVersion` stays fixed per major version (for example `1.0.0.0`). The build number goes in `FileVersion` and `InformationalVersion`.
 - **Every library that legacy apps load targets `net472` explicitly**, alongside `netstandard2.0` and `net8.0`. When a non-SDK net472 app consumes a `netstandard2.0`-only library, it can need the `netstandard.dll` facade files and extra binding redirects. An explicit `net472` build avoids both.
-- The net472 build of the core and the adapter adds **no new packages** beyond those the legacy apps already carry. RabbitMQ.Client 7.1.2 already brings DiagnosticSource, System.Memory, Unsafe, Channels, Pipelines, RateLimiting and Bcl.AsyncInterfaces on net472, so there are no new binding redirects.
+- The net472 build of the core and the adapter adds **no new packages** beyond those the legacy apps already carry, except `Microsoft.Extensions.Logging.Abstractions` and its dependencies (amended 2026-11-03). RabbitMQ.Client 7.1.2 already brings DiagnosticSource, System.Memory, Unsafe, Channels, Pipelines, RateLimiting and Bcl.AsyncInterfaces on net472, so there are no new binding redirects.
 
 ## Delivery plan
 
@@ -180,5 +181,5 @@ Each step can be released on its own:
 - **Keep Prism as the transport contract on the server.** Rejected: it forces desktop semantics (sync, weak references, singletons, no scopes) onto the server and spreads Prism dependencies to every consumer.
 - **Replace the service with MassTransit, Wolverine or NServiceBus.** Rejected for now: their wire formats (envelopes, exchange-per-type topology) are incompatible with the legacy apps without a bridge, and they add dependencies to net472 clients.
 - **Share CLR types between legacy and server.** Rejected: that's the root cause of past assembly mismatches. The shared contract is the wire name.
-- **Put observability in the core for every framework.** Rejected: it adds `Microsoft.Extensions.*` dependencies to non-SDK net472 apps. It's kept behind the observer hook instead.
+- **Put observability in the core for every framework.** Rejected: it adds `Microsoft.Extensions.*` dependencies to non-SDK net472 apps. Tracing and metrics stay behind the observer hook. Logging moved into the core on 2026-11-03 (see the amendment above).
 - **Force Central Package Management onto legacy apps.** Rejected: legacy apps keep their own package conventions, and only this repository's projects opt in.

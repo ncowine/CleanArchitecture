@@ -29,7 +29,7 @@ public sealed class EquipmentApi
     ///    within minutes.
     /// ❌ DON'T create a new HttpClient per call: each opens its own connections, and under load the machine runs out
     ///    of sockets.
-    /// ❌ DON'T expect AddHttpClient&lt;T&gt;() to refresh DNS for a client held by a singleton (like a view model): the
+    /// ❌ DON'T expect a typed client from AddHttpClient to refresh DNS for a client held by a singleton (like a view model): the
     ///    factory's handler rotation never happens for it.
     /// </summary>
     public static EquipmentApi Create(ApiOptions options)

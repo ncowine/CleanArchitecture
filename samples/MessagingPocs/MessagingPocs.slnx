@@ -4,6 +4,7 @@
     <Project Path="Poc.Net8/Poc.Net8.csproj" />
     <Project Path="Poc.Net10/Poc.Net10.csproj" />
     <Project Path="Poc3.SignalR/Poc3.SignalR.csproj" />
+    <Project Path="Poc.Api.NoOutbox/Poc.Api.NoOutbox.csproj" />
     <Project Path="Poc.Shared/Poc.Shared.csproj" />
     <Project Path="Poc.Legacy.Events/Poc.Legacy.Events.csproj" />
   </Folder>

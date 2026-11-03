@@ -29,7 +29,7 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
   </ItemGroup>
 
-  <!-- Messaging.Hosting: the 8.0 line, so net8 clients can opt in without being forced up. -->
+  <!-- Messaging.Hosting, and Logging.Abstractions for the core: the 8.0 line, so net8 clients can opt in without being forced up. -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />

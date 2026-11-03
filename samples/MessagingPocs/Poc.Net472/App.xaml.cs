@@ -55,7 +55,11 @@ public partial class App : PrismApplication
         RemoteEventRegistry registry = new RemoteEventRegistry()
             .Add(typeof(EquipmentNoteSent).Assembly);
 
-        router = new RabbitMQServiceRouter(Container.Resolve<IEventAggregator>(), registry);
+        // ✅ DO set the logger before Init. Without one, the bus's messages go to Trace.
+        BusLog busLog = new BusLog();
+        containerRegistry.RegisterInstance(busLog);
+
+        router = new RabbitMQServiceRouter(Container.Resolve<IEventAggregator>(), registry) { Logger = busLog };
         foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
         {
             RabbitMQConfig config = bus.Get<RabbitMQConfig>()!;

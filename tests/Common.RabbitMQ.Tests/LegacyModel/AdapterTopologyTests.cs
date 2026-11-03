@@ -13,7 +13,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
 {
     /// <summary>
     /// The current <c>Common.RabbitMQ</c> adapter in the ADR 0002 topology (delivery plan step 7), against the legacy
-    /// model: plain <c>PubSubEvent&lt;T&gt;</c> events registered by assembly, own exchange, subscriptions, routing keys.
+    /// model: plain <see cref="Prism.Events.PubSubEvent{TPayload}"/> events registered by assembly, own exchange, subscriptions, routing keys.
     /// </summary>
     public class AdapterTopologyTests
     {

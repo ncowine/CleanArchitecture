@@ -29,7 +29,7 @@ public sealed class MainWindowViewModel : BindableBase
     private string noteText = "Battery swollen, keep it off the shelf";
     private EquipmentRow? selected;
 
-    public MainWindowViewModel(IEventAggregator events, RabbitMQServiceRouter router, EquipmentApi api)
+    public MainWindowViewModel(IEventAggregator events, RabbitMQServiceRouter router, EquipmentApi api, BusLog busLog)
     {
         this.events = events;
         this.api = api;
@@ -49,9 +49,10 @@ public sealed class MainWindowViewModel : BindableBase
         // the event locally; RabbitMQ never echoes it back).
         events.GetEvent<EquipmentNoteSent>().Subscribe(OnNote, ThreadOption.UIThread);
         events.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, ThreadOption.UIThread);
+        events.GetEvent<EquipmentFlagged>().Subscribe(OnFlagged, ThreadOption.UIThread);
 
         bus = router.GetBus(App.BusName);
-        router.Log += (sender, message) => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
+        busLog.Written += message => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
 
         // ✅ DO (re)load whenever the connection comes (back) up: this app's queue is deleted with its connection, so
         //    events sent while it was down are gone.
@@ -132,6 +133,11 @@ public sealed class MainWindowViewModel : BindableBase
         // Sent by the net472 app to the API; this app only hears about it. The row goes when the API's
         // EquipmentDeleted arrives.
         AddLog($"{disposal.DisposedBy} disposed of {disposal.AssetTag}; the API will delete it");
+    }
+
+    private void OnFlagged((Guid id, string name) flagged)
+    {
+        AddLog($"{flagged.name} ({flagged.id}) was flagged");
     }
 
     private async Task CheckConnectionAsync()

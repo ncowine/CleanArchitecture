@@ -90,14 +90,12 @@ namespace Common.RabbitMQ.Tests.Broker
             await using (TestBus bus = await TestBus.Create())
             {
                 CoreEndpoint sender = bus.AddCoreEndpoint("compat-core", null);
-                ConcurrentQueue<string> log = new ConcurrentQueue<string>();
-                sender.Bus.Log += (source, message) => log.Enqueue(message);
                 await bus.WaitUntilConnected();
                 string routingKey = "nobody." + Guid.NewGuid().ToString("N");
 
                 await sender.Bus.PublishConfirmedAsync(CoreEndpoint.WireName, CompatPayloads.Golden(), routingKey, "outbox-row-3", TestContext.Current.CancellationToken);
 
-                string warning = log.FirstOrDefault(m => m.Contains("No queue is bound"));
+                string warning = sender.Log.Entries.Select(e => e.Message).FirstOrDefault(m => m.Contains("No queue is bound"));
                 Assert.NotNull(warning);
                 Assert.Contains(routingKey, warning);
                 Assert.Contains("outbox-row-3", warning);
@@ -138,15 +136,13 @@ namespace Common.RabbitMQ.Tests.Broker
                     options.QueueMode = QueueMode.Shared;
                     options.DeliveryLimit = 6;
                 });
-                ConcurrentQueue<string> log = new ConcurrentQueue<string>();
-                changed.Bus.Log += (sender, message) => log.Enqueue(message);
 
                 // The connect loop retries every second, so the explanation is logged again after subscribing.
                 Stopwatch stopwatch = Stopwatch.StartNew();
                 string explanation;
-                while ((explanation = log.FirstOrDefault(m => m.Contains("already exists with different settings"))) == null)
+                while ((explanation = changed.Log.Entries.Select(e => e.Message).FirstOrDefault(m => m.Contains("already exists with different settings"))) == null)
                 {
-                    Assert.True(stopwatch.Elapsed < TestBus.Timeout, "No explanation was logged. Log: " + string.Join(" | ", log));
+                    Assert.True(stopwatch.Elapsed < TestBus.Timeout, "No explanation was logged. Log: " + string.Join(" | ", changed.Log.Entries.Select(e => e.Message)));
                     await Task.Delay(50, TestContext.Current.CancellationToken);
                 }
 

@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -37,6 +39,7 @@ namespace Messaging.RabbitMQ
         private readonly IMessagingObserver observer;
         private readonly string instanceId;
         private readonly string queueName;
+        private readonly ILogger logger;
         private readonly ConcurrentQueue<PendingMessage> outstandingMessages = new ConcurrentQueue<PendingMessage>();
         private readonly ConcurrentDictionary<string, MessageRegistration> subscriptions =
             new ConcurrentDictionary<string, MessageRegistration>(StringComparer.Ordinal);
@@ -52,7 +55,8 @@ namespace Messaging.RabbitMQ
         private bool disposed;
 
         /// <param name="observer">Optional. Null means no observer and no extra headers.</param>
-        public RabbitMQBus(RabbitMQBusOptions options, IMessageSerializer serializer, IInboundDispatcher dispatcher, IMessagingObserver observer = null)
+        /// <param name="logger">Optional. Null means no logging.</param>
+        public RabbitMQBus(RabbitMQBusOptions options, IMessageSerializer serializer, IInboundDispatcher dispatcher, IMessagingObserver observer = null, ILogger logger = null)
         {
             if (options == null)
             {
@@ -78,6 +82,7 @@ namespace Messaging.RabbitMQ
             this.serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
             this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             this.observer = observer ?? NullMessagingObserver.Instance;
+            this.logger = logger ?? NullLogger.Instance;
             instanceId = string.IsNullOrWhiteSpace(options.InstanceId) ? Guid.NewGuid().ToString("N") : options.InstanceId;
 
             if (options.QueueMode == QueueMode.Shared && (options.MaxAttempts < 1 || options.DeliveryLimit < 1))
@@ -89,9 +94,6 @@ namespace Messaging.RabbitMQ
                 ? (string.IsNullOrWhiteSpace(options.SharedQueueName) ? $"{options.ClientName}.{options.BusName}".ToLowerInvariant() : options.SharedQueueName)
                 : $"{options.ClientName}.{options.BusName}.{instanceId}".ToLowerInvariant();
         }
-
-        /// <summary>Connection and error messages. The sender is this bus.</summary>
-        public event EventHandler<string> Log;
 
         public string BusName => options.BusName;
 
@@ -199,7 +201,7 @@ namespace Messaging.RabbitMQ
                 }
                 catch (PublishException ex) when (ex.IsReturn)
                 {
-                    WriteLog($"No queue is bound to exchange '{options.ExchangeName}' for routing key '{context.RoutingKey}': message {context.MessageId} ({wireName}) reached no receiver.");
+                    logger.LogWarning("[{Bus}] No queue is bound to exchange '{Exchange}' for routing key '{RoutingKey}': message {MessageId} ({WireName}) reached no receiver.", options.BusName, options.ExchangeName, context.RoutingKey, context.MessageId, wireName);
                 }
                 catch (Exception ex)
                 {
@@ -324,7 +326,7 @@ namespace Messaging.RabbitMQ
 
             if (!outstandingMessages.IsEmpty)
             {
-                WriteLog($"Shutting down with {outstandingMessages.Count} unsent message(s).");
+                logger.LogWarning("[{Bus}] Shutting down with {Count} unsent message(s).", options.BusName, outstandingMessages.Count);
             }
 
             try
@@ -338,7 +340,7 @@ namespace Messaging.RabbitMQ
             }
             catch (Exception ex)
             {
-                WriteLog($"Error while closing connections: {ex.Message}");
+                logger.LogWarning(ex, "[{Bus}] Error while closing connections: {Error}", options.BusName, ex.Message);
             }
 
             cancellation.Dispose();
@@ -360,14 +362,14 @@ namespace Messaging.RabbitMQ
                     {
                         await CloseConsumer().ConfigureAwait(false);
                         await OpenConsumer(token).ConfigureAwait(false);
-                        WriteLog($"Consumer connected, queue '{consumerQueueName}'.");
+                        logger.LogInformation("[{Bus}] Consumer connected. Queue '{Queue}'.", options.BusName, consumerQueueName);
                         ObserveConnection(role, ConnectionStatus.Connected, null, null);
                     }
                     else if (role == ConnectionRole.Publisher && !IsPublisherConnected)
                     {
                         await ClosePublisher().ConfigureAwait(false);
                         await OpenPublisher(token).ConfigureAwait(false);
-                        WriteLog("Publisher connected.");
+                        logger.LogInformation("[{Bus}] Publisher connected.", options.BusName);
                         ObserveConnection(role, ConnectionStatus.Connected, null, null);
                     }
                 }
@@ -377,7 +379,7 @@ namespace Messaging.RabbitMQ
                 }
                 catch (Exception ex)
                 {
-                    WriteLog($"{role} connection failed: {ex.Message}");
+                    logger.LogWarning(ex, "[{Bus}] {Role} could not connect: {Error}. Retrying.", options.BusName, role, ex.Message);
                     ObserveConnection(role, ConnectionStatus.Failed, null, ex);
                 }
 
@@ -401,7 +403,7 @@ namespace Messaging.RabbitMQ
         /// <summary>Only reports the loss; <see cref="KeepConnected"/> notices it on its next check and reconnects.</summary>
         private Task OnConnectionLost(ConnectionRole role, ShutdownEventArgs args)
         {
-            WriteLog($"{role} connection lost: {args.ReplyText}");
+            logger.LogWarning("[{Bus}] {Role} connection lost: {Reason}. Reconnecting.", options.BusName, role, args.ReplyText);
             ObserveConnection(role, ConnectionStatus.Lost, args.ReplyText, null);
             return Task.CompletedTask;
         }
@@ -597,7 +599,7 @@ namespace Messaging.RabbitMQ
             catch (Exception ex)
             {
                 // Failed before the message was identified, e.g. on its headers.
-                WriteLog($"Failed to handle message '{args.RoutingKey}': {ex.Message}");
+                logger.LogError(ex, "[{Bus}] Failed to handle message '{RoutingKey}': {Error}", options.BusName, args.RoutingKey, ex.Message);
                 settlement = FailedSettlement;
             }
 
@@ -620,7 +622,7 @@ namespace Messaging.RabbitMQ
                 : args.RoutingKey;
             if (!subscriptions.TryGetValue(wireName, out MessageRegistration registration))
             {
-                WriteLog($"Ignored unknown event '{wireName}'.");
+                logger.LogInformation("[{Bus}] Ignored unknown event '{WireName}'.", options.BusName, wireName);
 
                 // With only per-type bindings an unknown message is a mistake worth keeping. Pattern and header
                 // subscriptions bring in unhandled types by design, so those are just skipped.
@@ -660,7 +662,7 @@ namespace Messaging.RabbitMQ
                     }
                     catch (Exception ex) when (attempt < attempts && !token.IsCancellationRequested)
                     {
-                        WriteLog($"Failed to handle message '{args.RoutingKey}' (attempt {attempt} of {attempts}), retrying: {ex.Message}");
+                        logger.LogWarning(ex, "[{Bus}] Handling {WireName} {MessageId} (attempt {Attempt} of {Attempts}) failed; retrying: {Error}", options.BusName, context.WireName, context.MessageId, attempt, attempts, ex.Message);
                         TimeSpan duration = stopwatch.Elapsed;
                         Observe(o => o.OnHandlingFailed(context, duration, ex, FailedMessageAction.Retrying), nameof(IMessagingObserver.OnHandlingFailed));
                     }
@@ -674,9 +676,10 @@ namespace Messaging.RabbitMQ
             }
             catch (Exception ex)
             {
-                WriteLog($"Failed to handle message '{args.RoutingKey}': {ex.Message}");
                 TimeSpan duration = stopwatch.Elapsed;
                 FailedMessageAction action = IsShared ? FailedMessageAction.DeadLettered : FailedMessageAction.Dropped;
+                logger.LogError(ex, "[{Bus}] Handling {WireName} {MessageId} failed; the message {Outcome}: {Error}", options.BusName, context.WireName, context.MessageId,
+                    action == FailedMessageAction.DeadLettered ? "was moved to the dead-letter queue" : "is acknowledged and dropped", ex.Message);
                 Observe(o => o.OnHandlingFailed(context, duration, ex, action), nameof(IMessagingObserver.OnHandlingFailed));
                 return FailedSettlement;
             }
@@ -721,7 +724,7 @@ namespace Messaging.RabbitMQ
             }
             catch (Exception ex)
             {
-                WriteLog($"Failed to ack message: {ex.Message}");
+                logger.LogWarning(ex, "[{Bus}] Failed to ack message: {Error}", options.BusName, ex.Message);
             }
         }
 
@@ -798,7 +801,7 @@ namespace Messaging.RabbitMQ
                 }
                 catch (Exception ex)
                 {
-                    WriteLog($"Publish failed, message kept in outstanding queue: {ex.Message}");
+                    logger.LogWarning(ex, "[{Bus}] Publishing {WireName} {MessageId} failed; it stays buffered and is retried: {Error}", options.BusName, message?.Context.WireName, message?.Context.MessageId, ex.Message);
 
                     if (message != null)
                     {
@@ -979,11 +982,6 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        private void WriteLog(string message)
-        {
-            Log?.Invoke(this, message);
-        }
-
         /// <summary>Calls the observer. Its exceptions are logged and never reach the transport.</summary>
         private void Observe(Action<IMessagingObserver> callback, string callbackName)
         {
@@ -993,7 +991,7 @@ namespace Messaging.RabbitMQ
             }
             catch (Exception ex)
             {
-                WriteLog($"Observer failed in {callbackName}: {ex.Message}");
+                logger.LogError(ex, "[{Bus}] Observer failed in {Callback}: {Error}", options.BusName, callbackName, ex.Message);
             }
         }
 

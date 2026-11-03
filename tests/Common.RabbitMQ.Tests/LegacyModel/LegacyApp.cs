@@ -59,7 +59,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             return received;
         }
 
-        /// <summary><c>GetEvent&lt;TEvent&gt;().PublishRemote(payload, service)</c>.</summary>
+        /// <summary>Calls <c>PublishRemote(payload, service)</c> on <typeparamref name="TEvent"/>.</summary>
         public void PublishRemote<TEvent, TPayload>(TPayload payload)
             where TEvent : PubSubEvent<TPayload>, new()
         {

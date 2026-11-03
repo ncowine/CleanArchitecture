@@ -58,14 +58,14 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             return received;
         }
 
-        /// <summary><c>GetEvent&lt;TEvent&gt;().PublishRemote(payload, service)</c> on a plain <c>PubSubEvent&lt;T&gt;</c>.</summary>
+        /// <summary>Calls <c>PublishRemote(payload, service)</c> on <typeparamref name="TEvent"/>, a plain <see cref="PubSubEvent{TPayload}"/>.</summary>
         public void PublishRemote<TEvent, TPayload>(TPayload payload)
             where TEvent : PubSubEvent<TPayload>, new()
         {
             eventAggregator.GetEvent<TEvent>().PublishRemote(payload, service);
         }
 
-        /// <summary><c>GetEvent&lt;TEvent&gt;().PublishRemoteTo(routingKey, payload, service)</c>.</summary>
+        /// <summary>Calls <c>PublishRemoteTo(routingKey, payload, service)</c> on <typeparamref name="TEvent"/>.</summary>
         public void PublishRemoteTo<TEvent, TPayload>(string routingKey, TPayload payload)
             where TEvent : PubSubEvent<TPayload>, new()
         {

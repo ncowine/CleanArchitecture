@@ -29,7 +29,7 @@ public sealed class MainWindowViewModel : BindableBase
     private string noteText = "Battery swollen, keep it off the shelf";
     private EquipmentRow? selected;
 
-    public MainWindowViewModel(IEventAggregator events, RabbitMQServiceRouter router, EquipmentApi api)
+    public MainWindowViewModel(IEventAggregator events, RabbitMQServiceRouter router, EquipmentApi api, BusLog busLog)
     {
         this.events = events;
         this.api = api;
@@ -49,9 +49,10 @@ public sealed class MainWindowViewModel : BindableBase
         // the event locally; RabbitMQ never echoes it back).
         events.GetEvent<EquipmentNoteSent>().Subscribe(OnNote, ThreadOption.UIThread);
         events.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, ThreadOption.UIThread);
+        events.GetEvent<EquipmentFlagged>().Subscribe(OnFlagged, ThreadOption.UIThread);
 
         bus = router.GetBus(App.BusName);
-        router.Log += (sender, message) => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
+        busLog.Written += message => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
 
         // ✅ DO (re)load whenever the connection comes (back) up: this app's queue is deleted with its connection, so
         //    events sent while it was down are gone.
@@ -66,6 +67,7 @@ public sealed class MainWindowViewModel : BindableBase
         ReloadCommand = new DelegateCommand(async () => await List.LoadAsync());
         SendNoteCommand = new DelegateCommand(SendNote, () => Selected is not null);
         DisposeSelectedCommand = new DelegateCommand(DisposeSelected, () => Selected is not null);
+        FlagSelectedCommand = new DelegateCommand(FlagSelected, () => Selected is not null);
     }
 
     public string Title => $"net472 — legacy app, legacy event format ({me})";
@@ -96,6 +98,7 @@ public sealed class MainWindowViewModel : BindableBase
                 DeleteSelectedCommand.RaiseCanExecuteChanged();
                 SendNoteCommand.RaiseCanExecuteChanged();
                 DisposeSelectedCommand.RaiseCanExecuteChanged();
+                FlagSelectedCommand.RaiseCanExecuteChanged();
 
                 // Local only: Publish, not PublishRemote. Whoever in this app cares (the status bar) hears it;
                 // no other app does. See Events/EquipmentSelected.cs for what keeps it off the broker.
@@ -113,6 +116,8 @@ public sealed class MainWindowViewModel : BindableBase
     public DelegateCommand SendNoteCommand { get; }
 
     public DelegateCommand DisposeSelectedCommand { get; }
+
+    public DelegateCommand FlagSelectedCommand { get; }
 
     private void SendNote()
     {
@@ -139,6 +144,12 @@ public sealed class MainWindowViewModel : BindableBase
         });
     }
 
+    private void FlagSelected()
+    {
+        // A tuple payload. Poc.Api.NoOutbox receives this; the real API doesn't handle it.
+        events.GetEvent<EquipmentFlagged>().PublishRemote((Selected!.Id, Selected.Name));
+    }
+
     private void OnNote(EquipmentNote note)
     {
         AddLog($"note on {note.AssetTag} from {(note.From == me ? "me" : note.From)}: {note.Text}");
@@ -149,6 +160,11 @@ public sealed class MainWindowViewModel : BindableBase
         AddLog(disposal.DisposedBy == me
             ? $"sent EquipmentDisposed for {disposal.AssetTag}; the API will delete it"
             : $"{disposal.DisposedBy} disposed of {disposal.AssetTag}");
+    }
+
+    private void OnFlagged((Guid id, string name) flagged)
+    {
+        AddLog($"{flagged.name} ({flagged.id}) was flagged");
     }
 
     private async Task CheckConnectionAsync()

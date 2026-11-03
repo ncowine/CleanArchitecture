@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Messaging.RabbitMQ;
+using Microsoft.Extensions.Logging;
 using Prism.Events;
 
 namespace Common.RabbitMQ
@@ -32,8 +32,11 @@ namespace Common.RabbitMQ
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
         }
 
-        /// <summary>Connection and error messages. The sender is this service.</summary>
-        public event EventHandler<string> Log;
+        /// <summary>
+        /// Receives connection and error messages. Set it before <see cref="Init"/>. Null writes them to Trace. A property,
+        /// not a constructor argument: DryIoc rejects types with several public constructors (ADR 0001).
+        /// </summary>
+        public ILogger Logger { get; set; }
 
         public string BusName => config?.BusName;
 
@@ -73,11 +76,13 @@ namespace Common.RabbitMQ
                 .Select(d => new MessageRegistration(d.EventName, d.PayloadType))
                 .ToList();
 
-            bus = new RabbitMQBus(CreateOptions(config), NewtonsoftMessageSerializer.Instance, new PrismDispatcher(eventAggregator, registry));
-            bus.Log += OnBusLog;
+            ILogger logger = Logger ?? TraceLogger.Instance;
+
+            bus = new RabbitMQBus(CreateOptions(config), NewtonsoftMessageSerializer.Instance, new PrismDispatcher(eventAggregator, registry), null, logger);
             bus.Start(registrations);
 
-            WriteLog($"Initialized with {registrations.Count} event(s) on {config.HostName}:{config.Port}{FormatVirtualHost(config.VirtualHost)} exchange '{config.ExchangeName}'.");
+            logger.LogInformation("[{Bus}] Initialized with {Count} event(s) on {Host}:{Port}{VirtualHost} exchange '{Exchange}'.",
+                config.BusName, registrations.Count, config.HostName, config.Port, FormatVirtualHost(config.VirtualHost), config.ExchangeName);
         }
 
         /// <summary>
@@ -200,19 +205,6 @@ namespace Common.RabbitMQ
             {
                 throw new InvalidOperationException("RabbitMQService is not initialized. Call Init first.");
             }
-        }
-
-        private void OnBusLog(object sender, string message)
-        {
-            WriteLog(message);
-        }
-
-        private void WriteLog(string message)
-        {
-            Trace.WriteLine($"[RabbitMQ:{BusName}] {message}");
-
-            // Applications cast the sender to RabbitMQService, so it must be this façade, not the bus.
-            Log?.Invoke(this, message);
         }
 
         private static string FormatVirtualHost(string virtualHost)

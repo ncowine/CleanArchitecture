@@ -7,7 +7,7 @@ namespace Equipment.Infrastructure.IntegrationEvents;
 /// </summary>
 /// <remarks>
 /// The sender is a legacy Prism app (samples/MessagingPocs/Poc.Net472): its event is
-/// <c>Poc.Legacy.Events.EquipmentDisposed : PubSubEvent&lt;EquipmentDisposal&gt;</c>, so the wire name is that class's
+/// <c>Poc.Legacy.Events.EquipmentDisposed</c>, a Prism <c>PubSubEvent</c> carrying <c>EquipmentDisposal</c>, so the wire name is that class's
 /// full name and the body is the payload. This class mirrors the payload's properties; Newtonsoft (sender) and
 /// System.Text.Json (here) read plain get/set properties the same way.
 /// </remarks>

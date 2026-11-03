@@ -17,7 +17,7 @@ namespace BuildingBlocks.Caching;
 /// are refreshed proactively instead of only expiring on a timer.
 /// </para>
 /// <para>
-/// A concrete cache type (e.g. <c>EmployeeDataCache : DataCache&lt;Guid, Employee&gt;</c>) owns a
+/// A concrete cache type (e.g. an <c>EmployeeDataCache</c> deriving from <see cref="DataCache{TKey, TValue}"/>) owns a
 /// background purge loop and change processor for its lifetime, so it MUST be registered as a
 /// <b>singleton</b> in DI. Registering it Scoped/Transient gives every request an empty store and spins
 /// up a fresh pair of background loops each time.
