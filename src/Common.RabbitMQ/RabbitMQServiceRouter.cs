@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.Logging;
 using Prism.Events;
 
 namespace Common.RabbitMQ
@@ -23,8 +24,8 @@ namespace Common.RabbitMQ
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
         }
 
-        /// <summary>Log messages from every bus. The sender is the <see cref="RabbitMQService"/>.</summary>
-        public event EventHandler<string> Log;
+        /// <summary>Receives messages from every bus. Set it before <see cref="Init"/>. Null writes them to Trace.</summary>
+        public ILogger Logger { get; set; }
 
         public IReadOnlyCollection<RabbitMQService> Buses => buses.Values;
 
@@ -47,7 +48,6 @@ namespace Common.RabbitMQ
             }
 
             RabbitMQService service = new RabbitMQService(eventAggregator, registry);
-            service.Log += OnBusLog;
 
             buses.Add(config.BusName, service);
             configs.Add(config.BusName, config);
@@ -71,6 +71,7 @@ namespace Common.RabbitMQ
 
             foreach (KeyValuePair<string, RabbitMQService> pair in buses)
             {
+                pair.Value.Logger = Logger;
                 pair.Value.Init(configs[pair.Key]);
             }
         }
@@ -90,7 +91,6 @@ namespace Common.RabbitMQ
         {
             foreach (RabbitMQService service in buses.Values)
             {
-                service.Log -= OnBusLog;
                 service.Dispose();
             }
         }
@@ -126,11 +126,6 @@ namespace Common.RabbitMQ
             }
 
             return service;
-        }
-
-        private void OnBusLog(object sender, string message)
-        {
-            Log?.Invoke(sender, message);
         }
     }
 }

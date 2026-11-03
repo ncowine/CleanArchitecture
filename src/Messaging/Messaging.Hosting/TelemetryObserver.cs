@@ -79,7 +79,6 @@ namespace Messaging.Hosting
             // A retry is an event on the same span, which ends when the broker confirms.
             if (context.RetriedOnFailure)
             {
-                logger.LogWarning(exception, "[{Bus}] Publishing {WireName} {MessageId} failed; it stays buffered and is retried.", context.BusName, context.WireName, context.MessageId);
                 return;
             }
 
@@ -134,20 +133,10 @@ namespace Messaging.Hosting
             // A retry is an event on the same span; the span and the duration end with the final outcome.
             if (action == FailedMessageAction.Retrying)
             {
-                logger.LogWarning(exception, "[{Bus}] Handling {WireName} {MessageId} failed; retrying.", context.BusName, context.WireName, context.MessageId);
                 return;
             }
 
             processDuration.Record(duration.TotalSeconds, Tags(context.BusName, context.WireName, exception.GetType().FullName));
-            if (action == FailedMessageAction.DeadLettered)
-            {
-                logger.LogError(exception, "[{Bus}] Handling {WireName} {MessageId} failed; the message was moved to the dead-letter queue.", context.BusName, context.WireName, context.MessageId);
-            }
-            else
-            {
-                logger.LogError(exception, "[{Bus}] Handling {WireName} {MessageId} failed; the message is acknowledged and dropped.", context.BusName, context.WireName, context.MessageId);
-            }
-
             if (activity != null)
             {
                 activity.SetTag("messaging.failure.action", action.ToString());
@@ -158,18 +147,7 @@ namespace Messaging.Hosting
 
         public void OnConnectionChanged(ConnectionStateChange change)
         {
-            switch (change.Status)
-            {
-                case ConnectionStatus.Connected:
-                    logger.LogInformation("[{Bus}] {Role} connected.", change.BusName, change.Role);
-                    break;
-                case ConnectionStatus.Lost:
-                    logger.LogWarning("[{Bus}] {Role} connection lost: {Reason}. Reconnecting.", change.BusName, change.Role, change.Reason);
-                    break;
-                default:
-                    logger.LogWarning(change.Error, "[{Bus}] {Role} could not connect. Retrying.", change.BusName, change.Role);
-                    break;
-            }
+            // The bus logs connection changes itself.
         }
 
         /// <summary>

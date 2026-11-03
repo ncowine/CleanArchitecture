@@ -35,13 +35,15 @@ namespace Common.RabbitMQ.Tests.Broker
             };
             configure?.Invoke(options);
 
-            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, observer);
+            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, observer, Log);
             bus.Start(new[] { new MessageRegistration(WireName, typeof(CompatPayload)) });
         }
 
         public CompatBuild Build => CompatBuild.Core;
 
         public RabbitMQBus Bus => bus;
+
+        public RecordingLogger Log { get; } = new RecordingLogger();
 
         public string InstanceId => bus.InstanceId;
 

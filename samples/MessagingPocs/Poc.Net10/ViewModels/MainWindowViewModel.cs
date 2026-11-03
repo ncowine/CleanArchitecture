@@ -47,7 +47,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public ObservableCollection<string> Log { get; } = [];
 
     /// <summary>RabbitMQ: subscribe now; the connection watch loads once the bus is connected.</summary>
-    public void ListenOverRabbitMq(IMessageSubscriber subscriber, RabbitMQBus bus)
+    public void ListenOverRabbitMq(IMessageSubscriber subscriber, RabbitMQBus bus, BusLog busLog)
     {
         Title += " · RabbitMQ";
 
@@ -57,7 +57,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         subscriptions.Add(subscriber.Subscribe<EquipmentUpdated>(List.Apply, ui));
         subscriptions.Add(subscriber.Subscribe<EquipmentDeleted>(List.Apply, ui));
 
-        bus.Log += (sender, message) => ui.Post(state => AddLog($"[bus] {message}"), null);
+        busLog.Written += message => ui.Post(state => AddLog($"[bus] {message}"), null);
 
         // ✅ DO (re)load whenever the connection comes (back) up: the queue goes with the connection.
         connectionWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };

@@ -147,7 +147,7 @@ Two ideas explain almost everything:
 | Project | Target | Depends on | What it is | Who uses it |
 |---|---|---|---|---|
 | `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `IMessageHandler<T>`, `[Message]`, `MessageContext`, `IMessageSerializer`, `IMessagingObserver`. | Everything below. |
-| `Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | RabbitMQ.Client 7.1.2 | **The engine**: `RabbitMQBus` and its options. | All front doors. |
+| `Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | RabbitMQ.Client 7.1.2, Microsoft.Extensions.Logging.Abstractions 8.0 | **The engine**: `RabbitMQBus` and its options. | All front doors. |
 | `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | Server-style setup: `AddMessaging`, handlers, `IMessageSubscriber`, System.Text.Json, telemetry, health checks, `MessagingClient`. | The API, modern WPF apps. |
 | `Messaging/Messaging.Prism` | net8.0 | Prism.Core, Messaging.Hosting | Optional bridge: plain message classes as Prism events (`MessageEvent<T>`). | Modern WPF apps that like the Prism style. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
@@ -378,6 +378,16 @@ eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UITh
 ```
 
 Older code that uses `RemotePubSubEvent<T>` with `[RemoteEvent("bus")]` keeps working unchanged.
+
+**Logging.** Set `Logger` on the router, or on a `RabbitMQService`, before `Init`. Any `ILogger` works:
+
+```csharp
+router = new RabbitMQServiceRouter(eventAggregator, registry) { Logger = logger };
+```
+
+With no logger, messages go to Trace output. There's no `Log` event any more: an app that subscribed to it sets
+`Logger` instead. A property rather than a constructor argument, because DryIoc rejects types with several public
+constructors.
 
 ### B. A modern WPF app (.NET 8, plain classes, Prism style)
 
@@ -623,6 +633,17 @@ Server-only keys (`QueueMode`, retries, `HeaderMatch`, `ExchangeDurable`, `BindO
 | `traceparent`, `tracestate` | with `AddTelemetry()` | Distributed tracing (W3C trace context). |
 
 Receivers ignore headers they don't know, so new headers can always be added safely.
+
+### Logging
+
+`RabbitMQBus` logs through `ILogger`; in a host that's the category `Messaging.RabbitMQ.RabbitMQBus`, with or without
+`AddTelemetry()`. To quieten it, set a level for that category in `Logging:LogLevel`.
+
+| Level | What |
+|---|---|
+| Information | Connected; an unknown event ignored |
+| Warning | Connection lost or failed (every `ReconnectDelay` while the broker is down, with a stack trace); a handler retrying; a publish failed and kept buffered; a message no queue is bound for |
+| Error | A message dead-lettered or dropped; an observer that threw |
 
 ### Telemetry (servers)
 

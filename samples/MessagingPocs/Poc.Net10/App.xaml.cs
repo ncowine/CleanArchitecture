@@ -5,6 +5,7 @@ using Messaging.RabbitMQ;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Poc.Net10.ViewModels;
 using Poc.Net10.Views;
 using Poc.Shared;
@@ -54,12 +55,17 @@ public partial class App : Application
         builder.Services.AddSingleton(api);
         builder.Services.AddSingleton(EquipmentApi.Create(api));
 
+        BusLog busLog = new BusLog();
+
         if (useSignalR)
         {
             builder.Services.AddSingleton<EquipmentLiveUpdates>();
         }
         else
         {
+            // The bus logs through ILogger like everything else here; this provider also shows it in the window.
+            builder.Logging.AddProvider(busLog);
+
             builder.Services.AddMessaging(messaging => messaging
                 .AddBus(BusName, builder.Configuration.GetSection($"Messaging:Buses:{BusName}"))
                 // ✅ DO register what you receive: only these classes are bound, and only these can be read.
@@ -86,7 +92,8 @@ public partial class App : Application
         {
             viewModel.ListenOverRabbitMq(
                 host.Services.GetRequiredService<IMessageSubscriber>(),
-                host.Services.GetRequiredKeyedService<RabbitMQBus>(BusName));
+                host.Services.GetRequiredKeyedService<RabbitMQBus>(BusName),
+                busLog);
             await host.StartAsync();   // starts connecting in the background
             window.Show();
         }

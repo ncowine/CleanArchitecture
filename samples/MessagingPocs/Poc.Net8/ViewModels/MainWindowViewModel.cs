@@ -29,7 +29,7 @@ public sealed class MainWindowViewModel : BindableBase
     private string noteText = "Battery swollen, keep it off the shelf";
     private EquipmentRow? selected;
 
-    public MainWindowViewModel(IEventAggregator events, RabbitMQServiceRouter router, EquipmentApi api)
+    public MainWindowViewModel(IEventAggregator events, RabbitMQServiceRouter router, EquipmentApi api, BusLog busLog)
     {
         this.events = events;
         this.api = api;
@@ -52,7 +52,7 @@ public sealed class MainWindowViewModel : BindableBase
         events.GetEvent<EquipmentFlagged>().Subscribe(OnFlagged, ThreadOption.UIThread);
 
         bus = router.GetBus(App.BusName);
-        router.Log += (sender, message) => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
+        busLog.Written += message => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
 
         // ✅ DO (re)load whenever the connection comes (back) up: this app's queue is deleted with its connection, so
         //    events sent while it was down are gone.

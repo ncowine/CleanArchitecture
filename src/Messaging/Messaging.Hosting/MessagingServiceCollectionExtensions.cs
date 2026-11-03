@@ -1,6 +1,7 @@
 using System;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Messaging.Hosting
@@ -52,7 +53,8 @@ namespace Messaging.Hosting
                 options,
                 serializer,
                 new ScopedDispatcher(provider.GetRequiredService<IServiceScopeFactory>(), registry, name),
-                registry.TelemetryEnabled ? provider.GetRequiredService<TelemetryObserver>() : null);
+                registry.TelemetryEnabled ? provider.GetRequiredService<TelemetryObserver>() : null,
+                provider.GetService<ILogger<RabbitMQBus>>());
         }
     }
 }
