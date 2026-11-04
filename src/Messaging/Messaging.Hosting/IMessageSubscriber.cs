@@ -9,8 +9,9 @@ namespace Messaging.Hosting
     /// <code><![CDATA[
     /// subscriber.Subscribe<EmployeeUpdated>(OnUpdated, SynchronizationContext.Current);   // runs on the UI thread
     /// ]]></code>
-    /// A message type must be received for its subscribers to be called: add it with
-    /// <see cref="MessagingBuilder.AddMessages"/> or a handler. Dispose the returned object to unsubscribe.
+    /// Subscribing starts receiving the message type on every bus: its class needs <see cref="MessageAttribute"/>, and nothing
+    /// else has to be registered. The binding is created in the background, so a message published right after
+    /// subscribing can be missed. Dispose the returned object to unsubscribe; the binding stays until the queue goes away.
     /// Subscriptions are held strongly, so a subscriber that goes away must dispose them.
     /// </summary>
     public interface IMessageSubscriber
@@ -28,5 +29,11 @@ namespace Messaging.Hosting
         /// An exception fails the message.
         /// </summary>
         IDisposable Subscribe<TMessage>(Func<TMessage, MessageContext, CancellationToken, Task> handler);
+
+        /// <summary>
+        /// Starts receiving <paramref name="messageType"/> on every bus, with no subscription of its own: for an
+        /// <see cref="IMessageSink"/> such as the event aggregator bridge. Does nothing when already receiving it.
+        /// </summary>
+        void Receive(Type messageType);
     }
 }

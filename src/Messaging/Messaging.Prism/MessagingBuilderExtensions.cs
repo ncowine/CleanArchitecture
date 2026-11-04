@@ -9,8 +9,7 @@ namespace Messaging.Prism
     {
         /// <summary>
         /// Raises every received message as <see cref="MessageEvent{TMessage}"/> on <paramref name="eventAggregator"/>, the
-        /// application's Prism aggregator. Messages arrive for the types added with <see cref="MessagingBuilder.AddMessages"/>
-        /// or <see cref="MessagingBuilder.AddHandlers"/>.
+        /// application's Prism aggregator. Subscribing to a <see cref="MessageEvent{TMessage}"/> starts receiving that type.
         /// </summary>
         public static MessagingBuilder UseEventAggregator(this MessagingBuilder builder, IEventAggregator eventAggregator)
         {
@@ -25,6 +24,7 @@ namespace Messaging.Prism
             }
 
             builder.Services.AddSingleton<IMessageSink>(new EventAggregatorSink(eventAggregator));
+            builder.Services.AddHostedService<MessageEventReceiver>();
             return builder;
         }
     }

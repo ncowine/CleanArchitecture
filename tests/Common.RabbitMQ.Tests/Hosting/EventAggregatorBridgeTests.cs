@@ -34,7 +34,6 @@ namespace Common.RabbitMQ.Tests.Hosting
                 Received<CompatMessage> received = Listen(eventAggregator);
 
                 await using (TestHost host = await TestHost.Start(bus, "compat-wpf", messaging => messaging
-                    .AddMessages(typeof(CompatMessage).Assembly)
                     .UseEventAggregator(eventAggregator)))
                 {
                     await bus.WaitUntilConnected();
@@ -47,6 +46,22 @@ namespace Common.RabbitMQ.Tests.Hosting
                     Assert.Equal("compat", message.Name);
                 }
             }
+        }
+
+        [Fact]
+        public void EveryPrismSubscribeOverload_ReachesTheOneMessageEventOverrides()
+        {
+            SubscribeCountingEvent counting = new SubscribeCountingEvent();
+            Action<int> action = _ => { };
+
+            counting.Subscribe(action);
+            counting.Subscribe(action, _ => true);
+            counting.Subscribe(action, ThreadOption.PublisherThread);
+            counting.Subscribe(action, true);
+            counting.Subscribe(action, ThreadOption.PublisherThread, true);
+            counting.Subscribe(action, ThreadOption.PublisherThread, true, _ => true);
+
+            Assert.Equal(6, counting.Count);
         }
 
         [Fact]

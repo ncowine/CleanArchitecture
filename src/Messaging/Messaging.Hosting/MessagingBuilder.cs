@@ -17,7 +17,7 @@ namespace Messaging.Hosting
     /// messaging.UseDefaultBus(configuration["Messaging:DefaultBus"]);   // needed with several buses
     /// messaging.AddHandlers(typeof(EmployeeSavedHandler).Assembly);   // every IMessageHandler<T> in it, every bus
     /// messaging.AddHandlers(typeof(OrderSavedHandler).Assembly, "Modern");   // ...or only some buses
-    /// messaging.AddMessages(typeof(OrderSaved).Assembly);      // receive every [Message] type in it, e.g. for a sink
+    /// messaging.AddMessages(typeof(OrderSaved).Assembly);      // receive every [Message] type in it, wanted or not
     /// messaging.Subscribe("AppA", "AppA.Events.#");           // another application's exchange
     /// messaging.AddTelemetry();                               // server observability; off unless asked for
     /// ]]></code>
@@ -85,8 +85,9 @@ namespace Messaging.Hosting
         }
 
         /// <summary>
-        /// Receives every <see cref="MessageAttribute"/> type in <paramref name="assembly"/>, with or without a handler, so
-        /// an <see cref="IMessageSink"/> such as the event aggregator bridge gets them (ADR 0002, section 5).
+        /// Receives every <see cref="MessageAttribute"/> type in <paramref name="assembly"/>, whether or not anything
+        /// listens for it, so a custom <see cref="IMessageSink"/> gets them (ADR 0002, section 5). Handlers,
+        /// <see cref="IMessageSubscriber"/> and the event aggregator bridge don't need it: each binds only what it listens for.
         /// </summary>
         /// <param name="busNames">The buses to receive them on. None means every bus.</param>
         public MessagingBuilder AddMessages(Assembly assembly, params string[] busNames)

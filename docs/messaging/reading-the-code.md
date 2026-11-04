@@ -139,7 +139,7 @@ Two places need care:
 
 | You want to | Change | Also update |
 |---|---|---|
-| Send a new message from the API | A class with `[Message("...")]` in the module's `*.Messages` project (the outbox picks it up from there) | The receiving apps' `AddMessages(...)` |
+| Send a new message from the API | A class with `[Message("...")]` in the module's `*.Messages` project (the outbox picks it up from there) | The receiving apps' `Subscribe<T>(...)` |
 | Add a bus setting | `RabbitMQBusOptions`, used in `RabbitMQBus` | `RabbitMQConfig` and `RabbitMQService.CreateOptions` if legacy apps need it; the README's configuration reference |
 | Change what happens when a handler fails | `HandleWithRetries`, `FailedSettlement` | README "When things go wrong"; the `SharedQueueTests` |
 | Add a header to outgoing messages | An `IMessagingObserver.OnPublishing` (see `TelemetryObserver`) | Nothing in the engine: observer headers are added on top of the frozen ones |

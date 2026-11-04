@@ -170,7 +170,7 @@ Each is explained where it happens in the code.
 
 **Modern format (net10)**
 
-- ❌ Subscribing to a type the bus doesn't receive. Register it (`AddMessages`) or it never fires.
+- ❌ Expecting a message published right after subscribing. Subscribing binds the queue in the background.
 - ❌ Forgetting to dispose `IMessageSubscriber` subscriptions. Strong references: closed windows leak.
 - ❌ Adding a legacy app's exchange to `Subscriptions`. That ends "API only".
 - ❌ Publishing. No `IMessagePublisher`: modern apps only listen.
@@ -228,7 +228,7 @@ also handles this event, and deletes that equipment if it's running.
 **A tuple payload.** `EquipmentFlagged : PubSubEvent<(Guid id, string name)>` is sent by **Flag selected** in the net472
 window. A tuple's names don't reach the wire, so the JSON is `{"Item1":"...","Item2":"..."}`, and the API's
 `EquipmentFlagged` class maps those with `[JsonPropertyName]`. It's received with `IMessageSubscriber.Subscribe` in
-`Program.cs` rather than a handler class, to show both styles: `AddMessages` binds the queue, and a message that arrives
+`Program.cs` rather than a handler class, to show both styles: subscribing binds the queue, and a message that arrives
 before `Subscribe` is called is acknowledged and lost, so subscribe before `app.Run()`. Receiving into a tuple, or into a class without that
 mapping, doesn't throw: the values just come out as `Guid.Empty` and empty. The real API doesn't handle this event.
 
