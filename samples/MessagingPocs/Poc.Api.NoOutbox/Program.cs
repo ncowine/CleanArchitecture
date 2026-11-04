@@ -30,6 +30,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // every [Message] class here, which is what Subscribe needs.
 builder.Services.AddMessaging(messaging => messaging
     .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
+    .UseDefaultBus(builder.Configuration["Messaging:DefaultBus"])
     .AddHandlers(typeof(EquipmentDisposedHandler).Assembly)
     .AddMessages(typeof(EquipmentFlagged).Assembly));
 

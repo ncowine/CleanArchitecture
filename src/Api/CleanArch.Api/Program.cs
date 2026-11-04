@@ -64,6 +64,7 @@ if (messagingBus.Exists())
 {
     builder.Services.AddMessaging(messaging => messaging
         .AddBus("Main", messagingBus)
+        .UseDefaultBus(builder.Configuration["Messaging:DefaultBus"])
         // Every IMessageHandler<T> in Equipment, e.g. EquipmentDisposed from a legacy desktop app's exchange
         // (Subscriptions in appsettings), on the API's shared, retried queue.
         .AddHandlers(typeof(EquipmentDisposedHandler).Assembly)
