@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Common.RabbitMQ.Tests.Broker;
 using Common.RabbitMQ.Tests.Golden;
+using Messaging;
 using Messaging.Hosting;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +35,31 @@ namespace Common.RabbitMQ.Tests.Hosting
                 Assert.Equal("Compat.Events.CompatEvent", message.RoutingKey);
                 Assert.Equal("Compat.Events.CompatEvent", message.Headers["event-type"]);
                 Assert.Equal(0, host.Bus.OutstandingCount);
+            }
+        }
+
+        [Fact]
+        public async Task ConfirmedPublisher_WithSeveralBuses_SendsToTheNamedBus_WithTheCallersKey()
+        {
+            await using (TestBus bus = await TestBus.Create())
+            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => messaging.AddBus("Unreachable", options =>
+            {
+                options.HostName = "127.0.0.1";
+                options.Port = 1;
+                options.ExchangeName = "compat.unreachable";
+                options.ClientName = "compat-unreachable";
+            })))
+            {
+                await host.WaitUntilConnected();
+                WireCapture capture = await bus.Capture();
+
+                await host.Services.GetRequiredService<IConfirmedMessagePublisher>()
+                    .PublishConfirmedAsync(GoldenMessage(), "outbox-row-8", new PublishOptions { Bus = host.Bus.BusName, RoutingKey = "call.key" }, TestContext.Current.CancellationToken);
+
+                CapturedMessage message = await capture.Next(TestBus.Timeout);
+                Assert.NotNull(message);
+                Assert.Equal("outbox-row-8", message.MessageId);
+                Assert.Equal("call.key", message.RoutingKey);
             }
         }
 

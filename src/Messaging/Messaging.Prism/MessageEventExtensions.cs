@@ -16,17 +16,30 @@ namespace Messaging.Prism
             messageEvent.Publish(message);
         }
 
-        /// <summary>As <see cref="PublishRemote{TMessage}"/>, routed with <paramref name="routingKey"/> (ADR 0002, section 3).</summary>
+        /// <summary>As <see cref="PublishRemote{TMessage}(MessageEvent{TMessage}, TMessage, IMessagePublisher)"/>, with per-call settings such as the bus.</summary>
+        public static void PublishRemote<TMessage>(this MessageEvent<TMessage> messageEvent, TMessage message, PublishOptions options, IMessagePublisher publisher = null)
+        {
+            Send(messageEvent, message, options, publisher);
+            messageEvent.Publish(message);
+        }
+
+        /// <summary>As <see cref="PublishRemote{TMessage}(MessageEvent{TMessage}, TMessage, IMessagePublisher)"/>, routed with <paramref name="routingKey"/> (ADR 0002, section 3).</summary>
         public static void PublishRemoteTo<TMessage>(this MessageEvent<TMessage> messageEvent, string routingKey, TMessage message, IMessagePublisher publisher = null)
         {
             Send(messageEvent, message, RoutedTo(routingKey), publisher);
             messageEvent.Publish(message);
         }
 
-        /// <summary>As <see cref="PublishRemote{TMessage}"/>, but only to other applications: local subscribers are not called.</summary>
+        /// <summary>As <see cref="PublishRemote{TMessage}(MessageEvent{TMessage}, TMessage, IMessagePublisher)"/>, but only to other applications: local subscribers are not called.</summary>
         public static void PublishRemoteOnly<TMessage>(this MessageEvent<TMessage> messageEvent, TMessage message, IMessagePublisher publisher = null)
         {
             Send(messageEvent, message, null, publisher);
+        }
+
+        /// <summary>As <see cref="PublishRemoteOnly{TMessage}(MessageEvent{TMessage}, TMessage, IMessagePublisher)"/>, with per-call settings such as the bus.</summary>
+        public static void PublishRemoteOnly<TMessage>(this MessageEvent<TMessage> messageEvent, TMessage message, PublishOptions options, IMessagePublisher publisher = null)
+        {
+            Send(messageEvent, message, options, publisher);
         }
 
         /// <summary>As <see cref="PublishRemoteTo{TMessage}"/>, but only to other applications: local subscribers are not called.</summary>

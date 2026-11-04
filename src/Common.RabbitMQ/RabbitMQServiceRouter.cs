@@ -7,8 +7,8 @@ using Prism.Events;
 namespace Common.RabbitMQ
 {
     /// <summary>
-    /// The application's <see cref="IRabbitMQService"/>. Holds one <see cref="RabbitMQService"/> per configured bus
-    /// and sends each event to the bus named in its <see cref="RemoteEventAttribute"/>.
+    /// The application's <see cref="IRabbitMQService"/>. Holds one <see cref="RabbitMQService"/> per configured bus and
+    /// sends every event to the default bus. To send one elsewhere, pass <see cref="GetRequiredBus"/> to <c>PublishRemote</c>.
     /// </summary>
     public class RabbitMQServiceRouter : IRabbitMQService, IRoutingKeyPublisher
     {
@@ -26,6 +26,12 @@ namespace Common.RabbitMQ
 
         /// <summary>Receives messages from every bus. Set it before <see cref="Init"/>. Null writes them to Trace.</summary>
         public ILogger Logger { get; set; }
+
+        /// <summary>
+        /// The bus events go to when the publisher names none, usually <c>Messaging:DefaultBus</c> from configuration. Set it
+        /// before <see cref="Init"/>. Null with one bus means that bus; null with several means a publish must name one.
+        /// </summary>
+        public string DefaultBus { get; set; }
 
         public IReadOnlyCollection<RabbitMQService> Buses => buses.Values;
 
@@ -59,12 +65,28 @@ namespace Common.RabbitMQ
             return buses.TryGetValue(busName, out RabbitMQService service) ? service : null;
         }
 
+        /// <summary>As <see cref="GetBus"/>, but an unknown name throws, so a mistyped bus can't fall back to the default.</summary>
+        public RabbitMQService GetRequiredBus(string busName)
+        {
+            if (busName == null)
+            {
+                throw new ArgumentNullException(nameof(busName));
+            }
+
+            return GetBus(busName) ?? throw new InvalidOperationException($"Bus '{busName}' is not configured for this application.");
+        }
+
         /// <summary>Initializes every bus (fire and forget - connecting happens in the background).</summary>
         public void Init()
         {
             if (initialized)
             {
                 return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(DefaultBus) && !buses.ContainsKey(DefaultBus))
+            {
+                throw new InvalidOperationException($"The default bus '{DefaultBus}' is not configured for this application.");
             }
 
             initialized = true;
@@ -78,13 +100,13 @@ namespace Common.RabbitMQ
 
         public void Publish(Type eventType, object payload)
         {
-            GetBusFor(eventType).Publish(eventType, payload);
+            GetDefaultBus(eventType).Publish(eventType, payload);
         }
 
         /// <summary>As <see cref="Publish(Type, object)"/>, routed with <paramref name="routingKey"/>.</summary>
         public void Publish(Type eventType, object payload, string routingKey)
         {
-            GetBusFor(eventType).Publish(eventType, payload, routingKey);
+            GetDefaultBus(eventType).Publish(eventType, payload, routingKey);
         }
 
         public void Dispose()
@@ -95,37 +117,25 @@ namespace Common.RabbitMQ
             }
         }
 
-        private RabbitMQService GetBusFor(Type eventType)
+        private RabbitMQService GetDefaultBus(Type eventType)
         {
             if (eventType == null)
             {
                 throw new ArgumentNullException(nameof(eventType));
             }
 
-            if (!registry.TryGet(eventType, out RemoteEventDescriptor descriptor))
+            if (!string.IsNullOrWhiteSpace(DefaultBus))
             {
-                throw new ArgumentException($"{eventType.FullName} is not a remote event. Mark it with [RemoteEvent].", nameof(eventType));
+                return GetRequiredBus(DefaultBus);
             }
 
-            if (descriptor.BusName == null)
+            if (buses.Count == 1)
             {
-                // Unassigned (RemoteEventRegistry.Add without a bus): fine with one bus, ambiguous with several.
-                if (buses.Count == 1)
-                {
-                    return buses.Values.Single();
-                }
-
-                throw new InvalidOperationException(
-                    $"{eventType.Name} has no bus and this application has {buses.Count}. Pass the bus to RemoteEventRegistry.Add for its assembly.");
+                return buses.Values.Single();
             }
 
-            if (!buses.TryGetValue(descriptor.BusName, out RabbitMQService service))
-            {
-                throw new InvalidOperationException(
-                    $"{eventType.Name} belongs to bus '{descriptor.BusName}', which is not configured for this application.");
-            }
-
-            return service;
+            throw new InvalidOperationException(
+                $"Cannot publish {eventType.Name}: this application has {buses.Count} buses and no default. Set Messaging:DefaultBus, or publish to a bus from GetRequiredBus.");
         }
     }
 }

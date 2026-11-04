@@ -14,6 +14,7 @@ namespace Messaging.Hosting
     /// Configures messaging in <see cref="MessagingServiceCollectionExtensions.AddMessaging"/>:
     /// <code><![CDATA[
     /// messaging.AddBus("Legacy", configuration.GetSection("Messaging:Buses:Legacy"));
+    /// messaging.UseDefaultBus(configuration["Messaging:DefaultBus"]);   // needed with several buses
     /// messaging.AddHandlers(typeof(EmployeeSavedHandler).Assembly);   // every IMessageHandler<T> in it, every bus
     /// messaging.AddHandlers(typeof(OrderSavedHandler).Assembly, "Modern");   // ...or only some buses
     /// messaging.AddMessages(typeof(OrderSaved).Assembly);      // receive every [Message] type in it, e.g. for a sink
@@ -60,6 +61,26 @@ namespace Messaging.Hosting
 
             AddBus(name, serializer);
             Services.AddOptions<RabbitMQBusOptions>(name).Configure(configure);
+            return this;
+        }
+
+        /// <summary>
+        /// Picks the bus messages go to when the publisher names none, usually <c>Messaging:DefaultBus</c> from configuration.
+        /// Null or blank picks nothing: with one bus that bus is the default, and with several a publish must name one.
+        /// </summary>
+        public MessagingBuilder UseDefaultBus(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return this;
+            }
+
+            if (Registry.DefaultBus != null)
+            {
+                throw new InvalidOperationException($"The default bus is already '{Registry.DefaultBus}'. There can be only one.");
+            }
+
+            Registry.DefaultBus = name;
             return this;
         }
 

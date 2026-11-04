@@ -252,5 +252,10 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
 
             return Task.CompletedTask;
         }
+
+        public Task PublishConfirmedAsync(object message, string? messageId, PublishOptions options, CancellationToken cancellationToken = default)
+        {
+            return PublishConfirmedAsync(message, messageId, cancellationToken);
+        }
     }
 }

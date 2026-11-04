@@ -4,6 +4,7 @@
 - **Date:** 2026-09-26
 - **Amends:** [ADR 0001](0001-decouple-messaging-from-prism.md), sections 1–3, and the test baseline from delivery step 0. Everything else in ADR 0001 stands: the layers, the core and hosting split, serialization, observability, shared queues and dependency hygiene.
 - **Update (2026-10-31):** `Route<T>()` was removed from `Messaging.Hosting`. Registering every published class didn't scale to hundreds of events, and the legacy router never needed it. A server publishes like a legacy app: to its only bus, keyed by the wire name, with `PublishOptions.RoutingKey` for a per-call key. Publishing with several buses throws. Below, `Route<T>()`, `.To(...)` and `WithRoutingKey` are history.
+- **Update (2026-11-04):** events no longer belong to a bus. `[RemoteEvent("bus")]` and the bus parameter of `RemoteEventRegistry.Add` are removed: a breaking change to the legacy adapter's public API, made on purpose. The publisher picks the bus at publish time: the bus it names, or else the default. `Messaging:DefaultBus` in configuration names the default, and being one value there can be only one; with a single bus it can be left out. With several buses and no default, a publish that names no bus throws. Every registered event is received on every bus; `AddHandlers` and `AddMessages` can still limit a server's handlers to some buses. Below, mentions of `[RemoteEvent]`, `Add(assembly, bus)` and "publishing with several buses throws" are history.
 
 ## Context
 

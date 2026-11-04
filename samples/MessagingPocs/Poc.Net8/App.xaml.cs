@@ -58,7 +58,11 @@ public partial class App : PrismApplication
         BusLog busLog = new BusLog();
         containerRegistry.RegisterInstance(busLog);
 
-        router = new RabbitMQServiceRouter(Container.Resolve<IEventAggregator>(), registry) { Logger = busLog };
+        router = new RabbitMQServiceRouter(Container.Resolve<IEventAggregator>(), registry)
+        {
+            Logger = busLog,
+            DefaultBus = configuration["Messaging:DefaultBus"],     // only needed with several buses
+        };
         foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
         {
             RabbitMQConfig config = bus.Get<RabbitMQConfig>()!;

@@ -35,7 +35,7 @@ You don't need to know RabbitMQ; [chapter 3](#3-five-ideas-you-need) covers the 
 | 7 | [When things go wrong](#7-when-things-go-wrong) | Outages, bad messages, duplicates |
 | 8 | [Step 1 — Turn messaging on in the API](#8-step-1--turn-messaging-on-in-the-api) | Opt-in, from configuration |
 | 9 | [Step 2 — Define the message](#9-step-2--define-the-message) | A plain class and a wire name |
-| 10 | [Step 3 — Where it goes](#10-step-3--where-it-goes) | The only bus, keyed by the wire name |
+| 10 | [Step 3 — Where it goes](#10-step-3--where-it-goes) | The default bus, keyed by the wire name |
 | 11 | [Step 4 — Send it through the module's outbox](#11-step-4--send-it-through-the-modules-outbox) | Two cases: a new outbox, or Onboarding's |
 | 12 | [Step 5 — See it working](#12-step-5--see-it-working) | Telemetry, health, the management UI |
 | 13 | [Receiving messages in the API](#13-receiving-messages-in-the-api) | Handlers, shared queues, retries |
@@ -237,7 +237,7 @@ In plain words:
    first, and hands each to the module's dispatcher.
 3. **The relay** (`MessagingOutboxDispatcher`) turns the row back into its message class. The
    row stores the class's short name (`typeof(T).Name`) and its JSON.
-4. **The confirmed publish** sends it to the only bus **straight
+4. **The confirmed publish** sends it to the default bus **straight
    away**, and waits for the broker's confirm. The row's ID travels as the AMQP message-id.
 5. **Only then** does the processor mark the row delivered. If the process stops at any point
    before that, the row is still there and goes out after the restart.
@@ -418,12 +418,17 @@ SignalR (the hub). A client reads `EquipmentCreated` the same way whichever it l
 
 ## 10. Step 3 — Where it goes
 
-Nowhere to register it. As in the legacy apps, every message goes to the application's only bus
-(`Main`), with its wire name as the routing key. A per-call key is the one option:
+Nowhere to register it, because a message doesn't belong to a bus. It goes to the default bus
+(`Main`, the API's only one), with its wire name as the routing key. An application with several
+buses picks the default in configuration, with `Messaging:DefaultBus`. The publisher can override
+either for one call:
 
 ```csharp
 publisher.Publish(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
+publisher.Publish(order, new PublishOptions { Bus = "Partners" });
 ```
+
+The outbox always publishes to the default bus.
 
 **Keep the wire name as the key.** Keep it for anything a legacy app must receive: legacy apps bind
 one key per event (its full name), so a custom key never reaches them. Custom keys are for new
@@ -433,7 +438,7 @@ A routing-key convention is a contract with every subscriber. Changing it doesn'
 misread a message — they just stop *getting* it.
 
 **Division of labour:** the module says **which** events it publishes (the list in
-`AddEquipmentIntegrationEvents`); the host says **where** they go (its one bus). Neither
+`AddEquipmentIntegrationEvents`); the host says **where** they go (its default bus). Neither
 the handler nor the domain knows RabbitMQ exists.
 
 ---

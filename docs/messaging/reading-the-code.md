@@ -53,7 +53,7 @@ Legacy: event.PublishRemote(payload)       RemotePubSubEventExtensions.PublishRe
           └─ RabbitMQServiceRouter.Publish → RabbitMQService.Publish → bus.Enqueue(wire name, payload, routing key)
              (then raises the event locally too)
 Modern: publisher.Publish(message)         MessagePublisher.Publish
-          └─ the only bus → bus.Enqueue(...)
+          └─ the bus in PublishOptions, or the default bus → bus.Enqueue(...)
 
 RabbitMQBus.Enqueue
   └─ Prepare: serialize now, pick routing key and ID, observer.OnPublishing (TelemetryObserver adds correlation-id, traceparent)

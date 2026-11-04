@@ -152,8 +152,9 @@ services.AddMessaging(messaging => messaging
 ```
 
 - **Bus**: one connection to a broker plus this app's own exchange. An app can have several; the API has one, `Main`.
-- **Publishing** needs no registration: every message goes to the only bus, with its wire name as the routing key
-  (`PublishOptions.RoutingKey` overrides it for one call). With several buses, publishing throws.
+- **Publishing** needs no registration: a message goes to the default bus, with its wire name as the routing key.
+  With one bus that bus is the default; with several, `UseDefaultBus` picks it from `Messaging:DefaultBus`.
+  `PublishOptions.Bus` and `PublishOptions.RoutingKey` override them for one call. The outbox always uses the default.
 - **Handler**: an `IMessageHandler<T>` class, resolved in its own DI scope for every received message. For servers.
 - **Subscriber**: `IMessageSubscriber.Subscribe<T>(callback)` at runtime, for view models and other code that isn't a
   DI handler.

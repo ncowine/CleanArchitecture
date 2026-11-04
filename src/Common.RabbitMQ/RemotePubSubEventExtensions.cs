@@ -6,11 +6,12 @@ namespace Common.RabbitMQ
     public static class RemotePubSubEventExtensions
     {
         /// <summary>
-        /// Publishes the event to local subscribers and to every other application on the event's bus.
+        /// Publishes the event to local subscribers and to the other applications on the default bus.
         /// The sender does not receive its own message back from RabbitMQ.
         /// </summary>
         /// <param name="rabbitMQService">
-        /// Optional. When null the service is resolved through <see cref="RabbitMQServiceProvider"/>.
+        /// Optional. When null the service is resolved through <see cref="RabbitMQServiceProvider"/>. To send to another
+        /// bus, pass <see cref="RabbitMQServiceRouter.GetRequiredBus"/>.
         /// </param>
         public static void PublishRemote<TPayload>(this RemotePubSubEvent<TPayload> remoteEvent, TPayload payload, IRabbitMQService rabbitMQService = null)
         {

@@ -86,7 +86,7 @@ The legacy projects keep their paths. Legacy apps reference them by relative `Pr
 
 #### Legacy adapter (`Common.RabbitMQ`)
 
-- Public API unchanged: `RemotePubSubEvent<T>`, `[RemoteEvent(bus)]`, `GetEvent<T>().PublishRemote(payload, service?)`, `IRabbitMQService.Publish(Type, object)`, `RabbitMQServiceProvider`, and the `RabbitMQService` constructor signature.
+- Public API unchanged (except that `[RemoteEvent(bus)]` was removed on 2026-11-04, see [ADR 0002](0002-exchange-per-owner-and-configurable-routing.md)): `RemotePubSubEvent<T>`, `[RemoteEvent(bus)]`, `GetEvent<T>().PublishRemote(payload, service?)`, `IRabbitMQService.Publish(Type, object)`, `RabbitMQServiceProvider`, and the `RabbitMQService` constructor signature.
 - `RabbitMQService` becomes a façade over the core: a `PrismDispatcher` (`GetEvent<T>().Publish`), a Newtonsoft 12.0.3 serializer and the no-op observer.
 - New, optional App.config setting: `mode="SubscribeOnly"` skips the publisher connection and buffer. It defaults to the current behaviour.
 - `PublishRemote` may later get `[Obsolete]` (a compiler warning, not a break) once publishing has moved to the server.

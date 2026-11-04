@@ -377,7 +377,17 @@ eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnlyTo("orders.eu.saved", or
 eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UIThread);
 ```
 
-Older code that uses `RemotePubSubEvent<T>` with `[RemoteEvent("bus")]` keeps working unchanged.
+Events don't belong to a bus. With one bus there is nothing to choose. With several, set `Messaging:DefaultBus` in
+configuration and assign it to `router.DefaultBus` before `Init`; to send one event elsewhere, pass that bus:
+
+```csharp
+router.DefaultBus = configuration["Messaging:DefaultBus"];
+eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);                                   // the default bus
+eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, router.GetRequiredBus("Partners")); // another bus
+```
+
+Every registered event is received on every bus. `RemotePubSubEvent<T>` still works and needs no attribute;
+`[RemoteEvent("bus")]` is gone, so remove it when you take this version.
 
 **Logging.** Set `Logger` on the router, or on a `RabbitMQService`, before `Init`. Any `ILogger` works:
 
@@ -513,11 +523,14 @@ builder.Services.AddHealthChecks().AddMessaging();
 app.MapHealthChecks("/health");
 ```
 
-**3. Publish from anywhere.** Nothing to register: every message goes to the only bus, keyed by its wire name.
+**3. Publish from anywhere.** Nothing to register: a message goes to the default bus, keyed by its wire name. With one
+bus that bus is the default; with several, call `messaging.UseDefaultBus(configuration["Messaging:DefaultBus"])`. To send
+one message elsewhere, name the bus.
 
 ```csharp
 publisher.Publish(new EmployeeCacheRefreshed { ... });
 publisher.Publish(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
+publisher.Publish(order, new PublishOptions { Bus = "Partners" });
 ```
 
 **More options:**
@@ -609,8 +622,8 @@ Example (`src/WebApi/appsettings.json`):
 
 ### Legacy apps (`appsettings.json` → `Messaging:Buses:<name>`, bound onto `RabbitMQConfig`)
 
-The same section as above. The section key is the bus name, matched by `[RemoteEvent("name")]` or
-`RemoteEventRegistry.Add(assembly, "name")`. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`,
+The same section as above. The section key is the bus name; `Messaging:DefaultBus`, next to `Buses`, names the default
+when there are several. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`,
 `ExchangeName`, `ExchangeType`, `ClientName`, `PrefetchCount` and `Subscriptions` (`Exchange`, `RoutingKeys`) mean
 the same and have the same defaults. The differences:
 

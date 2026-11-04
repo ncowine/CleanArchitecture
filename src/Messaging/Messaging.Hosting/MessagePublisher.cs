@@ -26,30 +26,45 @@ namespace Messaging.Hosting
         /// <summary>The routing key is <see cref="PublishOptions.RoutingKey"/>, or the wire name.</summary>
         public void Publish<TMessage>(TMessage message, PublishOptions options)
         {
-            string routingKey = !string.IsNullOrEmpty(options?.RoutingKey) ? options.RoutingKey : null;
-            GetBus(message).Enqueue(WireNames.Get(message.GetType()), message, routingKey);
+            GetBus(message, options).Enqueue(WireNames.Get(message.GetType()), message, RoutingKey(options));
         }
 
         public Task PublishConfirmedAsync(object message, string messageId, CancellationToken cancellationToken = default)
         {
-            return GetBus(message).PublishConfirmedAsync(WireNames.Get(message.GetType()), message, null, messageId, cancellationToken);
+            return PublishConfirmedAsync(message, messageId, null, cancellationToken);
         }
 
-        /// <summary>Every message goes to the application's only bus, as in the legacy router.</summary>
-        private RabbitMQBus GetBus(object message)
+        public Task PublishConfirmedAsync(object message, string messageId, PublishOptions options, CancellationToken cancellationToken = default)
+        {
+            return GetBus(message, options).PublishConfirmedAsync(WireNames.Get(message.GetType()), message, RoutingKey(options), messageId, cancellationToken);
+        }
+
+        private static string RoutingKey(PublishOptions options)
+        {
+            return !string.IsNullOrEmpty(options?.RoutingKey) ? options.RoutingKey : null;
+        }
+
+        /// <summary>The bus named in <paramref name="options"/>, or the default bus.</summary>
+        private RabbitMQBus GetBus(object message, PublishOptions options)
         {
             if (message == null)
             {
                 throw new ArgumentNullException(nameof(message));
             }
 
-            if (registry.BusNames.Count != 1)
+            string busName = !string.IsNullOrEmpty(options?.Bus) ? options.Bus : registry.GetDefaultBus();
+            if (busName == null)
             {
                 throw new InvalidOperationException(
-                    $"Cannot publish {message.GetType().Name}: publishing needs exactly one bus and this application has {registry.BusNames.Count}.");
+                    $"Cannot publish {message.GetType().Name}: this application has {registry.BusNames.Count} buses and no default. Call UseDefaultBus, or set PublishOptions.Bus.");
             }
 
-            return provider.GetRequiredKeyedService<RabbitMQBus>(registry.BusNames.Single());
+            if (!registry.BusNames.Contains(busName))
+            {
+                throw new InvalidOperationException($"Cannot publish {message.GetType().Name}: bus '{busName}' is not configured for this application.");
+            }
+
+            return provider.GetRequiredKeyedService<RabbitMQBus>(busName);
         }
     }
 }

@@ -22,6 +22,15 @@ namespace Common.RabbitMQ.Tests.PublicApi
             // Replaced by the Logger properties below (ADR 0001, amended 2026-11-03).
             "event Common.RabbitMQ.RabbitMQService.Log : System.EventHandler<System.String>",
             "event Common.RabbitMQ.RabbitMQServiceRouter.Log : System.EventHandler<System.String>",
+
+            // Events no longer belong to a bus: the publisher picks it (ADR 0002, update 2026-11-04).
+            "[System.AttributeUsageAttribute((System.AttributeTargets)4)]sealed class Common.RabbitMQ.RemoteEventAttribute : System.Attribute",
+            "implements Common.RabbitMQ.RemoteEventAttribute : System.Runtime.InteropServices._Attribute",
+            "ctor Common.RabbitMQ.RemoteEventAttribute(System.String)",
+            "property Common.RabbitMQ.RemoteEventAttribute.Bus : System.String { get; }",
+            "ctor Common.RabbitMQ.RemoteEventDescriptor(System.Type, System.Type, System.String)",
+            "property Common.RabbitMQ.RemoteEventDescriptor.BusName : System.String { get; }",
+            "method Common.RabbitMQ.RemoteEventRegistry.GetByBus(System.String) : System.Collections.Generic.IEnumerable<Common.RabbitMQ.RemoteEventDescriptor>",
         };
 
         /// <summary>Public API added after the baseline, each for a reason recorded in ADR 0002.</summary>
@@ -31,8 +40,13 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "property Common.RabbitMQ.RabbitMQService.Logger : Microsoft.Extensions.Logging.ILogger { get; set; }",
             "property Common.RabbitMQ.RabbitMQServiceRouter.Logger : Microsoft.Extensions.Logging.ILogger { get; set; }",
 
+            // The publisher picks the bus: a default from configuration, or a named one (ADR 0002, update 2026-11-04).
+            "ctor Common.RabbitMQ.RemoteEventDescriptor(System.Type, System.Type)",
+            "property Common.RabbitMQ.RabbitMQServiceRouter.DefaultBus : System.String { get; set; }",
+            "method Common.RabbitMQ.RabbitMQServiceRouter.GetRequiredBus(System.String) : Common.RabbitMQ.RabbitMQService",
+
             // Section 4: events found by assembly, plain PubSubEvent<T>.
-            "method Common.RabbitMQ.RemoteEventRegistry.Add(System.Reflection.Assembly, System.String = null) : Common.RabbitMQ.RemoteEventRegistry",
+            "method Common.RabbitMQ.RemoteEventRegistry.Add(System.Reflection.Assembly) : Common.RabbitMQ.RemoteEventRegistry",
             "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
 
             // Section 3: routing keys chosen by the publisher.

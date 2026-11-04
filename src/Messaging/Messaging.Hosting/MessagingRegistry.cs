@@ -7,7 +7,7 @@ namespace Messaging.Hosting
 {
     /// <summary>
     /// What <see cref="MessagingBuilder"/> configured: the buses, which message types are received and by which handlers,
-    /// and subscriptions added in code. Publishing needs nothing here: every message goes to the only bus.
+    /// subscriptions added in code, and the bus messages go to when the publisher names none.
     /// </summary>
     internal sealed class MessagingRegistry
     {
@@ -18,6 +18,9 @@ namespace Messaging.Hosting
         private readonly List<PendingSubscription> subscriptions = new List<PendingSubscription>();
 
         public IReadOnlyCollection<string> BusNames => buses.Keys;
+
+        /// <summary>Set by <see cref="MessagingBuilder.UseDefaultBus"/>.</summary>
+        public string DefaultBus { get; set; }
 
         /// <summary>Set by <see cref="MessagingBuilder.AddTelemetry"/>.</summary>
         public bool TelemetryEnabled { get; set; }
@@ -30,6 +33,12 @@ namespace Messaging.Hosting
             }
 
             buses.Add(name, serializer);
+        }
+
+        /// <summary><see cref="DefaultBus"/>, or the only bus. Null when there are several buses and no default.</summary>
+        public string GetDefaultBus()
+        {
+            return DefaultBus ?? (buses.Count == 1 ? buses.Keys.Single() : null);
         }
 
         public IMessageSerializer GetSerializer(string busName)
@@ -86,6 +95,11 @@ namespace Messaging.Hosting
         public void Validate()
         {
             List<string> errors = new List<string>();
+
+            if (DefaultBus != null && !buses.ContainsKey(DefaultBus))
+            {
+                errors.Add($"The default bus '{DefaultBus}' is not configured.");
+            }
 
             foreach (HandlerRegistration handler in handlers)
             {
