@@ -53,15 +53,29 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         public Received<T> Listen<T>(string wireName)
             where T : class
         {
+            registrations.Add(new MessageRegistration(wireName, typeof(T)));
+            return Record<T>(wireName);
+        }
+
+        /// <summary>Records <paramref name="wireName"/> without subscribing to it: for a test that calls the bus itself.</summary>
+        public Received<T> Record<T>(string wireName)
+            where T : class
+        {
             Received<T> received = new Received<T>();
             recorders[wireName] = message => received.Add((T)message);
-            registrations.Add(new MessageRegistration(wireName, typeof(T)));
             return received;
+        }
+
+        /// <summary>Creates the bus without starting it, to change its subscriptions first.</summary>
+        public RabbitMQBus CreateBus(Microsoft.Extensions.Logging.ILogger logger = null)
+        {
+            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, observer, logger);
+            return bus;
         }
 
         public CoreApp Start()
         {
-            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, observer);
+            bus = bus ?? CreateBus();
             bus.Start(registrations);
             return this;
         }

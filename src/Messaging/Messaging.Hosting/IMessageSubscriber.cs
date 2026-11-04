@@ -11,7 +11,10 @@ namespace Messaging.Hosting
     /// ]]></code>
     /// Subscribing starts receiving the message type on every bus: its class needs <see cref="MessageAttribute"/>, and nothing
     /// else has to be registered. The binding is created in the background, so a message published right after
-    /// subscribing can be missed. Dispose the returned object to unsubscribe; the binding stays until the queue goes away.
+    /// subscribing can be missed. Dispose the returned object to unsubscribe; when the last subscriber for a type goes, its
+    /// binding is removed, unless a handler or <see cref="MessagingBuilder.AddMessages"/> still wants that type. A durable
+    /// shared queue keeps the binding, because other instances depend on it, so subscribe there at startup and stay subscribed:
+    /// the broker can give a message to an instance with no subscriber left, which drops it.
     /// Subscriptions are held strongly, so a subscriber that goes away must dispose them.
     /// </summary>
     public interface IMessageSubscriber
@@ -32,8 +35,12 @@ namespace Messaging.Hosting
 
         /// <summary>
         /// Starts receiving <paramref name="messageType"/> on every bus, with no subscription of its own: for an
-        /// <see cref="IMessageSink"/> such as the event aggregator bridge. Does nothing when already receiving it.
+        /// <see cref="IMessageSink"/> such as the event aggregator bridge. Calls are counted: each needs its own
+        /// <see cref="StopReceiving"/>.
         /// </summary>
         void Receive(Type messageType);
+
+        /// <summary>Undoes one <see cref="Receive"/>. The binding stays while anything else wants the type.</summary>
+        void StopReceiving(Type messageType);
     }
 }

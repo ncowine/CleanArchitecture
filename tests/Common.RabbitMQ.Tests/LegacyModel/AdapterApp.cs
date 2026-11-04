@@ -45,6 +45,10 @@ namespace Common.RabbitMQ.Tests.LegacyModel
 
         public string ExchangeName { get; }
 
+        public IEventAggregator Events => eventAggregator;
+
+        public RabbitMQService Service => service;
+
         public string InstanceId => service.InstanceId;
 
         public bool IsConnected => service.IsConsumerConnected && service.IsPublisherConnected;

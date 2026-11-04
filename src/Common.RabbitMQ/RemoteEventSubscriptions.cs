@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 
 namespace Common.RabbitMQ
 {
@@ -11,17 +10,15 @@ namespace Common.RabbitMQ
     internal static class RemoteEventSubscriptions
     {
         private static readonly object gate = new object();
-        private static readonly HashSet<object> subscribed = new HashSet<object>();
+        private static readonly HashSet<IRemoteEvent> subscribed = new HashSet<IRemoteEvent>();
         private static readonly List<RabbitMQService> running = new List<RabbitMQService>();
 
-        public static void Subscribed(object remoteEvent)
+        /// <summary>Asks every time, not just the first, so subscribing resumes an event stopped with <see cref="RabbitMQService.UnregisterQueue"/>.</summary>
+        public static void Subscribed(IRemoteEvent remoteEvent)
         {
             lock (gate)
             {
-                if (!subscribed.Add(remoteEvent))
-                {
-                    return;
-                }
+                subscribed.Add(remoteEvent);
 
                 foreach (RabbitMQService service in running)
                 {
@@ -30,13 +27,45 @@ namespace Common.RabbitMQ
             }
         }
 
-        /// <summary>Tells <paramref name="service"/> about later subscriptions and returns the ones made so far.</summary>
-        public static IReadOnlyList<object> Join(RabbitMQService service)
+        /// <summary>Checked under the lock, so a subscribe at the same moment either keeps the binding or creates it again.</summary>
+        public static void StopIfUnused(IRemoteEvent remoteEvent)
+        {
+            lock (gate)
+            {
+                if (!subscribed.Contains(remoteEvent) || remoteEvent.HasSubscribers)
+                {
+                    return;
+                }
+
+                subscribed.Remove(remoteEvent);
+
+                foreach (RabbitMQService service in running)
+                {
+                    service.StopReceiving(remoteEvent);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gives <paramref name="service"/> the subscriptions made so far, and from now on the later ones and unsubscribes, all
+        /// under the lock so none is missed. Returns how many were its own.
+        /// </summary>
+        public static int Join(RabbitMQService service)
         {
             lock (gate)
             {
                 running.Add(service);
-                return subscribed.ToList();
+
+                int count = 0;
+                foreach (IRemoteEvent remoteEvent in subscribed)
+                {
+                    if (service.Receive(remoteEvent))
+                    {
+                        count++;
+                    }
+                }
+
+                return count;
             }
         }
 
