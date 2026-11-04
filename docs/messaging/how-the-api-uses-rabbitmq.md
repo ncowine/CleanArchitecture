@@ -381,7 +381,7 @@ keep the password out of `appsettings.json` (environment variable or secret stor
 A receiving app **binds its own queue to the API's exchange, `CleanArch`**, and registers the message classes it
 wants. The API knows nothing about it. The working examples are in
 [`samples/MessagingPocs`](../../samples/MessagingPocs/README.md): `Poc.Net10` (modern, below as Option A) and
-`Poc.Net472` / `Poc.Net8` (legacy Prism apps, which receive the API's events as `PubSubEvent<T>` classes named after
+`Poc.Net472` / `Poc.Net8` (legacy Prism apps, which receive the API's events as `RemotePubSubEvent<T>` classes named after
 the wire names). That README also covers the one event the API receives, from the net472 app.
 
 ### What the receiver configures
@@ -609,8 +609,8 @@ The test for this design: when the last legacy app is retired, deleting `Common.
 ### What each side writes
 
 ```csharp
-// Legacy app: unchanged Prism code
-public class OrderSaved : PubSubEvent<Order> { }
+// Legacy app: Prism code, with the base class that makes an event travel
+public class OrderSaved : RemotePubSubEvent<Order> { }
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);
 eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UIThread);
 

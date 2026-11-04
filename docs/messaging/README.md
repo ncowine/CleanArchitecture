@@ -379,8 +379,11 @@ eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);              // the
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions { Bus = "Partners" });  // another bus
 ```
 
-Every registered event is received on every bus. `RemotePubSubEvent<T>` still works and needs no attribute;
-`[RemoteEvent("bus")]` is gone, so remove it when you take this version.
+`RemotePubSubEvent<T>` is for events that travel, and `PubSubEvent<T>` for events that stay inside the app. A
+`RemotePubSubEvent<T>` needs no registration: subscribing to it binds the queue, on every bus, so an app only receives what
+it listens for. The binding is created in the background, so a message published right after subscribing can be missed.
+An assembly of plain events not yet moved over can still travel with `RemoteEventRegistry.Add`, but all its events are
+bound at startup, used or not. `[RemoteEvent("bus")]` is gone, so remove it when you take this version.
 
 **Logging.** Set `Logger` on the router, or on a `RabbitMQService`, before `Init`. Any `ILogger` works:
 

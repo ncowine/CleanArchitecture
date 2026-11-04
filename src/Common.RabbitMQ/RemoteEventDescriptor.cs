@@ -40,14 +40,18 @@ namespace Common.RabbitMQ
         {
             try
             {
-                object pubSubEvent = getEventMethod.Invoke(eventAggregator, null);
-                publishMethod.Invoke(pubSubEvent, new[] { payload });
+                publishMethod.Invoke(GetEvent(eventAggregator), new[] { payload });
             }
             catch (TargetInvocationException ex) when (ex.InnerException != null)
             {
                 ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
                 throw;
             }
+        }
+
+        internal object GetEvent(IEventAggregator eventAggregator)
+        {
+            return getEventMethod.Invoke(eventAggregator, null);
         }
     }
 }

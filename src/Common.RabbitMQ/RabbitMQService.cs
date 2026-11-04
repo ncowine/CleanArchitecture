@@ -11,8 +11,8 @@ namespace Common.RabbitMQ
     /// <summary>
     /// One connection to one bus (virtual host + exchange), for Prism applications.
     /// <para>
-    /// A façade over <see cref="RabbitMQBus"/> (ADR 0001): <see cref="Init"/> starts the bus with every remote event
-    /// subscribed, <see cref="Publish"/> buffers a message for it, and received messages are raised as their
+    /// A façade over <see cref="RabbitMQBus"/> (ADR 0001): <see cref="Init"/> starts the bus bound to the events the
+    /// application subscribes to, <see cref="Publish"/> buffers a message for it, and received messages are raised as their
     /// Prism event on the <see cref="IEventAggregator"/>. Bodies are Newtonsoft JSON, as the legacy apps expect.
     /// </para>
     /// </summary>
@@ -72,13 +72,16 @@ namespace Common.RabbitMQ
 
             this.config = config;
 
-            List<MessageRegistration> registrations = registry.Events
-                .Select(d => new MessageRegistration(d.EventName, d.PayloadType))
-                .ToList();
-
             ILogger logger = Logger ?? TraceLogger.Instance;
 
             bus = new RabbitMQBus(CreateOptions(config), NewtonsoftMessageSerializer.Instance, new PrismDispatcher(eventAggregator, registry), null, logger);
+
+            List<MessageRegistration> registrations = registry.BoundAtStart
+                .Concat(RemoteEventSubscriptions.Join(this).Select(FindOwn).Where(d => d != null))
+                .Distinct()
+                .Select(d => new MessageRegistration(d.EventName, d.PayloadType))
+                .ToList();
+
             bus.Start(registrations);
 
             logger.LogInformation("[{Bus}] Initialized with {Count} event(s) on {Host}:{Port}{VirtualHost} exchange '{Exchange}'.",
@@ -116,8 +119,8 @@ namespace Common.RabbitMQ
         }
 
         /// <summary>
-        /// Starts receiving <paramref name="eventType"/> from the bus. All events are registered by
-        /// <see cref="Init"/>; use this after <see cref="UnregisterQueue"/> to resume.
+        /// Starts receiving <paramref name="eventType"/> from the bus. Subscribing to the event does this for you; use it
+        /// after <see cref="UnregisterQueue"/> to resume.
         /// </summary>
         public async Task RegisterQueue(Type eventType)
         {
@@ -144,7 +147,42 @@ namespace Common.RabbitMQ
             }
 
             disposed = true;
+            RemoteEventSubscriptions.Leave(this);
             bus?.Dispose();
+        }
+
+        /// <summary>Starts receiving <paramref name="remoteEvent"/> if it belongs to this service's aggregator.</summary>
+        internal void Receive(object remoteEvent)
+        {
+            RemoteEventDescriptor descriptor = FindOwn(remoteEvent);
+            if (descriptor != null)
+            {
+                // Binding talks to the broker, so it stays off the caller's thread, usually the UI thread.
+                Task.Run(() => Bind(descriptor));
+            }
+        }
+
+        private RemoteEventDescriptor FindOwn(object remoteEvent)
+        {
+            RemoteEventDescriptor descriptor = registry.Find(remoteEvent.GetType());
+            return ReferenceEquals(descriptor?.GetEvent(eventAggregator), remoteEvent) ? descriptor : null;
+        }
+
+        /// <summary>A failure is only logged: the bus keeps the subscription and binds it the next time it connects.</summary>
+        private async Task Bind(RemoteEventDescriptor descriptor)
+        {
+            try
+            {
+                await bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType)).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException || ex is ObjectDisposedException)
+            {
+                // The application is shutting down.
+            }
+            catch (Exception ex)
+            {
+                (Logger ?? TraceLogger.Instance).LogError(ex, "[{Bus}] Could not bind {Event}.", config.BusName, descriptor.EventName);
+            }
         }
 
         private RabbitMQBusOptions CreateOptions(RabbitMQConfig config)
@@ -179,12 +217,8 @@ namespace Common.RabbitMQ
                 throw new ArgumentNullException(nameof(eventType));
             }
 
-            if (!registry.TryGet(eventType, out RemoteEventDescriptor descriptor))
-            {
-                throw new ArgumentException($"{eventType.FullName} is not registered. Add its assembly with RemoteEventRegistry.Add.", nameof(eventType));
-            }
-
-            return descriptor;
+            return registry.Find(eventType)
+                ?? throw new ArgumentException($"{eventType.FullName} is a local event. Derive it from RemotePubSubEvent<T>, or add its assembly with RemoteEventRegistry.Add.", nameof(eventType));
         }
 
         private void EnsureInitialized()

@@ -1,4 +1,4 @@
-using Prism.Events;
+using Common.RabbitMQ;
 
 namespace Poc.Legacy.Events;
 
@@ -11,6 +11,6 @@ namespace Poc.Legacy.Events;
 /// [Message("Poc.Legacy.Events.EquipmentDisposed")] — this class's full name. Renaming or moving this class changes
 /// the wire name and silently disconnects the API.
 /// </remarks>
-public class EquipmentDisposed : PubSubEvent<EquipmentDisposal>
+public class EquipmentDisposed : RemotePubSubEvent<EquipmentDisposal>
 {
 }

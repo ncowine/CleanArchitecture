@@ -6,8 +6,8 @@ it accepts.
 
 | App | Framework | Event format | Library | Receives from | Sends to |
 |---|---|---|---|---|---|
-| **`Poc.Net472`** | .NET Framework 4.7.2 | legacy (`PubSubEvent<T>`) | `Common.RabbitMQ` + Prism | API, net472, net8 | net472, net8, **API** |
-| **`Poc.Net8`** | .NET 8 | legacy (`PubSubEvent<T>`) | `Common.RabbitMQ` + Prism | API, net472, net8 | net472, net8 |
+| **`Poc.Net472`** | .NET Framework 4.7.2 | legacy (`RemotePubSubEvent<T>`) | `Common.RabbitMQ` + Prism | API, net472, net8 | net472, net8, **API** |
+| **`Poc.Net8`** | .NET 8 | legacy (`RemotePubSubEvent<T>`) | `Common.RabbitMQ` + Prism | API, net472, net8 | net472, net8 |
 | **`Poc.Net10`** | .NET 10 | modern (`[Message]` classes) | `Messaging.Hosting`, or SignalR | **API only** | nobody |
 | `Poc3.SignalR` | .NET 8 | modern | SignalR client | API only | nobody |
 
@@ -54,9 +54,9 @@ couldn't read one anyway. It doesn't even reference the legacy events project.
 | Event | Wire name (`event-type`) | From | Format |
 |---|---|---|---|
 | Equipment created / updated / deleted | `Equipment.EquipmentCreated` … | the API, through its outbox (~2 s) | `Equipment.Messages` classes |
-| A note on a piece of equipment | `Poc.Legacy.Events.EquipmentNoteSent` | net472, net8 | `PubSubEvent<EquipmentNote>` |
-| Equipment disposed of | `Poc.Legacy.Events.EquipmentDisposed` | net472 | `PubSubEvent<EquipmentDisposal>` |
-| Equipment flagged | `Poc.Legacy.Events.EquipmentFlagged` | net472 | `PubSubEvent<(Guid id, string name)>` |
+| A note on a piece of equipment | `Poc.Legacy.Events.EquipmentNoteSent` | net472, net8 | `RemotePubSubEvent<EquipmentNote>` |
+| Equipment disposed of | `Poc.Legacy.Events.EquipmentDisposed` | net472 | `RemotePubSubEvent<EquipmentDisposal>` |
+| Equipment flagged | `Poc.Legacy.Events.EquipmentFlagged` | net472 | `RemotePubSubEvent<(Guid id, string name)>` |
 | A row was selected (**local only**) | none: never on the wire | net472, net8, inside the app | `PubSubEvent<EquipmentRow?>` |
 
 **Local-only events.** `EquipmentSelected` (in each legacy app's own `Events/` folder) is raised with plain
@@ -69,7 +69,7 @@ registered events assembly.
 API by its `[Message("…")]` name. The body is JSON either way. So:
 
 - The legacy apps receive the API's events through `Poc.Legacy.Events/FromApi/`: classes in namespace `Equipment`,
-  named after the API's events (`Equipment.EquipmentCreated : PubSubEvent<Equipment.Messages.EquipmentCreated>`). The
+  named after the API's events (`Equipment.EquipmentCreated : RemotePubSubEvent<Equipment.Messages.EquipmentCreated>`). The
   payload is the API's own class: System.Text.Json writes it, Newtonsoft reads it.
 - The API receives `EquipmentDisposed` through its own copy,
   `Equipment.Infrastructure.IntegrationEvents.EquipmentDisposed`, marked
@@ -164,8 +164,8 @@ Each is explained where it happens in the code.
 - ❌ Renaming or moving an event class. Its full name is the wire name: every app listening for the old one, the API
   included, silently stops receiving it.
 - ❌ Prism subscriptions with capturing lambdas. Weak references: they're collected and stop silently.
-- ❌ Putting a local-only event in the registered events assembly. Everything there is bound on the broker and can be
-  published to other apps by mistake.
+- ❌ Deriving a local-only event from `RemotePubSubEvent<T>`. Subscribing binds it on the broker for nothing. Use
+  `PubSubEvent<T>`, which stays inside the app.
 - ❌ Using the legacy adapter in a NEW app. It exists so existing apps keep working unchanged.
 
 **Modern format (net10)**
@@ -225,7 +225,7 @@ the API is stopped and a handler that keeps failing doesn't lose them. Run `setu
 `Poc.Net472` exchange doesn't exist yet. Click **Dispose of selected** in a net472 window to see it. The real API
 also handles this event, and deletes that equipment if it's running.
 
-**A tuple payload.** `EquipmentFlagged : PubSubEvent<(Guid id, string name)>` is sent by **Flag selected** in the net472
+**A tuple payload.** `EquipmentFlagged : RemotePubSubEvent<(Guid id, string name)>` is sent by **Flag selected** in the net472
 window. A tuple's names don't reach the wire, so the JSON is `{"Item1":"...","Item2":"..."}`, and the API's
 `EquipmentFlagged` class maps those with `[JsonPropertyName]`. It's received with `IMessageSubscriber.Subscribe` in
 `Program.cs` rather than a handler class, to show both styles: subscribing binds the queue, and a message that arrives
@@ -247,7 +247,7 @@ handler. The net472 window itself wasn't used. For the tuple, `PublishRemote` th
 ## Layout
 
 ```
-Poc.Legacy.Events/   the legacy apps' PubSubEvent<T> events; FromApi/ = the API's events under their wire names
+Poc.Legacy.Events/   the legacy apps' RemotePubSubEvent<T> events; FromApi/ = the API's events under their wire names
 Poc.Shared/          EquipmentApi (HTTP), EquipmentList (load + apply), ApiOptions; SignalR/ (net8+ only). net472 + net8.0
 Poc.Net472/          legacy app: App.xaml.cs (RabbitMQServiceRouter.FromConfiguration), ViewModels/ (Subscribe, PublishRemote)
 Poc.Net8/            the same app on .NET 8
