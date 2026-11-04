@@ -3,6 +3,9 @@ namespace Messaging
     /// <summary>Per-call settings for <see cref="IMessagePublisher.Publish{TMessage}(TMessage, PublishOptions)"/>.</summary>
     public sealed class PublishOptions
     {
+        /// <summary>Sends this message to the bus with this name instead of the default bus.</summary>
+        public string Bus { get; set; }
+
         /// <summary>
         /// Routes this message with this key instead of its wire name (ADR 0002, section 3). The wire name still travels in the
         /// event-type header; only subscribers whose bindings match the key receive it.

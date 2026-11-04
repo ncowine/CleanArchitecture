@@ -151,7 +151,7 @@ Two ideas explain almost everything:
 | `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | Server-style setup: `AddMessaging`, handlers, `IMessageSubscriber`, System.Text.Json, telemetry, health checks, `MessagingClient`. | The API, modern WPF apps. |
 | `Messaging/Messaging.Prism` | net8.0 | Prism.Core, Messaging.Hosting | Optional bridge: plain message classes as Prism events (`MessageEvent<T>`). | Modern WPF apps that like the Prism style. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
-| `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Newtonsoft 12.0.3, the engine | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
+| `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Newtonsoft 12.0.3, Configuration.Binder, the engine | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
 | `Common.Events` | net472, net8.0 | Common.RabbitMQ | The demo apps' Prism events (`EmployeeUpdated` and others). | Demo WPF apps. |
 | `WpfApp.Net472` | net472 | the above | Demo legacy desktop app. | You, to try things. |
 | `WpfApp.Net8` | net8.0-windows | the above | Demo modern desktop app. It uses **both** styles side by side: Prism events on its Legacy bus, plain classes on its Modern bus. | You, and as the reference for migrating apps that keep Prism. |
@@ -315,33 +315,28 @@ Your events stay exactly as they are: plain Prism events, no attributes, no spec
 public class OrderSaved : PubSubEvent<Order> { }
 ```
 
-**1. Register the events assemblies, once, where the app starts:**
+**1. Build the router, once, where the app starts:**
 
 ```csharp
-RemoteEventRegistry registry = new RemoteEventRegistry()
-    .Add(typeof(OrderSaved).Assembly)            // your app's events
-    .Add(typeof(UserChanged).Assembly);          // shared events (netstandard2.0)
-
 IConfiguration configuration = new ConfigurationBuilder()
     .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
     .AddJsonFile("appsettings.json")
     .AddEnvironmentVariables()                   // Messaging__Buses__AppB__Password at deployment
     .Build();
 
-RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, registry);
-foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
-{
-    RabbitMQConfig config = bus.Get<RabbitMQConfig>();
-    config.BusName = bus.Key;
-    router.AddBus(config);
-}
+RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(
+    eventAggregator,
+    configuration,                               // Messaging:Buses and Messaging:DefaultBus
+    typeof(OrderSaved).Assembly,                 // your app's events
+    typeof(UserChanged).Assembly);               // shared events (netstandard2.0)
 
 containerRegistry.RegisterInstance(router);
 containerRegistry.RegisterInstance<IRabbitMQService>(router);
 router.Init();                                   // connects in the background
 ```
 
-It needs the `Microsoft.Extensions.Configuration.Json` and `.Binder` packages (they support .NET Framework 4.7.2).
+To read `appsettings.json` the app needs the `Microsoft.Extensions.Configuration.Json` package (it supports .NET
+Framework 4.7.2). `RemoteEventRegistry` and `router.AddBus` are still there for an app that builds its buses in code.
 
 **2. Configure appsettings.json**, the same `Messaging:Buses` section every app uses:
 
@@ -371,13 +366,21 @@ a default routing key per event, used by `PublishRemote`.
 
 ```csharp
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);                   // local subscribers + other apps
-eventAggregator.GetEvent<OrderSaved>().PublishRemoteTo("orders.eu.saved", order); // with a custom routing key
 eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnly(order);               // other apps only, not local subscribers
-eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnlyTo("orders.eu.saved", order); // other apps only, custom key
+eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions { RoutingKey = "orders.eu.saved" }); // custom routing key
 eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UIThread);
 ```
 
-Older code that uses `RemotePubSubEvent<T>` with `[RemoteEvent("bus")]` keeps working unchanged.
+Events don't belong to a bus. With one bus there is nothing to choose. With several, set `Messaging:DefaultBus` in
+configuration; to send one event elsewhere, pass that bus:
+
+```csharp
+eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);              // the default bus
+eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions { Bus = "Partners" });  // another bus
+```
+
+Every registered event is received on every bus. `RemotePubSubEvent<T>` still works and needs no attribute;
+`[RemoteEvent("bus")]` is gone, so remove it when you take this version.
 
 **Logging.** Set `Logger` on the router, or on a `RabbitMQService`, before `Init`. Any `ILogger` works:
 
@@ -426,10 +429,10 @@ await client.StartAsync();                         // connects in the background
 eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().Subscribe(OnSaved, ThreadOption.UIThread);
 eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemote(saved);      // other apps + local subscribers
 eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemoteOnly(saved);  // other apps only
+eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemote(saved, new PublishOptions { Bus = "Partners", RoutingKey = "employees.eu" });
 ```
 
-`PublishRemote` finds the publisher through Prism's container, just like the legacy version. `PublishRemoteTo` and
-`PublishRemoteOnlyTo` take a routing key first.
+`PublishRemote` finds the publisher through Prism's container, just like the legacy version.
 
 ### C. A modern WPF app without Prism (.NET 8)
 
@@ -513,11 +516,14 @@ builder.Services.AddHealthChecks().AddMessaging();
 app.MapHealthChecks("/health");
 ```
 
-**3. Publish from anywhere.** Nothing to register: every message goes to the only bus, keyed by its wire name.
+**3. Publish from anywhere.** Nothing to register: a message goes to the default bus, keyed by its wire name. With one
+bus that bus is the default; with several, call `messaging.UseDefaultBus(configuration["Messaging:DefaultBus"])`. To send
+one message elsewhere, name the bus.
 
 ```csharp
 publisher.Publish(new EmployeeCacheRefreshed { ... });
 publisher.Publish(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
+publisher.Publish(order, new PublishOptions { Bus = "Partners" });
 ```
 
 **More options:**
@@ -609,8 +615,8 @@ Example (`src/WebApi/appsettings.json`):
 
 ### Legacy apps (`appsettings.json` → `Messaging:Buses:<name>`, bound onto `RabbitMQConfig`)
 
-The same section as above. The section key is the bus name, matched by `[RemoteEvent("name")]` or
-`RemoteEventRegistry.Add(assembly, "name")`. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`,
+The same section as above. The section key is the bus name; `Messaging:DefaultBus`, next to `Buses`, names the default
+when there are several. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`,
 `ExchangeName`, `ExchangeType`, `ClientName`, `PrefetchCount` and `Subscriptions` (`Exchange`, `RoutingKeys`) mean
 the same and have the same defaults. The differences:
 
@@ -792,7 +798,7 @@ The full reasoning is in the two ADRs. The short version:
 | Messages pile up in `*.dead-letter` | A handler keeps failing, or the body can't be read. | Read the message in the management UI (`x-first-death-reason` says why), fix the cause, then move it back. |
 | `/health` is Unhealthy | A bus is disconnected. | The response lists which bus. Check the broker and the credentials. |
 | A startup error: *Messaging is misconfigured* | A handler names an unknown bus, or a class has no `[Message]`. | The message lists every problem. Fix them in `AddMessaging`. |
-| `PublishRemoteTo` throws *does not support routing keys* | A custom `IRabbitMQService` that doesn't implement `IRoutingKeyPublisher`. | Use `RabbitMQService` or `RabbitMQServiceRouter`, or implement the interface. |
+| `PublishRemote` with a routing key throws *does not support routing keys* | A custom `IRabbitMQService` that doesn't implement `IRoutingKeyPublisher`. | Use `RabbitMQService` or `RabbitMQServiceRouter`, or implement the interface. |
 | The build crashes with *OutOfMemoryException* or hangs | Stale MSBuild worker processes. | Run `dotnet build-server shutdown`, or build with `-nr:false`. |
 | Git Bash turns a vhost of `/` into `C:/Program Files/Git/` | Git Bash path conversion. | Set such environment variables from PowerShell instead. |
 

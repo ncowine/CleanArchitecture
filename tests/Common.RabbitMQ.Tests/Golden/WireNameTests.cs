@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 using Common.Events;
 using Xunit;
@@ -19,20 +18,18 @@ namespace Common.RabbitMQ.Tests.Golden
         }
 
         [Fact]
-        public void CommonEvents_WireNamesAndBuses()
+        public void CommonEvents_WireNames()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry(typeof(EmployeeUpdated).Assembly);
 
-            Dictionary<string, string> actual = registry.Events.ToDictionary(e => e.EventName, e => e.BusName);
-
-            Dictionary<string, string> expected = new Dictionary<string, string>
+            string[] expected =
             {
-                ["Common.Events.EmployeeUpdated"] = "Legacy",
-                ["Common.Events.EmployeeSaved"] = "Modern",
-                ["Common.Events.EmployeeCacheRefreshed"] = "Modern",
+                "Common.Events.EmployeeCacheRefreshed",
+                "Common.Events.EmployeeSaved",
+                "Common.Events.EmployeeUpdated",
             };
 
-            Assert.Equal(expected.OrderBy(p => p.Key), actual.OrderBy(p => p.Key));
+            Assert.Equal(expected, registry.Events.Select(e => e.EventName).OrderBy(n => n, System.StringComparer.Ordinal));
         }
 
         [Fact]

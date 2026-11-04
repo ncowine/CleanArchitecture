@@ -6,6 +6,7 @@
     <AssemblyName>Compat.Events.Baseline</AssemblyName>
     <RootNamespace>Compat.Events</RootNamespace>
     <IsPackable>false</IsPackable>
+    <DefineConstants>$(DefineConstants);COMPAT_BASELINE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

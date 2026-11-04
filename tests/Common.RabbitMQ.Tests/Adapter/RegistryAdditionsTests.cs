@@ -2,63 +2,40 @@ using System;
 using System.Linq;
 using AppA.Events;
 using Common.Events;
+using Messaging;
 using Prism.Events;
 using Xunit;
 
 namespace Common.RabbitMQ.Tests.Adapter
 {
     /// <summary>
-    /// <see cref="RemoteEventRegistry.Add"/> and unassigned events (ADR 0002, section 4). None of these need a broker:
+    /// <see cref="RemoteEventRegistry.Add"/> and choosing the bus when publishing (ADR 0002). None of these need a broker:
     /// services point at a port nothing listens on and only buffer messages.
     /// </summary>
-    public class RegistryAdditionsTests
+    [Collection(ServiceProviderCollection.Name)]
+    public class RegistryAdditionsTests : IDisposable
     {
         /// <summary>Nothing listens here: services start their loops but never connect.</summary>
         private const int UnreachablePort = 1;
 
+        public void Dispose()
+        {
+            RabbitMQServiceProvider.Current = null;
+        }
+
         [Fact]
-        public void Add_FindsPlainPubSubEvents_Unassigned()
+        public void Add_FindsPlainPubSubEvents()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
 
             Assert.True(registry.TryGet(typeof(OrderSaved), out RemoteEventDescriptor descriptor));
             Assert.Equal("AppA.Events.OrderSaved", descriptor.EventName);
             Assert.Equal(typeof(Order), descriptor.PayloadType);
-            Assert.Null(descriptor.BusName);
             Assert.True(registry.TryGet(typeof(OrderSelected), out RemoteEventDescriptor local));
         }
 
         [Fact]
-        public void Add_WithABus_AssignsIt()
-        {
-            RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly, "Orders");
-
-            Assert.Contains(registry.GetByBus("Orders"), d => d.EventType == typeof(OrderSaved));
-            Assert.DoesNotContain(registry.GetByBus("Other"), d => d.EventType == typeof(OrderSaved));
-        }
-
-        [Fact]
-        public void UnassignedEvents_BelongToEveryBus()
-        {
-            RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
-
-            Assert.Contains(registry.GetByBus("Any"), d => d.EventType == typeof(OrderSaved));
-            Assert.Contains(registry.GetByBus("Other"), d => d.EventType == typeof(OrderSaved));
-        }
-
-        [Fact]
-        public void Add_AttributeBusWins_OverTheAssemblysBus()
-        {
-            RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(EmployeeUpdated).Assembly, "Other");
-
-            Assert.True(registry.TryGet(typeof(EmployeeUpdated), out RemoteEventDescriptor attributed));
-            Assert.Equal(BusNames.Legacy, attributed.BusName);
-            Assert.True(registry.TryGet(typeof(EmployeeSelected), out RemoteEventDescriptor plain));
-            Assert.Equal("Other", plain.BusName);
-        }
-
-        [Fact]
-        public void Constructor_IsUnchanged_PlainEventsStayLocal()
+        public void Constructor_FindsRemoteEvents_PlainEventsStayLocal()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry(typeof(EmployeeUpdated).Assembly);
 
@@ -68,7 +45,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         }
 
         [Fact]
-        public void Router_UnassignedEvent_GoesToTheOnlyBus()
+        public void Router_WithOneBus_NeedsNoDefault()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
             using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry))
@@ -83,7 +60,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         }
 
         [Fact]
-        public void Router_UnassignedEvent_WithSeveralBuses_IsRefused()
+        public void Router_WithSeveralBuses_AndNoDefault_IsRefused()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
             using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry))
@@ -93,18 +70,112 @@ namespace Common.RabbitMQ.Tests.Adapter
                 router.Init();
 
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => router.Publish(typeof(OrderSaved), new Order { Id = 1 }));
-                Assert.Contains("has no bus", error.Message);
+                Assert.Contains("no default", error.Message);
                 Assert.True(router.Buses.All(b => b.OutstandingCount == 0));
             }
         }
 
         [Fact]
-        public void PublishRemoteTo_WithoutRoutingSupport_IsRefused()
+        public void Router_SendsToTheDefaultBus()
         {
-            EventAggregator eventAggregator = new EventAggregator();
+            RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry) { DefaultBus = "Second" })
+            {
+                RabbitMQService first = router.AddBus(UnreachableConfig("First"));
+                RabbitMQService second = router.AddBus(UnreachableConfig("Second"));
+                router.Init();
+                RabbitMQServiceProvider.Current = router;
+
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order { Id = 1 });
+
+                Assert.Equal(0, first.OutstandingCount);
+                Assert.Equal(1, second.OutstandingCount);
+            }
+        }
+
+        [Fact]
+        public void PublishRemote_ToANamedBus_OverridesTheDefault()
+        {
+            RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry) { DefaultBus = "Second" })
+            {
+                RabbitMQService first = router.AddBus(UnreachableConfig("First"));
+                RabbitMQService second = router.AddBus(UnreachableConfig("Second"));
+                router.Init();
+                RabbitMQServiceProvider.Current = router;
+
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order { Id = 1 }, new PublishOptions { Bus = "First" });
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order { Id = 2 }, new PublishOptions { Bus = "First", RoutingKey = "orders.eu.saved" });
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemoteOnly(new Order { Id = 3 }, new PublishOptions { Bus = "First" });
+
+                Assert.Equal(3, first.OutstandingCount);
+                Assert.Equal(0, second.OutstandingCount);
+            }
+        }
+
+        [Fact]
+        public void PublishRemote_ToAnUnknownBus_ThrowsBeforeRaisingLocally()
+        {
+            RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry))
+            {
+                RabbitMQService only = router.AddBus(UnreachableConfig("Only"));
+                router.Init();
+                RabbitMQServiceProvider.Current = router;
+                EventAggregator eventAggregator = new EventAggregator();
+                int local = 0;
+                eventAggregator.GetEvent<OrderSaved>().Subscribe(_ => local++);
+
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+                    eventAggregator.GetEvent<OrderSaved>().PublishRemote(new Order { Id = 1 }, new PublishOptions { Bus = "Mistyped" }));
+
+                Assert.Contains("Mistyped", error.Message);
+                Assert.Equal(0, only.OutstandingCount);
+                Assert.Equal(0, local);
+            }
+        }
+
+        [Fact]
+        public void PublishRemote_ToANamedBus_WithoutARouter_IsRefused()
+        {
+            RabbitMQServiceProvider.Current = new PublishOnlyService();
 
             Assert.Throws<NotSupportedException>(() =>
-                eventAggregator.GetEvent<OrderSaved>().PublishRemoteTo("orders.eu.saved", new Order(), new PublishOnlyService()));
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order(), new PublishOptions { Bus = "Partners" }));
+        }
+
+        [Fact]
+        public void Router_GetRequiredBus_UnknownName_Throws()
+        {
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry()))
+            {
+                router.AddBus(UnreachableConfig("Only"));
+
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => router.GetRequiredBus("Mistyped"));
+                Assert.Contains("Mistyped", error.Message);
+            }
+        }
+
+        [Fact]
+        public void Router_UnknownDefaultBus_FailsAtInit()
+        {
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry()) { DefaultBus = "Mistyped" })
+            {
+                router.AddBus(UnreachableConfig("Only"));
+
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => router.Init());
+                Assert.Contains("Mistyped", error.Message);
+            }
+        }
+
+        [Fact]
+        public void PublishRemote_WithARoutingKey_WithoutRoutingSupport_IsRefused()
+        {
+            EventAggregator eventAggregator = new EventAggregator();
+            RabbitMQServiceProvider.Current = new PublishOnlyService();
+
+            Assert.Throws<NotSupportedException>(() =>
+                eventAggregator.GetEvent<OrderSaved>().PublishRemote(new Order(), new PublishOptions { RoutingKey = "orders.eu.saved" }));
         }
 
         private static RabbitMQConfig UnreachableConfig(string busName)

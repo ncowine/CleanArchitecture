@@ -12,7 +12,7 @@ namespace Common.RabbitMQ
     /// One connection to one bus (virtual host + exchange), for Prism applications.
     /// <para>
     /// A façade over <see cref="RabbitMQBus"/> (ADR 0001): <see cref="Init"/> starts the bus with every remote event
-    /// of this bus subscribed, <see cref="Publish"/> buffers a message for it, and received messages are raised as their
+    /// subscribed, <see cref="Publish"/> buffers a message for it, and received messages are raised as their
     /// Prism event on the <see cref="IEventAggregator"/>. Bodies are Newtonsoft JSON, as the legacy apps expect.
     /// </para>
     /// </summary>
@@ -72,7 +72,7 @@ namespace Common.RabbitMQ
 
             this.config = config;
 
-            List<MessageRegistration> registrations = registry.GetByBus(config.BusName)
+            List<MessageRegistration> registrations = registry.Events
                 .Select(d => new MessageRegistration(d.EventName, d.PayloadType))
                 .ToList();
 
@@ -93,7 +93,7 @@ namespace Common.RabbitMQ
         {
             EnsureInitialized();
 
-            RemoteEventDescriptor descriptor = GetDescriptorForThisBus(eventType);
+            RemoteEventDescriptor descriptor = GetDescriptor(eventType);
             config.RoutingKeys.TryGetValue(descriptor.EventName, out string routingKey);
             bus.Enqueue(descriptor.EventName, payload, routingKey);
         }
@@ -111,19 +111,19 @@ namespace Common.RabbitMQ
                 throw new ArgumentException("A routing key is required.", nameof(routingKey));
             }
 
-            RemoteEventDescriptor descriptor = GetDescriptorForThisBus(eventType);
+            RemoteEventDescriptor descriptor = GetDescriptor(eventType);
             bus.Enqueue(descriptor.EventName, payload, routingKey);
         }
 
         /// <summary>
-        /// Starts receiving <paramref name="eventType"/> from the bus. All events of this bus are registered by
+        /// Starts receiving <paramref name="eventType"/> from the bus. All events are registered by
         /// <see cref="Init"/>; use this after <see cref="UnregisterQueue"/> to resume.
         /// </summary>
         public async Task RegisterQueue(Type eventType)
         {
             EnsureInitialized();
 
-            RemoteEventDescriptor descriptor = GetDescriptorForThisBus(eventType);
+            RemoteEventDescriptor descriptor = GetDescriptor(eventType);
             await bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType)).ConfigureAwait(false);
         }
 
@@ -132,7 +132,7 @@ namespace Common.RabbitMQ
         {
             EnsureInitialized();
 
-            RemoteEventDescriptor descriptor = GetDescriptorForThisBus(eventType);
+            RemoteEventDescriptor descriptor = GetDescriptor(eventType);
             await bus.Unsubscribe(descriptor.EventName).ConfigureAwait(false);
         }
 
@@ -172,7 +172,7 @@ namespace Common.RabbitMQ
             };
         }
 
-        private RemoteEventDescriptor GetDescriptorForThisBus(Type eventType)
+        private RemoteEventDescriptor GetDescriptor(Type eventType)
         {
             if (eventType == null)
             {
@@ -181,14 +181,7 @@ namespace Common.RabbitMQ
 
             if (!registry.TryGet(eventType, out RemoteEventDescriptor descriptor))
             {
-                throw new ArgumentException($"{eventType.FullName} is not a remote event. Mark it with [RemoteEvent].", nameof(eventType));
-            }
-
-            // Unassigned events (RemoteEventRegistry.Add without a bus) belong to every bus.
-            if (descriptor.BusName != null && !string.Equals(descriptor.BusName, config.BusName, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException(
-                    $"{eventType.Name} belongs to bus '{descriptor.BusName}', not '{config.BusName}'.");
+                throw new ArgumentException($"{eventType.FullName} is not registered. Add its assembly with RemoteEventRegistry.Add.", nameof(eventType));
             }
 
             return descriptor;

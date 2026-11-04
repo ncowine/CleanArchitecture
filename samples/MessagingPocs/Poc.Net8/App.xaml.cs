@@ -49,22 +49,14 @@ public partial class App : PrismApplication
             .AddJsonFile("appsettings.json")
             .Build();
 
-        // Every PubSubEvent<T> in the assembly can travel between apps, known by its full type name. That includes
-        // FromApi/, whose classes are named after the API's events, so the API's messages arrive as Prism events too.
-        RemoteEventRegistry registry = new RemoteEventRegistry()
-            .Add(typeof(EquipmentNoteSent).Assembly);
-
         // ✅ DO set the logger before Init. Without one, the bus's messages go to Trace.
         BusLog busLog = new BusLog();
         containerRegistry.RegisterInstance(busLog);
 
-        router = new RabbitMQServiceRouter(Container.Resolve<IEventAggregator>(), registry) { Logger = busLog };
-        foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
-        {
-            RabbitMQConfig config = bus.Get<RabbitMQConfig>()!;
-            config.BusName = bus.Key;
-            router.AddBus(config);
-        }
+        // Every PubSubEvent<T> in the assembly can travel between apps, known by its full type name. That includes
+        // FromApi/, whose classes are named after the API's events, so the API's messages arrive as Prism events too.
+        router = RabbitMQServiceRouter.FromConfiguration(Container.Resolve<IEventAggregator>(), configuration, typeof(EquipmentNoteSent).Assembly);
+        router.Logger = busLog;
 
         containerRegistry.RegisterInstance(router);
         containerRegistry.RegisterInstance<IRabbitMQService>(router);   // PublishRemote finds it here

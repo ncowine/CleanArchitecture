@@ -3,6 +3,7 @@ using BuildingBlocks.Messaging;
 using BuildingBlocks.Outbox;
 using BuildingBlocks.Outbox.Messaging;
 using Equipment.Messages;
+using Messaging;
 using Messaging.Hosting;
 using Messaging.RabbitMQ;
 using Microsoft.Data.Sqlite;
@@ -217,6 +218,11 @@ public sealed class OutboxMessagingTests : IAsyncLifetime
             }
 
             return Task.CompletedTask;
+        }
+
+        public Task PublishConfirmedAsync(object message, string? messageId, PublishOptions options, CancellationToken cancellationToken = default)
+        {
+            return PublishConfirmedAsync(message, messageId, cancellationToken);
         }
     }
 

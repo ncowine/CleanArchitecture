@@ -58,18 +58,23 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             return received;
         }
 
-        /// <summary>Calls <c>PublishRemote(payload, service)</c> on <typeparamref name="TEvent"/>, a plain <see cref="PubSubEvent{TPayload}"/>.</summary>
+        /// <summary>
+        /// Does what <c>PublishRemote</c> does on <typeparamref name="TEvent"/>, a plain <see cref="PubSubEvent{TPayload}"/>.
+        /// Several apps share this process, so this one's service is used directly instead of <see cref="RabbitMQServiceProvider"/>.
+        /// </summary>
         public void PublishRemote<TEvent, TPayload>(TPayload payload)
             where TEvent : PubSubEvent<TPayload>, new()
         {
-            eventAggregator.GetEvent<TEvent>().PublishRemote(payload, service);
+            service.Publish(typeof(TEvent), payload);
+            eventAggregator.GetEvent<TEvent>().Publish(payload);
         }
 
-        /// <summary>Calls <c>PublishRemoteTo(routingKey, payload, service)</c> on <typeparamref name="TEvent"/>.</summary>
+        /// <summary>Does what <c>PublishRemote</c> with a routing key does on <typeparamref name="TEvent"/>.</summary>
         public void PublishRemoteTo<TEvent, TPayload>(string routingKey, TPayload payload)
             where TEvent : PubSubEvent<TPayload>, new()
         {
-            eventAggregator.GetEvent<TEvent>().PublishRemoteTo(routingKey, payload, service);
+            service.Publish(typeof(TEvent), payload, routingKey);
+            eventAggregator.GetEvent<TEvent>().Publish(payload);
         }
 
         public void Dispose()

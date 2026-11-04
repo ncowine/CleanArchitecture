@@ -8,7 +8,7 @@ namespace Common.RabbitMQ
     /// </summary>
     public class RabbitMQConfig
     {
-        /// <summary>Logical bus name, matched against <see cref="RemoteEventAttribute.Bus"/>.</summary>
+        /// <summary>Logical bus name: the key of its <c>Messaging:Buses</c> section, and how a publisher names it.</summary>
         public string BusName { get; set; }
 
         public string HostName { get; set; } = "localhost";

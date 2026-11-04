@@ -9,11 +9,12 @@ namespace Common.RabbitMQ
     /// <summary>
     /// Knows which Prism events can travel between applications.
     /// <list type="bullet">
-    /// <item>The constructor finds every <see cref="RemotePubSubEvent{TPayload}"/> (each needs <see cref="RemoteEventAttribute"/>);
-    /// plain <see cref="PubSubEvent{TPayload}"/> events are ignored. Unchanged from the first release.</item>
-    /// <item><see cref="Add"/> finds every <see cref="PubSubEvent{TPayload}"/> in an assembly, with no attribute or base class needed
+    /// <item>The constructor finds every <see cref="RemotePubSubEvent{TPayload}"/>; plain <see cref="PubSubEvent{TPayload}"/>
+    /// events are ignored.</item>
+    /// <item><see cref="Add"/> finds every <see cref="PubSubEvent{TPayload}"/> in an assembly, with no special base class needed
     /// (ADR 0002, section 4): <c>new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly)</c>.</item>
     /// </list>
+    /// An event belongs to no bus: every bus receives it, and the publisher chooses where to send it.
     /// </summary>
     public sealed class RemoteEventRegistry
     {
@@ -26,32 +27,14 @@ namespace Common.RabbitMQ
             {
                 foreach (Type type in assembly.GetTypes())
                 {
-                    RemoteEventAttribute attribute = type.GetCustomAttribute<RemoteEventAttribute>(inherit: false);
                     Type payloadType = FindPayloadType(type);
 
-                    if (payloadType == null)
-                    {
-                        if (attribute != null)
-                        {
-                            throw new InvalidOperationException(
-                                $"{type.FullName} is marked [RemoteEvent] but does not derive from RemotePubSubEvent<T>.");
-                        }
-
-                        continue;
-                    }
-
-                    if (type.IsAbstract || type.ContainsGenericParameters)
+                    if (payloadType == null || type.IsAbstract || type.ContainsGenericParameters)
                     {
                         continue;
                     }
 
-                    if (attribute == null)
-                    {
-                        throw new InvalidOperationException(
-                            $"{type.FullName} derives from RemotePubSubEvent<T> but has no [RemoteEvent(\"<bus>\")] attribute.");
-                    }
-
-                    RemoteEventDescriptor descriptor = new RemoteEventDescriptor(type, payloadType, attribute.Bus);
+                    RemoteEventDescriptor descriptor = new RemoteEventDescriptor(type, payloadType);
                     eventsByType[type] = descriptor;
                     eventsByName[descriptor.EventName] = descriptor;
                 }
@@ -62,14 +45,10 @@ namespace Common.RabbitMQ
 
         /// <summary>
         /// Registers every concrete <see cref="PubSubEvent{TPayload}"/> in <paramref name="assembly"/> as able to travel between
-        /// applications, found by its full type name. No attribute or special base class is needed; events that are only
+        /// applications, found by its full type name. No special base class is needed; events that are only
         /// raised locally are registered too, harmlessly. An event already registered keeps its registration.
         /// </summary>
-        /// <param name="busName">
-        /// The bus these events travel on. Null leaves them unassigned: every bus of the application handles them, which is
-        /// right for an application with one connection. A <see cref="RemoteEventAttribute"/> on an event still wins.
-        /// </param>
-        public RemoteEventRegistry Add(Assembly assembly, string busName = null)
+        public RemoteEventRegistry Add(Assembly assembly)
         {
             if (assembly == null)
             {
@@ -89,8 +68,7 @@ namespace Common.RabbitMQ
                     continue;
                 }
 
-                string bus = type.GetCustomAttribute<RemoteEventAttribute>(inherit: false)?.Bus ?? busName;
-                RemoteEventDescriptor descriptor = new RemoteEventDescriptor(type, payloadType, bus);
+                RemoteEventDescriptor descriptor = new RemoteEventDescriptor(type, payloadType);
                 eventsByType[type] = descriptor;
                 eventsByName[descriptor.EventName] = descriptor;
             }
@@ -106,12 +84,6 @@ namespace Common.RabbitMQ
         public bool TryGet(string eventName, out RemoteEventDescriptor descriptor)
         {
             return eventsByName.TryGetValue(eventName, out descriptor);
-        }
-
-        /// <summary>The events of <paramref name="busName"/>, plus unassigned ones (see <see cref="Add"/>).</summary>
-        public IEnumerable<RemoteEventDescriptor> GetByBus(string busName)
-        {
-            return eventsByType.Values.Where(d => d.BusName == null || string.Equals(d.BusName, busName, StringComparison.OrdinalIgnoreCase));
         }
 
         private static Type FindPayloadType(Type eventType)

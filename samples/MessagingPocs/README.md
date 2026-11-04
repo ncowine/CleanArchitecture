@@ -249,7 +249,7 @@ handler. The net472 window itself wasn't used. For the tuple, `PublishRemote` th
 ```
 Poc.Legacy.Events/   the legacy apps' PubSubEvent<T> events; FromApi/ = the API's events under their wire names
 Poc.Shared/          EquipmentApi (HTTP), EquipmentList (load + apply), ApiOptions; SignalR/ (net8+ only). net472 + net8.0
-Poc.Net472/          legacy app: App.xaml.cs (RemoteEventRegistry + RabbitMQServiceRouter), ViewModels/ (Subscribe, PublishRemote)
+Poc.Net472/          legacy app: App.xaml.cs (RabbitMQServiceRouter.FromConfiguration), ViewModels/ (Subscribe, PublishRemote)
 Poc.Net8/            the same app on .NET 8
 Poc.Net10/           modern app: App.xaml.cs (Generic Host; RabbitMQ or SignalR), ViewModels/
 Poc3.SignalR/        SignalR only, with presence

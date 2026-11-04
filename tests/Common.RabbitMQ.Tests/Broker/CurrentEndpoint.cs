@@ -29,7 +29,9 @@ namespace Common.RabbitMQ.Tests.Broker
 
         public void PublishRemote(CompatPayload payload)
         {
-            eventAggregator.GetEvent<CompatEvent>().PublishRemote(payload, service);
+            // Several endpoints share this process, so this one's service is used directly instead of RabbitMQServiceProvider.
+            service.Publish(typeof(CompatEvent), payload);
+            eventAggregator.GetEvent<CompatEvent>().Publish(payload);
         }
 
         public void Dispose()

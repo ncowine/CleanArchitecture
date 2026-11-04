@@ -16,11 +16,10 @@ namespace Common.RabbitMQ
         private readonly MethodInfo getEventMethod;
         private readonly MethodInfo publishMethod;
 
-        public RemoteEventDescriptor(Type eventType, Type payloadType, string busName)
+        public RemoteEventDescriptor(Type eventType, Type payloadType)
         {
             EventType = eventType;
             PayloadType = payloadType;
-            BusName = busName;
             EventName = eventType.FullName;
 
             getEventMethod = getEventDefinition.MakeGenericMethod(eventType);
@@ -33,9 +32,6 @@ namespace Common.RabbitMQ
         public Type EventType { get; }
 
         public Type PayloadType { get; }
-
-        /// <summary>Null for an event registered with <see cref="RemoteEventRegistry.Add"/> without a bus: it belongs to every bus.</summary>
-        public string BusName { get; }
 
         /// <summary>
         /// Same as getting the <see cref="EventType"/> event from <see cref="IEventAggregator.GetEvent{TEventType}"/> and publishing <paramref name="payload"/> on it.
