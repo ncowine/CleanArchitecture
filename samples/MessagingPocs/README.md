@@ -46,7 +46,7 @@ Each app **owns one exchange** and publishes only there; what it receives is dec
 | the API (`cleanarch.api.main`, shared, durable) | `Poc.Net472` | `EquipmentDisposed` only: the one event it handles |
 
 **"API only" for net10 is enforced twice, both by configuration:** the broker never routes a legacy app's message to
-its queue (it doesn't bind their exchanges), and it registers only the API's `Equipment.Messages` classes, so it
+its queue (it doesn't bind their exchanges), and it subscribes only to the API's `Equipment.Messages` classes, so it
 couldn't read one anyway. It doesn't even reference the legacy events project.
 
 ### The events
