@@ -67,9 +67,8 @@ public partial class App : Application
             builder.Logging.AddProvider(busLog);
 
             builder.Services.AddMessaging(messaging => messaging
-                .AddBus(BusName, builder.Configuration.GetSection($"Messaging:Buses:{BusName}"))
-                // ✅ DO register what you receive: only these classes are bound, and only these can be read.
-                .AddMessages(typeof(EquipmentCreated).Assembly));
+                // Subscribing in the view model is all it takes: only what it subscribes to is bound.
+                .AddBus(BusName, builder.Configuration.GetSection($"Messaging:Buses:{BusName}")));
         }
 
         builder.Services.AddSingleton<MainWindowViewModel>();

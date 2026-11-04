@@ -5,8 +5,8 @@ using Prism.Events;
 namespace Common.RabbitMQ
 {
     /// <summary>
-    /// Publishing to other applications. The service comes from <see cref="RabbitMQServiceProvider"/>, and the event's
-    /// assembly must be registered. <see cref="PublishOptions"/> chooses the bus and routing key for one call; without it
+    /// Publishing to other applications. The service comes from <see cref="RabbitMQServiceProvider"/>, and the event must be a
+    /// <see cref="RemotePubSubEvent{TPayload}"/> or registered. <see cref="PublishOptions"/> chooses the bus and routing key for one call; without it
     /// the event goes to the default bus (<see cref="RabbitMQServiceRouter.DefaultBus"/>), routed with its full name or
     /// its entry in <see cref="RabbitMQConfig.RoutingKeys"/>. Legacy subscribers bind full names, so they don't receive
     /// custom keys. A bus that isn't configured throws.

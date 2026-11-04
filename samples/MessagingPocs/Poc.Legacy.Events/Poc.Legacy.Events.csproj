@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    The legacy apps' events: plain Prism PubSubEvent<T> classes, the format .NET Framework apps already use. Shared by
+    The legacy apps' events: RemotePubSubEvent<T> classes, which are bound when an app subscribes to them. Shared by
     the net472 and the net8 POC (both legacy format, through Common.RabbitMQ); netstandard2.0 so both can load it.
 
     - EquipmentNoteSent, EquipmentDisposed: published by the legacy apps themselves.
@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Common.RabbitMQ\Common.RabbitMQ.csproj" />
     <ProjectReference Include="..\..\..\src\Modules\Equipment\Equipment.Messages\Equipment.Messages.csproj" />
   </ItemGroup>
 

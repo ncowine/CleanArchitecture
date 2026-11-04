@@ -1,4 +1,4 @@
-using Prism.Events;
+using Common.RabbitMQ;
 
 namespace Poc.Legacy.Events;
 
@@ -9,6 +9,6 @@ namespace Poc.Legacy.Events;
 /// <remarks>
 /// Poc.Api.NoOutbox's copy maps Item1 and Item2 by position. Swapping the tuple's items here silently breaks it.
 /// </remarks>
-public class EquipmentFlagged : PubSubEvent<(Guid id, string name)>
+public class EquipmentFlagged : RemotePubSubEvent<(Guid id, string name)>
 {
 }

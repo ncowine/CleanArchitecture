@@ -28,8 +28,8 @@ namespace Common.RabbitMQ
 
         /// <summary>
         /// Builds a router from the <c>Messaging</c> section of <paramref name="configuration"/>: one bus per entry in
-        /// <c>Buses</c>, the default from <c>DefaultBus</c>, and every <see cref="PubSubEvent{TPayload}"/> in
-        /// <paramref name="eventAssemblies"/>. Call <see cref="Init"/> once the application has subscribed.
+        /// <c>Buses</c> and the default from <c>DefaultBus</c>. <see cref="RemotePubSubEvent{TPayload}"/> events need nothing
+        /// more; <paramref name="eventAssemblies"/> are for plain events not yet moved to it (see <see cref="RemoteEventRegistry.Add"/>).
         /// </summary>
         public static RabbitMQServiceRouter FromConfiguration(IEventAggregator eventAggregator, IConfiguration configuration, params Assembly[] eventAssemblies)
         {

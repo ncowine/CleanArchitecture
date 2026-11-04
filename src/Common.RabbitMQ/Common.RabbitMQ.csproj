@@ -2,7 +2,8 @@
 
   <!-- Legacy adapter: the Prism API over the Messaging.RabbitMQ core (ADR 0001, section 1). Public API frozen, apart from the approved changes in PublicApiTests. -->
   <PropertyGroup>
-    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <!-- netstandard2.0 so shared event assemblies can derive from RemotePubSubEvent<T>. -->
+    <TargetFrameworks>net472;netstandard2.0;net8.0</TargetFrameworks>
   </PropertyGroup>
 
   <ItemGroup>

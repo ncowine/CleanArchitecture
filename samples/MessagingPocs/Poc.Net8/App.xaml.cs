@@ -53,9 +53,9 @@ public partial class App : PrismApplication
         BusLog busLog = new BusLog();
         containerRegistry.RegisterInstance(busLog);
 
-        // Every PubSubEvent<T> in the assembly can travel between apps, known by its full type name. That includes
-        // FromApi/, whose classes are named after the API's events, so the API's messages arrive as Prism events too.
-        router = RabbitMQServiceRouter.FromConfiguration(Container.Resolve<IEventAggregator>(), configuration, typeof(EquipmentNoteSent).Assembly);
+        // Every RemotePubSubEvent<T> can travel between apps, known by its full type name, and is bound when something
+        // subscribes to it. That includes FromApi/, whose classes are named after the API's events.
+        router = RabbitMQServiceRouter.FromConfiguration(Container.Resolve<IEventAggregator>(), configuration);
         router.Logger = busLog;
 
         containerRegistry.RegisterInstance(router);

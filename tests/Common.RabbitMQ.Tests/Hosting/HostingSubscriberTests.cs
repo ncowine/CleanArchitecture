@@ -29,7 +29,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             {
                 ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => messaging.AddMessages(typeof(CompatMessage).Assembly)))
+                await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
                 {
                     Received<CompatMessage> received = new Received<CompatMessage>();
                     IDisposable subscription = host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
@@ -47,6 +47,57 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
                     Assert.Equal(1, received.Count);
                 }
+            }
+        }
+
+        [Fact]
+        public async Task Subscribe_BindsTheType_WithNothingRegistered()
+        {
+            await using (TestBus bus = await TestBus.Create())
+            {
+                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+
+                await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
+                {
+                    await bus.WaitUntilConnected();
+                    await host.WaitUntilConnected();
+
+                    // Bound in the background: keep sending until it's in place.
+                    Received<CompatMessage> received = new Received<CompatMessage>();
+                    host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
+                    for (int i = 0; i < 50 && received.Count == 0; i++)
+                    {
+                        baseline.PublishRemote(CompatPayloads.Golden());
+                        await Task.Delay(100, TestContext.Current.CancellationToken);
+                    }
+
+                    Assert.True(received.Count > 0);
+                }
+            }
+        }
+
+        [Fact]
+        public void Subscribe_ToAClassWithoutAWireName_Throws()
+        {
+            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => { })))
+            {
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+                    client.Services.GetRequiredService<IMessageSubscriber>().Subscribe<HostingSubscriberTests>(_ => { }));
+                Assert.Contains("[Message", error.Message);
+            }
+        }
+
+        [Fact]
+        public void Subscribe_TwoClassesWithOneWireName_Throws()
+        {
+            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => { })))
+            {
+                IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
+                subscriber.Subscribe<CompatMessage>(_ => { });
+                subscriber.Subscribe<CompatMessage>(_ => { });
+
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => subscriber.Subscribe<Employees.Contracts.CompatMessageTwin>(_ => { }));
+                Assert.Contains("Compat.Events.CompatEvent", error.Message);
             }
         }
 

@@ -26,13 +26,12 @@ using Poc.Api.NoOutbox;
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-// The queue is bound once per message type received. AddHandlers covers every IMessageHandler<T> here, and AddMessages
-// every [Message] class here, which is what Subscribe needs.
+// The queue is bound once per message type received: every IMessageHandler<T> AddHandlers finds, and every type passed to
+// Subscribe below.
 builder.Services.AddMessaging(messaging => messaging
     .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
     .UseDefaultBus(builder.Configuration["Messaging:DefaultBus"])
-    .AddHandlers(typeof(EquipmentDisposedHandler).Assembly)
-    .AddMessages(typeof(EquipmentFlagged).Assembly));
+    .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));
 
 WebApplication app = builder.Build();
 

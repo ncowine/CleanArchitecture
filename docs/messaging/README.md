@@ -379,8 +379,11 @@ eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);              // the
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions { Bus = "Partners" });  // another bus
 ```
 
-Every registered event is received on every bus. `RemotePubSubEvent<T>` still works and needs no attribute;
-`[RemoteEvent("bus")]` is gone, so remove it when you take this version.
+`RemotePubSubEvent<T>` is for events that travel, and `PubSubEvent<T>` for events that stay inside the app. A
+`RemotePubSubEvent<T>` needs no registration: subscribing to it binds the queue, on every bus, so an app only receives what
+it listens for. The binding is created in the background, so a message published right after subscribing can be missed.
+An assembly of plain events not yet moved over can still travel with `RemoteEventRegistry.Add`, but all its events are
+bound at startup, used or not. `[RemoteEvent("bus")]` is gone, so remove it when you take this version.
 
 **Logging.** Set `Logger` on the router, or on a `RabbitMQService`, before `Init`. Any `ILogger` works:
 
@@ -415,7 +418,6 @@ MessagingClient client = MessagingClient.Create(services => services.AddMessagin
         options.ExchangeName = "MyApp";
         options.ClientName = "MyApp";
     })
-    .AddMessages(typeof(EmployeeSaved).Assembly)   // receive every [Message] class in it
     .UseEventAggregator(eventAggregator)));        // raise received messages as MessageEvent<T>
 
 containerRegistry.RegisterInstance(client);
@@ -453,8 +455,7 @@ protected override async void OnStartup(StartupEventArgs e)
     });
 
     builder.Services.AddMessaging(messaging => messaging
-        .AddBus("Modern", builder.Configuration.GetSection("Messaging:Buses:Modern"))
-        .AddMessages(typeof(EmployeeSaved).Assembly));    // receive every [Message] class in it
+        .AddBus("Modern", builder.Configuration.GetSection("Messaging:Buses:Modern")));
     builder.Services.AddSingleton<MainWindowViewModel>();
     builder.Services.AddSingleton<MainWindow>();
 
@@ -481,7 +482,9 @@ publisher.Publish(new EmployeeSaved { Id = 7, Name = "Ada" });
 
 **Things to know about `IMessageSubscriber`:**
 
-- A message type must be **received** for its subscribers to be called: add it with `AddMessages(assembly)` or a handler.
+- **Subscribing is what binds the queue**, so a client only receives what it listens for and nothing has to be
+  registered. The message class needs `[Message("...")]`. The binding is created in the background, so a message
+  published right after subscribing can be missed. `MessageEvent<T>` subscriptions work the same way.
 - `Subscribe` returns an `IDisposable`. **Dispose it to unsubscribe.** Subscriptions are strong references (Prism's
   are weak), so a window or view model that goes away before the app ends must dispose its subscriptions.
 - **With a synchronization context** (the UI thread's), the call is posted to it and runs later. Its exceptions go to
@@ -530,7 +533,7 @@ publisher.Publish(order, new PublishOptions { Bus = "Partners" });
 
 ```csharp
 messaging.Subscribe("AppA", "AppA.Events.#");                                    // another app's exchange
-messaging.AddMessages(typeof(OrderSaved).Assembly);                              // receive without handlers
+messaging.AddMessages(typeof(OrderSaved).Assembly);                              // bind everything, for a custom sink
 services.AddSingleton<IMessageSink, MySink>();                                   // see every message
 using (CorrelationContext.Begin(requestId)) { ... }                              // correlation ID for published messages
 ```

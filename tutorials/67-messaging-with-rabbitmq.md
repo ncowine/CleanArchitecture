@@ -649,8 +649,7 @@ recipe C in the [messaging guide](../docs/messaging/README.md#c-a-modern-wpf-app
 ```csharp
 // App.xaml.cs
 builder.Services.AddMessaging(messaging => messaging
-    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
-    .AddMessages(typeof(EquipmentCreated).Assembly)); // receive every [Message] class in Equipment.Messages
+    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main")));
 
 // A view model
 public MainWindowViewModel(IMessageSubscriber subscriber)
@@ -862,7 +861,7 @@ When connecting a new event:
 | Rows dead-lettered with *Unknown outbox message type* | The class isn't in the assembly given to `AddOutboxPublishing`, or was renamed | Move it there (or restore the old name), then replay |
 | An event goes out but a legacy app never sees it | Wrong wire name; a custom routing key; or it's on an exchange the app doesn't bind | Compare `event-type` with the legacy type's full name; check the queue's bindings in the management UI |
 | A legacy app receives it but fields are empty | Property names or types don't match the legacy payload | Match them exactly, including case |
-| A modern app receives nothing | Not subscribed to the API's exchange; the type isn't in `AddMessages`; or the app wasn't running when it was sent | Check `Subscriptions` and `AddMessages`; load state on start-up |
+| A modern app receives nothing | Not subscribed to the API's exchange; nothing calls `Subscribe` for the type; or the app wasn't running when it was sent | Check `Subscriptions` and the `Subscribe` call; load state on start-up |
 | Log: *Exchange 'X' does not exist yet; waiting for its owner* | The app that owns exchange X hasn't started | Start it; the subscriber connects on its own |
 | Log: *Queue 'X' already exists with different settings* | A shared-queue setting changed | [Trap 17.6](#176-changing-a-shared-queues-settings) |
 | Log: *PRECONDITION_FAILED … inequivalent arg 'type'* | Two apps declared one exchange with different types | Make them agree — keep `topic` |
@@ -893,8 +892,7 @@ _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(Equipment
 
 ```csharp
 services.AddMessaging(m => m
-    .AddBus("Main", configuration.GetSection("Messaging:Buses:Main"))
-    .AddMessages(typeof(EquipmentCreated).Assembly));
+    .AddBus("Main", configuration.GetSection("Messaging:Buses:Main")));
 
 IDisposable sub = subscriber.Subscribe<EquipmentCreated>(OnCreated, SynchronizationContext.Current);
 ```

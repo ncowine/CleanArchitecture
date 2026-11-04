@@ -381,7 +381,7 @@ keep the password out of `appsettings.json` (environment variable or secret stor
 A receiving app **binds its own queue to the API's exchange, `CleanArch`**, and registers the message classes it
 wants. The API knows nothing about it. The working examples are in
 [`samples/MessagingPocs`](../../samples/MessagingPocs/README.md): `Poc.Net10` (modern, below as Option A) and
-`Poc.Net472` / `Poc.Net8` (legacy Prism apps, which receive the API's events as `PubSubEvent<T>` classes named after
+`Poc.Net472` / `Poc.Net8` (legacy Prism apps, which receive the API's events as `RemotePubSubEvent<T>` classes named after
 the wire names). That README also covers the one event the API receives, from the net472 app.
 
 ### What the receiver configures
@@ -395,9 +395,8 @@ the wire names). That README also covers the one event the API receives, from th
 } } }
 ```
 
-No routing keys in the subscription means *one binding per message type this app registered*, keyed by wire name. So
-`AddMessages(typeof(EquipmentCreated).Assembly)` registers the three Equipment classes, and the app gets three
-bindings: `Equipment.EquipmentCreated`, `Equipment.EquipmentUpdated`, `Equipment.EquipmentDeleted`.
+No routing keys in the subscription means *one binding per message type this app receives*, keyed by wire name. So
+subscribing to the three Equipment classes gives the app three bindings: `Equipment.EquipmentCreated`, `Equipment.EquipmentUpdated`, `Equipment.EquipmentDeleted`.
 
 ### What happens when a message arrives
 
@@ -419,8 +418,7 @@ The Generic Host runs messaging as a hosted service, and view models subscribe w
 ```csharp
 // App startup
 builder.Services.AddMessaging(messaging => messaging
-    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
-    .AddMessages(typeof(EquipmentCreated).Assembly));   // what to receive
+    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main")));
 
 // View model, created on the UI thread
 _ui = SynchronizationContext.Current;
@@ -437,7 +435,6 @@ foreach (var s in _subscriptions) s.Dispose();   // strong references: always un
 ```csharp
 var client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
     .AddBus("Main", configuration.GetSection("Messaging:Buses:Main"))
-    .AddMessages(typeof(EquipmentCreated).Assembly)
     .UseEventAggregator(eventAggregator)));
 
 eventAggregator.GetEvent<MessageEvent<EquipmentCreated>>()
@@ -612,8 +609,8 @@ The test for this design: when the last legacy app is retired, deleting `Common.
 ### What each side writes
 
 ```csharp
-// Legacy app: unchanged Prism code
-public class OrderSaved : PubSubEvent<Order> { }
+// Legacy app: Prism code, with the base class that makes an event travel
+public class OrderSaved : RemotePubSubEvent<Order> { }
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);
 eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UIThread);
 
@@ -669,8 +666,7 @@ public async Task<Unit> Handle(Command command, CancellationToken ct)
 }
 ```
 
-**3. A receiver** subscribes. `AddMessages(typeof(EquipmentCreated).Assembly)` already picks up the new class, so only
-the subscription is new:
+**3. A receiver** subscribes, which also binds its queue to the new message:
 
 ```csharp
 _subscriptions.Add(subscriber.Subscribe<EquipmentRetired>(List.Apply, _ui));
@@ -681,7 +677,7 @@ _subscriptions.Add(subscriber.Subscribe<EquipmentRetired>(List.Apply, _ui));
 | Skipped | Symptom |
 | --- | --- |
 | The contract outside `Equipment.Messages` | Row is written, then fails with "Unknown outbox message type 'EquipmentRetired'" and is dead-lettered after 3 attempts |
-| The receiver's `AddMessages` | No binding for the new wire name; the queue never gets the message, and nothing errors |
+| The receiver's subscription | No binding for the new wire name; the queue never gets the message, and nothing errors |
 
 ### Check it works
 

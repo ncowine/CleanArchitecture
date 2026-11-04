@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Common.RabbitMQ.Tests.Broker;
 using Common.RabbitMQ.Tests.Golden;
+using Common.RabbitMQ.Tests.LegacyModel;
 using Compat.Events;
 using Messaging;
 using Messaging.Hosting;
@@ -100,6 +101,34 @@ namespace Common.RabbitMQ.Tests.Hosting
                     client.Publisher.Publish(GoldenMessage());
 
                     CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await baseline.Received.Next(TestBus.Timeout));
+                }
+            }
+        }
+
+        [Fact]
+        public async Task Subscribing_BeforeTheClientStarts_BindsWhenItConnects()
+        {
+            await using (TestBus bus = await TestBus.Create())
+            {
+                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                await bus.WaitUntilConnected();
+
+                using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+                    .AddBus(CompatBus.Name, options => Configure(options, bus)))))
+                {
+                    Received<CompatMessage> received = new Received<CompatMessage>();
+                    client.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
+
+                    await client.StartAsync(TestContext.Current.CancellationToken);
+                    RabbitMQBus busClient = client.Services.GetRequiredKeyedService<RabbitMQBus>(CompatBus.Name);
+                    for (int i = 0; i < 100 && !busClient.IsConsumerConnected; i++)
+                    {
+                        await Task.Delay(100, TestContext.Current.CancellationToken);
+                    }
+
+                    baseline.PublishRemote(CompatPayloads.Golden());
+
+                    Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
                 }
             }
         }
