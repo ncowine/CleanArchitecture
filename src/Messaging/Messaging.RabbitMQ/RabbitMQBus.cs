@@ -43,6 +43,7 @@ namespace Messaging.RabbitMQ
         private readonly ConcurrentQueue<PendingMessage> outstandingMessages = new ConcurrentQueue<PendingMessage>();
         private readonly ConcurrentDictionary<string, MessageRegistration> subscriptions =
             new ConcurrentDictionary<string, MessageRegistration>(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, bool> released = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
         private readonly SemaphoreSlim consumerLock = new SemaphoreSlim(1, 1);
         private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
 
@@ -275,7 +276,10 @@ namespace Messaging.RabbitMQ
             return new PendingMessage(context, body);
         }
 
-        /// <summary>Starts receiving <paramref name="registration"/>. Does nothing when already subscribed.</summary>
+        /// <summary>
+        /// Starts receiving <paramref name="registration"/>. Does nothing when already subscribed. The bus knows the message
+        /// type before this returns; the binding is created on a background thread, or on the next connect when not connected.
+        /// </summary>
         public async Task Subscribe(MessageRegistration registration)
         {
             EnsureNotDisposed();
@@ -285,26 +289,49 @@ namespace Messaging.RabbitMQ
                 throw new ArgumentNullException(nameof(registration));
             }
 
+            released.TryRemove(registration.WireName, out _);
+
             if (!subscriptions.TryAdd(registration.WireName, registration))
             {
                 return;
             }
 
-            // If not connected the binding is created on the next connect.
-            await BindOrUnbind(registration.WireName, bind: true, cancellation.Token).ConfigureAwait(false);
+            if (started && IsShared)
+            {
+                logger.LogWarning("[{Bus}] '{WireName}' was subscribed after the bus started. Messages for it that reached this durable queue earlier may have been dead-lettered or dropped: subscribe before starting.",
+                    options.BusName, registration.WireName);
+            }
+
+            await ApplyBindingInBackground(registration.WireName).ConfigureAwait(false);
         }
 
-        /// <summary>Stops receiving <paramref name="wireName"/>. Publishing is not affected.</summary>
+        /// <summary>Stops receiving <paramref name="wireName"/>, for every instance on a shared queue. Publishing is not affected.</summary>
         public async Task Unsubscribe(string wireName)
         {
             EnsureNotDisposed();
 
-            if (wireName == null || !subscriptions.TryRemove(wireName, out MessageRegistration removed))
+            if (wireName == null || !subscriptions.TryRemove(wireName, out _))
             {
                 return;
             }
 
-            await BindOrUnbind(removed.WireName, bind: false, cancellation.Token).ConfigureAwait(false);
+            await ApplyBindingInBackground(wireName).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// This application has no more subscribers for <paramref name="wireName"/>. A per-instance queue is unbound. A shared
+        /// queue's binding belongs to every instance of the service once running, so it stays, and this instance acknowledges
+        /// and drops the messages the broker gives it, with a warning at the first.
+        /// </summary>
+        public Task ReleaseSubscription(string wireName)
+        {
+            if (IsShared && started)
+            {
+                released[wireName] = true;
+                return Task.CompletedTask;
+            }
+
+            return Unsubscribe(wireName);
         }
 
         public void Dispose()
@@ -563,7 +590,18 @@ namespace Messaging.RabbitMQ
             await CloseQuietly(channel, connection).ConfigureAwait(false);
         }
 
-        private async Task BindOrUnbind(string wireName, bool bind, CancellationToken token)
+        /// <summary>Off the caller's thread, usually the UI thread, because this talks to the broker.</summary>
+        private Task ApplyBindingInBackground(string wireName)
+        {
+            CancellationToken token = cancellation.Token;
+            return Task.Run(() => ApplyBinding(wireName, token));
+        }
+
+        /// <summary>
+        /// Makes the broker match <see cref="subscriptions"/> as it is once the lock is held, so a quick unsubscribe and
+        /// subscribe end in the right state whichever finishes first.
+        /// </summary>
+        private async Task ApplyBinding(string wireName, CancellationToken token)
         {
             await consumerLock.WaitAsync(token).ConfigureAwait(false);
             try
@@ -575,6 +613,7 @@ namespace Messaging.RabbitMQ
                     return;
                 }
 
+                bool bind = subscriptions.ContainsKey(wireName);
                 foreach (QueueBinding binding in BindingsFor(wireName))
                 {
                     await Bind(channel, queueName, binding, bind, token).ConfigureAwait(false);
@@ -627,6 +666,12 @@ namespace Messaging.RabbitMQ
                 // With only per-type bindings an unknown message is a mistake worth keeping. Pattern and header
                 // subscriptions bring in unhandled types by design, so those are just skipped.
                 return IsShared && !HasFixedBindings() ? MessageSettlement.DeadLetter : MessageSettlement.Ack;
+            }
+
+            if (released.TryRemove(wireName, out _))
+            {
+                logger.LogWarning("[{Bus}] '{WireName}' has no subscribers left on this instance, but its shared queue stays bound for the other instances. Messages the broker gives this instance are dropped.",
+                    options.BusName, wireName);
             }
 
             headers.TryGetValue(WireHeaders.CorrelationId, out string correlationId);

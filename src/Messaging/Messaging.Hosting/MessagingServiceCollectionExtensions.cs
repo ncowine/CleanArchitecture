@@ -34,9 +34,12 @@ namespace Messaging.Hosting
             services.AddSingleton<MessageSubscriber>();
             services.AddSingleton<IMessageSubscriber>(provider => provider.GetRequiredService<MessageSubscriber>());
             services.AddSingleton<IMessageSink>(provider => provider.GetRequiredService<MessageSubscriber>());
-            services.AddHostedService<MessagingHostedService>();
 
             configure(new MessagingBuilder(services, registry));
+
+            // Last, so what configure adds starts first: the event aggregator bridge tells the buses what was already
+            // subscribed before they connect, or a durable queue's backlog would look unknown.
+            services.AddHostedService<MessagingHostedService>();
             return services;
         }
 

@@ -1,6 +1,7 @@
 using System;
 using Messaging.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Prism.Events;
 
 namespace Messaging.Prism
@@ -24,7 +25,7 @@ namespace Messaging.Prism
             }
 
             builder.Services.AddSingleton<IMessageSink>(new EventAggregatorSink(eventAggregator));
-            builder.Services.AddHostedService<MessageEventReceiver>();
+            builder.Services.AddSingleton<IHostedService>(provider => new MessageEventReceiver(provider.GetRequiredService<IMessageSubscriber>(), eventAggregator));
             return builder;
         }
     }

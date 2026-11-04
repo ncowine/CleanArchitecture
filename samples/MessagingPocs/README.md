@@ -60,10 +60,8 @@ couldn't read one anyway. It doesn't even reference the legacy events project.
 | A row was selected (**local only**) | none: never on the wire | net472, net8, inside the app | `PubSubEvent<EquipmentRow?>` |
 
 **Local-only events.** `EquipmentSelected` (in each legacy app's own `Events/` folder) is raised with plain
-`Publish()` and heard by the status bar's view model in the same app. What keeps it off the broker is where it lives:
-the adapter only knows the assemblies registered in `App.xaml.cs` (`Poc.Legacy.Events`), so an event in the app's own
-assembly gets no binding, is never received, and `PublishRemote` on it throws. Keep app-internal events out of the
-registered events assembly.
+`Publish()` and heard by the status bar's view model in the same app. What keeps it off the broker is its base class:
+it's a plain `PubSubEvent<T>`, so it gets no binding, is never received, and `PublishRemote` on it throws.
 
 **How one wire carries both formats.** A legacy app knows an event by its class's **full name**; a modern app or the
 API by its `[Message("…")]` name. The body is JSON either way. So:
@@ -170,7 +168,8 @@ Each is explained where it happens in the code.
 
 **Modern format (net10)**
 
-- ❌ Expecting a message published right after subscribing. Subscribing binds the queue in the background.
+- ❌ Expecting a message published right after subscribing, or while nothing is subscribed. Subscribing binds the queue
+  in the background, and the last subscriber going removes the binding (a durable shared queue keeps it).
 - ❌ Forgetting to dispose `IMessageSubscriber` subscriptions. Strong references: closed windows leak.
 - ❌ Adding a legacy app's exchange to `Subscriptions`. That ends "API only".
 - ❌ Publishing. No `IMessagePublisher`: modern apps only listen.
@@ -229,7 +228,7 @@ also handles this event, and deletes that equipment if it's running.
 window. A tuple's names don't reach the wire, so the JSON is `{"Item1":"...","Item2":"..."}`, and the API's
 `EquipmentFlagged` class maps those with `[JsonPropertyName]`. It's received with `IMessageSubscriber.Subscribe` in
 `Program.cs` rather than a handler class, to show both styles: subscribing binds the queue, and a message that arrives
-before `Subscribe` is called is acknowledged and lost, so subscribe before `app.Run()`. Receiving into a tuple, or into a class without that
+before `Subscribe` is called is dead-lettered, so subscribe before `app.Run()`. Receiving into a tuple, or into a class without that
 mapping, doesn't throw: the values just come out as `Guid.Empty` and empty. The real API doesn't handle this event.
 
 **What you give up:** a change and its event can't be saved in one transaction. A database save can succeed and the

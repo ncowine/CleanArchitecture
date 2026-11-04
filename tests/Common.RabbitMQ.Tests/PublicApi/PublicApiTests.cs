@@ -58,6 +58,12 @@ namespace Common.RabbitMQ.Tests.PublicApi
             // Subscribing binds the event (ADR 0002, update 2026-11-04).
             "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Subscribe(System.Action<TPayload>, Prism.Events.ThreadOption, System.Boolean, System.Predicate<TPayload>) : Prism.Events.SubscriptionToken",
 
+            // The last subscriber going removes the binding (ADR 0002, update 2026-11-04).
+            "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Unsubscribe(Prism.Events.SubscriptionToken) : System.Void",
+            "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Unsubscribe(System.Action<TPayload>) : System.Void",
+            "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Publish(TPayload) : System.Void",
+            "implements Common.RabbitMQ.RemotePubSubEvent<TPayload> : Common.RabbitMQ.IRemoteEvent",
+
             // Section 3: routing keys chosen by the publisher.
             "interface Common.RabbitMQ.IRoutingKeyPublisher",
             "method abstract Common.RabbitMQ.IRoutingKeyPublisher.Publish(System.Type, System.Object, System.String) : System.Void",

@@ -19,7 +19,9 @@ namespace Messaging.Hosting
         private readonly IServiceProvider provider;
         private readonly MessagingRegistry registry;
         private readonly object gate = new object();
-        private readonly Dictionary<string, Type> receiving = new Dictionary<string, Type>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Type> wireNameOwners = new Dictionary<string, Type>(StringComparer.Ordinal);
+        private readonly HashSet<Type> receiving = new HashSet<Type>();
+        private readonly Dictionary<Type, int> requested = new Dictionary<Type, int>();
         private Dictionary<Type, MessageSubscription[]> subscriptions = new Dictionary<Type, MessageSubscription[]>();
 
         public MessageSubscriber(IServiceProvider provider, MessagingRegistry registry)
@@ -35,32 +37,36 @@ namespace Messaging.Hosting
                 throw new ArgumentNullException(nameof(messageType));
             }
 
-            string wireName = WireNames.Get(messageType);
+            lock (gate)
+            {
+                StartReceiving(messageType);
+                requested.TryGetValue(messageType, out int count);
+                requested[messageType] = count + 1;
+            }
+        }
+
+        public void StopReceiving(Type messageType)
+        {
+            if (messageType == null)
+            {
+                throw new ArgumentNullException(nameof(messageType));
+            }
 
             lock (gate)
             {
-                if (receiving.TryGetValue(wireName, out Type existing) && existing == messageType)
+                if (!requested.TryGetValue(messageType, out int count))
                 {
                     return;
                 }
 
-                // Two types with one wire name would make incoming messages ambiguous, as MessagingRegistry.Validate says at startup.
-                Type other = existing ?? registry.BusNames
-                    .SelectMany(registry.GetMessageRegistrations)
-                    .FirstOrDefault(r => r.WireName == wireName && r.MessageType != messageType)?.MessageType;
-                if (other != null)
+                if (count > 1)
                 {
-                    throw new InvalidOperationException($"{messageType.Name} and {other.Name} both use the wire name '{wireName}'.");
+                    requested[messageType] = count - 1;
+                    return;
                 }
 
-                receiving[wireName] = messageType;
-            }
-
-            MessageRegistration registration = new MessageRegistration(wireName, messageType);
-            foreach (string busName in registry.BusNames)
-            {
-                // Binding talks to the broker, so it stays off the caller's thread, usually the UI thread.
-                Task.Run(() => Bind(busName, registration));
+                requested.Remove(messageType);
+                StopIfUnused(messageType);
             }
         }
 
@@ -111,16 +117,62 @@ namespace Messaging.Hosting
             }
         }
 
-        /// <summary>A failure is only logged: the bus keeps the subscription and binds it the next time it connects.</summary>
-        private async Task Bind(string busName, MessageRegistration registration)
+        private void StartReceiving(Type messageType)
+        {
+            string wireName = WireNames.Get(messageType);
+
+            // Two types with one wire name would make incoming messages ambiguous, as MessagingRegistry.Validate says at
+            // startup. The owner is never forgotten: a shared queue's bus keeps the first type even with no subscribers left.
+            Type other = wireNameOwners.TryGetValue(wireName, out Type owner)
+                ? owner
+                : registry.BusNames.SelectMany(registry.GetMessageRegistrations).FirstOrDefault(r => r.WireName == wireName)?.MessageType;
+            if (other != null && other != messageType)
+            {
+                throw new InvalidOperationException($"{messageType.Name} and {other.Name} both use the wire name '{wireName}'.");
+            }
+
+            wireNameOwners[wireName] = messageType;
+
+            if (!receiving.Add(messageType))
+            {
+                return;
+            }
+
+            MessageRegistration registration = new MessageRegistration(wireName, messageType);
+            foreach (string busName in registry.BusNames)
+            {
+                _ = ChangeBinding(busName, wireName, bus => bus.Subscribe(registration));
+            }
+        }
+
+        private void StopIfUnused(Type messageType)
+        {
+            if (requested.ContainsKey(messageType) || subscriptions.ContainsKey(messageType) || !receiving.Remove(messageType))
+            {
+                return;
+            }
+
+            string wireName = WireNames.Get(messageType);
+            foreach (string busName in registry.BusNames)
+            {
+                // Handlers and AddMessages keep a type bound for the life of the application.
+                if (!registry.GetMessageRegistrations(busName).Any(r => r.WireName == wireName))
+                {
+                    _ = ChangeBinding(busName, wireName, bus => bus.ReleaseSubscription(wireName));
+                }
+            }
+        }
+
+        /// <summary>A failure is only logged: the bus remembers what was asked and applies it the next time it connects.</summary>
+        private async Task ChangeBinding(string busName, string wireName, Func<RabbitMQBus, Task> change)
         {
             try
             {
-                await provider.GetRequiredKeyedService<RabbitMQBus>(busName).Subscribe(registration).ConfigureAwait(false);
+                await change(provider.GetRequiredKeyedService<RabbitMQBus>(busName)).ConfigureAwait(false);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException || ex is ObjectDisposedException))
             {
-                provider.GetService<ILogger<MessageSubscriber>>()?.LogError(ex, "[{Bus}] Could not bind {WireName}.", busName, registration.WireName);
+                provider.GetService<ILogger<MessageSubscriber>>()?.LogError(ex, "[{Bus}] Could not change the binding for {WireName}.", busName, wireName);
             }
             catch (Exception)
             {
@@ -131,10 +183,10 @@ namespace Messaging.Hosting
         /// <summary>Copy-on-write, so delivery never takes the lock.</summary>
         private IDisposable Add(MessageSubscription subscription)
         {
-            Receive(subscription.MessageType);
-
             lock (gate)
             {
+                StartReceiving(subscription.MessageType);
+
                 Dictionary<Type, MessageSubscription[]> next = new Dictionary<Type, MessageSubscription[]>(subscriptions);
                 next[subscription.MessageType] = next.TryGetValue(subscription.MessageType, out MessageSubscription[] existing)
                     ? existing.Concat(new[] { subscription }).ToArray()
@@ -166,6 +218,7 @@ namespace Messaging.Hosting
                 }
 
                 Volatile.Write(ref subscriptions, next);
+                StopIfUnused(subscription.MessageType);
             }
         }
     }

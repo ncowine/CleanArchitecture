@@ -381,7 +381,9 @@ eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions {
 
 `RemotePubSubEvent<T>` is for events that travel, and `PubSubEvent<T>` for events that stay inside the app. A
 `RemotePubSubEvent<T>` needs no registration: subscribing to it binds the queue, on every bus, so an app only receives what
-it listens for. The binding is created in the background, so a message published right after subscribing can be missed.
+it listens for, and the binding is removed when the last subscriber goes. A subscriber held weakly gives no signal when it
+is collected, so that one is noticed at the next message. Bindings change in the background, so a message published right
+after subscribing, or while nothing is subscribed, is missed.
 An assembly of plain events not yet moved over can still travel with `RemoteEventRegistry.Add`, but all its events are
 bound at startup, used or not. `[RemoteEvent("bus")]` is gone, so remove it when you take this version.
 
@@ -486,7 +488,13 @@ publisher.Publish(new EmployeeSaved { Id = 7, Name = "Ada" });
   registered. The message class needs `[Message("...")]`. The binding is created in the background, so a message
   published right after subscribing can be missed. `MessageEvent<T>` subscriptions work the same way.
 - `Subscribe` returns an `IDisposable`. **Dispose it to unsubscribe.** Subscriptions are strong references (Prism's
-  are weak), so a window or view model that goes away before the app ends must dispose its subscriptions.
+  are weak), so a window or view model that goes away before the app ends must dispose its subscriptions. When the last
+  subscriber for a type goes, its binding is removed, unless a handler or `AddMessages` still wants the type.
+- **On a durable shared queue, subscribe before starting and stay subscribed.** The queue keeps last run's bindings and
+  messages, and a message for a type the app doesn't know yet is dead-lettered; subscribing later logs a warning. Its
+  binding belongs to every instance, so unsubscribing leaves it, and the broker can hand a message to an instance with
+  no subscriber left, which drops it and logs a warning at the first. Telemetry still counts those as handled. Give all
+  instances the same subscriptions.
 - **With a synchronization context** (the UI thread's), the call is posted to it and runs later. Its exceptions go to
   the dispatcher (`Application.DispatcherUnhandledException`), not to the message, so they don't cause retries.
 - **Without one**, or with the async overload `Subscribe<T>((message, context, token) => ...)`, it runs on the

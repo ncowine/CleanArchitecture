@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -21,6 +22,7 @@ namespace Common.RabbitMQ
         private readonly IEventAggregator eventAggregator;
         private readonly RemoteEventRegistry registry;
         private readonly string instanceId = Guid.NewGuid().ToString("N");
+        private readonly ConcurrentDictionary<string, bool> registeredQueues = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
 
         private RabbitMQConfig config;
         private RabbitMQBus bus;
@@ -76,16 +78,16 @@ namespace Common.RabbitMQ
 
             bus = new RabbitMQBus(CreateOptions(config), NewtonsoftMessageSerializer.Instance, new PrismDispatcher(eventAggregator, registry), null, logger);
 
+            int subscribedEvents = RemoteEventSubscriptions.Join(this);
+
             List<MessageRegistration> registrations = registry.BoundAtStart
-                .Concat(RemoteEventSubscriptions.Join(this).Select(FindOwn).Where(d => d != null))
-                .Distinct()
                 .Select(d => new MessageRegistration(d.EventName, d.PayloadType))
                 .ToList();
 
             bus.Start(registrations);
 
             logger.LogInformation("[{Bus}] Initialized with {Count} event(s) on {Host}:{Port}{VirtualHost} exchange '{Exchange}'.",
-                config.BusName, registrations.Count, config.HostName, config.Port, FormatVirtualHost(config.VirtualHost), config.ExchangeName);
+                config.BusName, registrations.Count + subscribedEvents, config.HostName, config.Port, FormatVirtualHost(config.VirtualHost), config.ExchangeName);
         }
 
         /// <summary>
@@ -119,14 +121,15 @@ namespace Common.RabbitMQ
         }
 
         /// <summary>
-        /// Starts receiving <paramref name="eventType"/> from the bus. Subscribing to the event does this for you; use it
-        /// after <see cref="UnregisterQueue"/> to resume.
+        /// Starts receiving <paramref name="eventType"/> from the bus, until <see cref="UnregisterQueue"/>, whether or not
+        /// anything is subscribed. Subscribing to the event does this for as long as it has subscribers.
         /// </summary>
         public async Task RegisterQueue(Type eventType)
         {
             EnsureInitialized();
 
             RemoteEventDescriptor descriptor = GetDescriptor(eventType);
+            registeredQueues[descriptor.EventName] = true;
             await bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType)).ConfigureAwait(false);
         }
 
@@ -136,6 +139,7 @@ namespace Common.RabbitMQ
             EnsureInitialized();
 
             RemoteEventDescriptor descriptor = GetDescriptor(eventType);
+            registeredQueues.TryRemove(descriptor.EventName, out _);
             await bus.Unsubscribe(descriptor.EventName).ConfigureAwait(false);
         }
 
@@ -151,29 +155,41 @@ namespace Common.RabbitMQ
             bus?.Dispose();
         }
 
-        /// <summary>Starts receiving <paramref name="remoteEvent"/> if it belongs to this service's aggregator.</summary>
-        internal void Receive(object remoteEvent)
+        /// <summary>Starts receiving <paramref name="remoteEvent"/> if it belongs to this service's aggregator, and says whether it does.</summary>
+        internal bool Receive(IRemoteEvent remoteEvent)
         {
             RemoteEventDescriptor descriptor = FindOwn(remoteEvent);
-            if (descriptor != null)
+            if (descriptor == null)
             {
-                // Binding talks to the broker, so it stays off the caller's thread, usually the UI thread.
-                Task.Run(() => Bind(descriptor));
+                return false;
+            }
+
+            _ = LogFailure(bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType)), descriptor);
+            return true;
+        }
+
+        /// <summary>Stops receiving <paramref name="remoteEvent"/> if it belongs to this service's aggregator, unless <see cref="RegisterQueue"/> asked for it.</summary>
+        internal void StopReceiving(IRemoteEvent remoteEvent)
+        {
+            RemoteEventDescriptor descriptor = FindOwn(remoteEvent);
+            if (descriptor != null && !registeredQueues.ContainsKey(descriptor.EventName))
+            {
+                _ = LogFailure(bus.ReleaseSubscription(descriptor.EventName), descriptor);
             }
         }
 
-        private RemoteEventDescriptor FindOwn(object remoteEvent)
+        private RemoteEventDescriptor FindOwn(IRemoteEvent remoteEvent)
         {
             RemoteEventDescriptor descriptor = registry.Find(remoteEvent.GetType());
             return ReferenceEquals(descriptor?.GetEvent(eventAggregator), remoteEvent) ? descriptor : null;
         }
 
-        /// <summary>A failure is only logged: the bus keeps the subscription and binds it the next time it connects.</summary>
-        private async Task Bind(RemoteEventDescriptor descriptor)
+        /// <summary>A failure is only logged: the bus remembers what was asked and applies it the next time it connects.</summary>
+        private async Task LogFailure(Task bindingChange, RemoteEventDescriptor descriptor)
         {
             try
             {
-                await bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType)).ConfigureAwait(false);
+                await bindingChange.ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is OperationCanceledException || ex is ObjectDisposedException)
             {
@@ -181,7 +197,7 @@ namespace Common.RabbitMQ
             }
             catch (Exception ex)
             {
-                (Logger ?? TraceLogger.Instance).LogError(ex, "[{Bus}] Could not bind {Event}.", config.BusName, descriptor.EventName);
+                (Logger ?? TraceLogger.Instance).LogError(ex, "[{Bus}] Could not change the binding for {Event}.", config.BusName, descriptor.EventName);
             }
         }
 
