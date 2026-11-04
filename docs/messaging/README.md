@@ -366,9 +366,8 @@ a default routing key per event, used by `PublishRemote`.
 
 ```csharp
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);                   // local subscribers + other apps
-eventAggregator.GetEvent<OrderSaved>().PublishRemoteTo("orders.eu.saved", order); // with a custom routing key
 eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnly(order);               // other apps only, not local subscribers
-eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnlyTo("orders.eu.saved", order); // other apps only, custom key
+eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions { RoutingKey = "orders.eu.saved" }); // custom routing key
 eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UIThread);
 ```
 
@@ -376,8 +375,8 @@ Events don't belong to a bus. With one bus there is nothing to choose. With seve
 configuration; to send one event elsewhere, pass that bus:
 
 ```csharp
-eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);                                   // the default bus
-eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, router.GetRequiredBus("Partners")); // another bus
+eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);              // the default bus
+eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions { Bus = "Partners" });  // another bus
 ```
 
 Every registered event is received on every bus. `RemotePubSubEvent<T>` still works and needs no attribute;
@@ -430,10 +429,10 @@ await client.StartAsync();                         // connects in the background
 eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().Subscribe(OnSaved, ThreadOption.UIThread);
 eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemote(saved);      // other apps + local subscribers
 eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemoteOnly(saved);  // other apps only
+eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemote(saved, new PublishOptions { Bus = "Partners", RoutingKey = "employees.eu" });
 ```
 
-`PublishRemote` finds the publisher through Prism's container, just like the legacy version. `PublishRemoteTo` and
-`PublishRemoteOnlyTo` take a routing key first.
+`PublishRemote` finds the publisher through Prism's container, just like the legacy version.
 
 ### C. A modern WPF app without Prism (.NET 8)
 
@@ -799,7 +798,7 @@ The full reasoning is in the two ADRs. The short version:
 | Messages pile up in `*.dead-letter` | A handler keeps failing, or the body can't be read. | Read the message in the management UI (`x-first-death-reason` says why), fix the cause, then move it back. |
 | `/health` is Unhealthy | A bus is disconnected. | The response lists which bus. Check the broker and the credentials. |
 | A startup error: *Messaging is misconfigured* | A handler names an unknown bus, or a class has no `[Message]`. | The message lists every problem. Fix them in `AddMessaging`. |
-| `PublishRemoteTo` throws *does not support routing keys* | A custom `IRabbitMQService` that doesn't implement `IRoutingKeyPublisher`. | Use `RabbitMQService` or `RabbitMQServiceRouter`, or implement the interface. |
+| `PublishRemote` with a routing key throws *does not support routing keys* | A custom `IRabbitMQService` that doesn't implement `IRoutingKeyPublisher`. | Use `RabbitMQService` or `RabbitMQServiceRouter`, or implement the interface. |
 | The build crashes with *OutOfMemoryException* or hangs | Stale MSBuild worker processes. | Run `dotnet build-server shutdown`, or build with `-nr:false`. |
 | Git Bash turns a vhost of `/` into `C:/Program Files/Git/` | Git Bash path conversion. | Set such environment variables from PowerShell instead. |
 

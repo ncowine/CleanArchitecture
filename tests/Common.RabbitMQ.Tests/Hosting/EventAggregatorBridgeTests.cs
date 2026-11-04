@@ -5,17 +5,20 @@ using Common.RabbitMQ.Tests.Golden;
 using Common.RabbitMQ.Tests.LegacyModel;
 using Compat.Events;
 using Messaging;
-using Messaging.Prism;
 using Microsoft.Extensions.DependencyInjection;
 using Prism.Events;
 using Xunit;
 
 namespace Common.RabbitMQ.Tests.Hosting
 {
+    // Inside the namespace, or the adapter's PublishRemote from the enclosing Common.RabbitMQ namespace wins.
+    using Messaging.Prism;
+
     /// <summary>
     /// Plain message classes through Prism's <see cref="IEventAggregator"/> (Messaging.Prism): the familiar Prism style for
     /// migrated WPF apps, against the frozen baseline Prism build over a real broker.
     /// </summary>
+    [Collection(PrismContainerCollection.Name)]
     public class EventAggregatorBridgeTests
     {
         /// <summary>How long to keep listening for a message that must not arrive.</summary>
@@ -62,7 +65,10 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
 
-                    eventAggregator.GetEvent<MessageEvent<CompatMessage>>().PublishRemote(GoldenMessage(), host.Services.GetRequiredService<IMessagePublisher>());
+                    using (new PublisherInContainer(host.Services.GetRequiredService<IMessagePublisher>()))
+                    {
+                        eventAggregator.GetEvent<MessageEvent<CompatMessage>>().PublishRemote(GoldenMessage());
+                    }
 
                     Assert.Equal(1, local.Count);
                     CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await baseline.Received.Next(TestBus.Timeout));
@@ -75,7 +81,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task PublishRemoteTo_UsesTheRoutingKey()
+        public async Task PublishRemote_UsesTheRoutingKey()
         {
             await using (TestBus bus = await TestBus.Create())
             {
@@ -87,7 +93,10 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await host.WaitUntilConnected();
                     WireCapture capture = await bus.Capture();
 
-                    eventAggregator.GetEvent<MessageEvent<CompatMessage>>().PublishRemoteTo("compat.eu", GoldenMessage(), host.Services.GetRequiredService<IMessagePublisher>());
+                    using (new PublisherInContainer(host.Services.GetRequiredService<IMessagePublisher>()))
+                    {
+                        eventAggregator.GetEvent<MessageEvent<CompatMessage>>().PublishRemote(GoldenMessage(), new PublishOptions { RoutingKey = "compat.eu" });
+                    }
 
                     CapturedMessage message = await capture.Next(TestBus.Timeout);
                     Assert.Equal("compat.eu", message?.RoutingKey);

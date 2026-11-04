@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using AppA.Events;
 using Common.Events;
+using Messaging;
 using Prism.Events;
 using Xunit;
 
@@ -11,10 +12,16 @@ namespace Common.RabbitMQ.Tests.Adapter
     /// <see cref="RemoteEventRegistry.Add"/> and choosing the bus when publishing (ADR 0002). None of these need a broker:
     /// services point at a port nothing listens on and only buffer messages.
     /// </summary>
-    public class RegistryAdditionsTests
+    [Collection(ServiceProviderCollection.Name)]
+    public class RegistryAdditionsTests : IDisposable
     {
         /// <summary>Nothing listens here: services start their loops but never connect.</summary>
         private const int UnreachablePort = 1;
+
+        public void Dispose()
+        {
+            RabbitMQServiceProvider.Current = null;
+        }
 
         [Fact]
         public void Add_FindsPlainPubSubEvents()
@@ -77,8 +84,9 @@ namespace Common.RabbitMQ.Tests.Adapter
                 RabbitMQService first = router.AddBus(UnreachableConfig("First"));
                 RabbitMQService second = router.AddBus(UnreachableConfig("Second"));
                 router.Init();
+                RabbitMQServiceProvider.Current = router;
 
-                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order { Id = 1 }, router);
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order { Id = 1 });
 
                 Assert.Equal(0, first.OutstandingCount);
                 Assert.Equal(1, second.OutstandingCount);
@@ -94,13 +102,46 @@ namespace Common.RabbitMQ.Tests.Adapter
                 RabbitMQService first = router.AddBus(UnreachableConfig("First"));
                 RabbitMQService second = router.AddBus(UnreachableConfig("Second"));
                 router.Init();
+                RabbitMQServiceProvider.Current = router;
 
-                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order { Id = 1 }, router.GetRequiredBus("First"));
-                new EventAggregator().GetEvent<OrderSaved>().PublishRemoteTo("orders.eu.saved", new Order { Id = 2 }, router.GetRequiredBus("First"));
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order { Id = 1 }, new PublishOptions { Bus = "First" });
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order { Id = 2 }, new PublishOptions { Bus = "First", RoutingKey = "orders.eu.saved" });
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemoteOnly(new Order { Id = 3 }, new PublishOptions { Bus = "First" });
 
-                Assert.Equal(2, first.OutstandingCount);
+                Assert.Equal(3, first.OutstandingCount);
                 Assert.Equal(0, second.OutstandingCount);
             }
+        }
+
+        [Fact]
+        public void PublishRemote_ToAnUnknownBus_ThrowsBeforeRaisingLocally()
+        {
+            RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry))
+            {
+                RabbitMQService only = router.AddBus(UnreachableConfig("Only"));
+                router.Init();
+                RabbitMQServiceProvider.Current = router;
+                EventAggregator eventAggregator = new EventAggregator();
+                int local = 0;
+                eventAggregator.GetEvent<OrderSaved>().Subscribe(_ => local++);
+
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+                    eventAggregator.GetEvent<OrderSaved>().PublishRemote(new Order { Id = 1 }, new PublishOptions { Bus = "Mistyped" }));
+
+                Assert.Contains("Mistyped", error.Message);
+                Assert.Equal(0, only.OutstandingCount);
+                Assert.Equal(0, local);
+            }
+        }
+
+        [Fact]
+        public void PublishRemote_ToANamedBus_WithoutARouter_IsRefused()
+        {
+            RabbitMQServiceProvider.Current = new PublishOnlyService();
+
+            Assert.Throws<NotSupportedException>(() =>
+                new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order(), new PublishOptions { Bus = "Partners" }));
         }
 
         [Fact]
@@ -128,12 +169,13 @@ namespace Common.RabbitMQ.Tests.Adapter
         }
 
         [Fact]
-        public void PublishRemoteTo_WithoutRoutingSupport_IsRefused()
+        public void PublishRemote_WithARoutingKey_WithoutRoutingSupport_IsRefused()
         {
             EventAggregator eventAggregator = new EventAggregator();
+            RabbitMQServiceProvider.Current = new PublishOnlyService();
 
             Assert.Throws<NotSupportedException>(() =>
-                eventAggregator.GetEvent<OrderSaved>().PublishRemoteTo("orders.eu.saved", new Order(), new PublishOnlyService()));
+                eventAggregator.GetEvent<OrderSaved>().PublishRemote(new Order(), new PublishOptions { RoutingKey = "orders.eu.saved" }));
         }
 
         private static RabbitMQConfig UnreachableConfig(string busName)

@@ -4,7 +4,7 @@ using Prism.Ioc;
 namespace Common.RabbitMQ
 {
     /// <summary>
-    /// Service locator used by <see cref="RemotePubSubEventExtensions.PublishRemote{TPayload}"/> when no service is passed in.
+    /// Service locator used by <see cref="RemotePubSubEventExtensions.PublishRemote{TPayload}"/>.
     /// Uses <see cref="Current"/> when set (e.g. in the API), otherwise Prism's <see cref="ContainerLocator"/>.
     /// </summary>
     public static class RabbitMQServiceProvider
@@ -25,7 +25,7 @@ namespace Common.RabbitMQ
             }
 
             throw new InvalidOperationException(
-                "No IRabbitMQService available. Set RabbitMQServiceProvider.Current, register it in the Prism container, or pass it to PublishRemote.");
+                "No IRabbitMQService available. Set RabbitMQServiceProvider.Current, or register it in the Prism container.");
         }
     }
 }

@@ -31,6 +31,9 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "ctor Common.RabbitMQ.RemoteEventDescriptor(System.Type, System.Type, System.String)",
             "property Common.RabbitMQ.RemoteEventDescriptor.BusName : System.String { get; }",
             "method Common.RabbitMQ.RemoteEventRegistry.GetByBus(System.String) : System.Collections.Generic.IEnumerable<Common.RabbitMQ.RemoteEventDescriptor>",
+
+            // PublishRemote takes PublishOptions instead of a service; PubSubEvent<T> covers RemotePubSubEvent<T> (ADR 0002, update 2026-11-04).
+            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Common.RabbitMQ.RemotePubSubEvent<TPayload>, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
         };
 
         /// <summary>Public API added after the baseline, each for a reason recorded in ADR 0002.</summary>
@@ -50,10 +53,9 @@ namespace Common.RabbitMQ.Tests.PublicApi
 
             // Section 4: events found by assembly, plain PubSubEvent<T>.
             "method Common.RabbitMQ.RemoteEventRegistry.Add(System.Reflection.Assembly) : Common.RabbitMQ.RemoteEventRegistry",
-            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
+            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Messaging.PublishOptions = null) : System.Void",
 
             // Section 3: routing keys chosen by the publisher.
-            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemoteTo<TPayload>(Prism.Events.PubSubEvent<TPayload>, System.String, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
             "interface Common.RabbitMQ.IRoutingKeyPublisher",
             "method abstract Common.RabbitMQ.IRoutingKeyPublisher.Publish(System.Type, System.Object, System.String) : System.Void",
             "implements Common.RabbitMQ.RabbitMQService : Common.RabbitMQ.IRoutingKeyPublisher",
@@ -63,8 +65,7 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "property Common.RabbitMQ.RabbitMQConfig.RoutingKeys : System.Collections.Generic.Dictionary<System.String, System.String> { get; set; }",
 
             // Remote only: send to other applications without raising the event locally.
-            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemoteOnly<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
-            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemoteOnlyTo<TPayload>(Prism.Events.PubSubEvent<TPayload>, System.String, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
+            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemoteOnly<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Messaging.PublishOptions = null) : System.Void",
 
             // Section 2: exchange type and subscriptions.
             "property Common.RabbitMQ.RabbitMQConfig.ExchangeType : System.String { get; set; }",

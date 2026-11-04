@@ -10,7 +10,7 @@ namespace Common.RabbitMQ
 {
     /// <summary>
     /// The application's <see cref="IRabbitMQService"/>. Holds one <see cref="RabbitMQService"/> per configured bus and
-    /// sends every event to the default bus. To send one elsewhere, pass <see cref="GetRequiredBus"/> to <c>PublishRemote</c>.
+    /// sends every event to the default bus. To send one elsewhere, name the bus: <c>PublishRemote(payload, new PublishOptions { Bus = "Partners" })</c>.
     /// </summary>
     public class RabbitMQServiceRouter : IRabbitMQService, IRoutingKeyPublisher
     {
@@ -175,7 +175,7 @@ namespace Common.RabbitMQ
             }
 
             throw new InvalidOperationException(
-                $"Cannot publish {eventType.Name}: this application has {buses.Count} buses and no default. Set Messaging:DefaultBus, or publish to a bus from GetRequiredBus.");
+                $"Cannot publish {eventType.Name}: this application has {buses.Count} buses and no default. Set Messaging:DefaultBus, or name the bus when publishing.");
         }
     }
 }
