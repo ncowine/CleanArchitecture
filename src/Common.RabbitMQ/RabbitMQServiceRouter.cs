@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Prism.Events;
 
@@ -22,6 +24,44 @@ namespace Common.RabbitMQ
         {
             this.eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        }
+
+        /// <summary>
+        /// Builds a router from the <c>Messaging</c> section of <paramref name="configuration"/>: one bus per entry in
+        /// <c>Buses</c>, the default from <c>DefaultBus</c>, and every <see cref="PubSubEvent{TPayload}"/> in
+        /// <paramref name="eventAssemblies"/>. Call <see cref="Init"/> once the application has subscribed.
+        /// </summary>
+        public static RabbitMQServiceRouter FromConfiguration(IEventAggregator eventAggregator, IConfiguration configuration, params Assembly[] eventAssemblies)
+        {
+            if (configuration == null)
+            {
+                throw new ArgumentNullException(nameof(configuration));
+            }
+
+            RemoteEventRegistry registry = new RemoteEventRegistry();
+            foreach (Assembly assembly in eventAssemblies)
+            {
+                registry.Add(assembly);
+            }
+
+            RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, registry)
+            {
+                DefaultBus = configuration["Messaging:DefaultBus"],
+            };
+
+            foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
+            {
+                RabbitMQConfig config = bus.Get<RabbitMQConfig>() ?? new RabbitMQConfig();
+                config.BusName = bus.Key;
+                router.AddBus(config);
+            }
+
+            if (router.buses.Count == 0)
+            {
+                throw new InvalidOperationException("Messaging:Buses in the configuration has no buses.");
+            }
+
+            return router;
         }
 
         /// <summary>Receives messages from every bus. Set it before <see cref="Init"/>. Null writes them to Trace.</summary>

@@ -151,7 +151,7 @@ Two ideas explain almost everything:
 | `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | Server-style setup: `AddMessaging`, handlers, `IMessageSubscriber`, System.Text.Json, telemetry, health checks, `MessagingClient`. | The API, modern WPF apps. |
 | `Messaging/Messaging.Prism` | net8.0 | Prism.Core, Messaging.Hosting | Optional bridge: plain message classes as Prism events (`MessageEvent<T>`). | Modern WPF apps that like the Prism style. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
-| `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Newtonsoft 12.0.3, the engine | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
+| `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Newtonsoft 12.0.3, Configuration.Binder, the engine | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
 | `Common.Events` | net472, net8.0 | Common.RabbitMQ | The demo apps' Prism events (`EmployeeUpdated` and others). | Demo WPF apps. |
 | `WpfApp.Net472` | net472 | the above | Demo legacy desktop app. | You, to try things. |
 | `WpfApp.Net8` | net8.0-windows | the above | Demo modern desktop app. It uses **both** styles side by side: Prism events on its Legacy bus, plain classes on its Modern bus. | You, and as the reference for migrating apps that keep Prism. |
@@ -315,33 +315,28 @@ Your events stay exactly as they are: plain Prism events, no attributes, no spec
 public class OrderSaved : PubSubEvent<Order> { }
 ```
 
-**1. Register the events assemblies, once, where the app starts:**
+**1. Build the router, once, where the app starts:**
 
 ```csharp
-RemoteEventRegistry registry = new RemoteEventRegistry()
-    .Add(typeof(OrderSaved).Assembly)            // your app's events
-    .Add(typeof(UserChanged).Assembly);          // shared events (netstandard2.0)
-
 IConfiguration configuration = new ConfigurationBuilder()
     .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
     .AddJsonFile("appsettings.json")
     .AddEnvironmentVariables()                   // Messaging__Buses__AppB__Password at deployment
     .Build();
 
-RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, registry);
-foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
-{
-    RabbitMQConfig config = bus.Get<RabbitMQConfig>();
-    config.BusName = bus.Key;
-    router.AddBus(config);
-}
+RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(
+    eventAggregator,
+    configuration,                               // Messaging:Buses and Messaging:DefaultBus
+    typeof(OrderSaved).Assembly,                 // your app's events
+    typeof(UserChanged).Assembly);               // shared events (netstandard2.0)
 
 containerRegistry.RegisterInstance(router);
 containerRegistry.RegisterInstance<IRabbitMQService>(router);
 router.Init();                                   // connects in the background
 ```
 
-It needs the `Microsoft.Extensions.Configuration.Json` and `.Binder` packages (they support .NET Framework 4.7.2).
+To read `appsettings.json` the app needs the `Microsoft.Extensions.Configuration.Json` package (it supports .NET
+Framework 4.7.2). `RemoteEventRegistry` and `router.AddBus` are still there for an app that builds its buses in code.
 
 **2. Configure appsettings.json**, the same `Messaging:Buses` section every app uses:
 
@@ -378,10 +373,9 @@ eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UITh
 ```
 
 Events don't belong to a bus. With one bus there is nothing to choose. With several, set `Messaging:DefaultBus` in
-configuration and assign it to `router.DefaultBus` before `Init`; to send one event elsewhere, pass that bus:
+configuration; to send one event elsewhere, pass that bus:
 
 ```csharp
-router.DefaultBus = configuration["Messaging:DefaultBus"];
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);                                   // the default bus
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, router.GetRequiredBus("Partners")); // another bus
 ```

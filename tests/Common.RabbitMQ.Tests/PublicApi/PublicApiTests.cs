@@ -45,6 +45,9 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "property Common.RabbitMQ.RabbitMQServiceRouter.DefaultBus : System.String { get; set; }",
             "method Common.RabbitMQ.RabbitMQServiceRouter.GetRequiredBus(System.String) : Common.RabbitMQ.RabbitMQService",
 
+            // Application startup in one call instead of a registry, a router and a loop over the configuration.
+            "method static Common.RabbitMQ.RabbitMQServiceRouter.FromConfiguration(Prism.Events.IEventAggregator, Microsoft.Extensions.Configuration.IConfiguration, System.Reflection.Assembly[]) : Common.RabbitMQ.RabbitMQServiceRouter",
+
             // Section 4: events found by assembly, plain PubSubEvent<T>.
             "method Common.RabbitMQ.RemoteEventRegistry.Add(System.Reflection.Assembly) : Common.RabbitMQ.RemoteEventRegistry",
             "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
