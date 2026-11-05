@@ -16,7 +16,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 
     /// <summary>
     /// Plain message classes through Prism's <see cref="IEventAggregator"/> (Messaging.Prism): the familiar Prism style for
-    /// migrated WPF apps, against the frozen baseline Prism build over a real broker.
+    /// migrated WPF apps, against the legacy adapter over a real broker.
     /// </summary>
     [Collection(PrismContainerCollection.Name)]
     public class EventAggregatorBridgeTests
@@ -29,7 +29,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 EventAggregator eventAggregator = new EventAggregator();
                 Received<CompatMessage> received = Listen(eventAggregator);
 
@@ -39,7 +39,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
 
-                    baseline.PublishRemote(CompatPayloads.Golden());
+                    legacy.PublishRemote(CompatPayloads.Golden());
 
                     CompatMessage message = await received.Next(TestBus.Timeout);
                     Assert.Equal(42, message?.Id);
@@ -69,7 +69,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 EventAggregator eventAggregator = new EventAggregator();
                 Received<CompatMessage> local = Listen(eventAggregator);
 
@@ -86,7 +86,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     }
 
                     Assert.Equal(1, local.Count);
-                    CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await baseline.Received.Next(TestBus.Timeout));
+                    CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await legacy.Received.Next(TestBus.Timeout));
 
                     // The app's own copy comes back through its per-instance queue and is dropped.
                     await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
@@ -125,7 +125,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 EventAggregator eventAggregator = new EventAggregator();
                 Received<CompatMessage> received = Listen(eventAggregator);
 
@@ -136,7 +136,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
 
-                    baseline.PublishRemote(CompatPayloads.Golden());
+                    legacy.PublishRemote(CompatPayloads.Golden());
 
                     Assert.NotNull(await host.Handled.Next(TestBus.Timeout));
                     Assert.NotNull(await received.Next(TestBus.Timeout));

@@ -1,6 +1,9 @@
 # ADR 0003: The server publishes through the outbox; legacy apps stay as they are
 
-- **Status:** Accepted
+- **Status:** Superseded on 2026-11-05. The outbox, the relay (`BuildingBlocks.Outbox.Messaging`) and the confirmed
+  publish were removed to keep things simple. The API now publishes with `IMessagePublisher` right after the
+  commit; events are lost if the API stops before sending them. See
+  [How the API uses RabbitMQ](../how-the-api-uses-rabbitmq.md#sending-from-the-api).
 - **Date:** 2026-09-27
 - **Scope:** CleanArchitecture only. Written after the code was copied from RabbitMQ-Refactor (see
   [PROVENANCE.md](../PROVENANCE.md)). Doesn't change ADR 0001 or 0002 for legacy apps.
@@ -36,9 +39,8 @@ limits").
 4. **The outbox relay.** `BuildingBlocks.Outbox.Messaging` (its own project, so the generic outbox doesn't depend on
    RabbitMQ) provides `MessagingOutboxDispatcher<TContext>`. It turns an outbox row back into its message class and
    calls `IConfirmedMessagePublisher`, passing the row's ID as the AMQP message-id. A row is marked delivered only
-   after the broker has it. The correlation ID the processor restores from the row (the originating request's) is
-   carried into the messaging library's `CorrelationContext` for the publish, so it becomes the message's
-   `correlation-id` header.
+   after the broker has it. (Until 2026-11-05 the row's correlation ID also became the message's `correlation-id`
+   header; that was removed with the library's telemetry, see ADR 0001.)
 5. **A broker outage doesn't use up attempts.** The processor retries a row 3 times, 2 seconds apart, then dead-letters
    it, so an outage of a few seconds would have parked good messages. A dispatcher now throws
    `OutboxDeliveryDeferredException` for failures that aren't the message's fault. The processor doesn't count it as

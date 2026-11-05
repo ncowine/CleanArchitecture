@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Common.RabbitMQ.Tests
@@ -8,6 +11,22 @@ namespace Common.RabbitMQ.Tests
     public sealed class RecordingLogger : ILogger
     {
         public ConcurrentQueue<LogEntry> Entries { get; } = new ConcurrentQueue<LogEntry>();
+
+        /// <returns>The first matching entry, or null when none is logged within <paramref name="timeout"/>.</returns>
+        public async Task<LogEntry> WaitFor(Func<LogEntry, bool> predicate, TimeSpan timeout)
+        {
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            while (true)
+            {
+                LogEntry match = Entries.FirstOrDefault(predicate);
+                if (match != null || stopwatch.Elapsed > timeout)
+                {
+                    return match;
+                }
+
+                await Task.Delay(20).ConfigureAwait(false);
+            }
+        }
 
         public IDisposable BeginScope<TState>(TState state)
             where TState : notnull

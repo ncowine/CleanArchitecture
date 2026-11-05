@@ -5,10 +5,6 @@ using Messaging.RabbitMQ;
 
 namespace Messaging.Hosting
 {
-    /// <summary>
-    /// What <see cref="MessagingBuilder"/> configured: the buses, which message types are received and by which handlers,
-    /// subscriptions added in code, and the bus messages go to when the publisher names none.
-    /// </summary>
     internal sealed class MessagingRegistry
     {
         /// <summary>Bus name → its serializer; null means the System.Text.Json default.</summary>
@@ -19,11 +15,7 @@ namespace Messaging.Hosting
 
         public IReadOnlyCollection<string> BusNames => buses.Keys;
 
-        /// <summary>Set by <see cref="MessagingBuilder.UseDefaultBus"/>.</summary>
         public string DefaultBus { get; set; }
-
-        /// <summary>Set by <see cref="MessagingBuilder.AddTelemetry"/>.</summary>
-        public bool TelemetryEnabled { get; set; }
 
         public void AddBus(string name, IMessageSerializer serializer)
         {
@@ -35,10 +27,9 @@ namespace Messaging.Hosting
             buses.Add(name, serializer);
         }
 
-        /// <summary><see cref="DefaultBus"/>, or the only bus. Null when there are several buses and no default.</summary>
         public string GetDefaultBus()
         {
-            return DefaultBus ?? (buses.Count == 1 ? buses.Keys.Single() : null);
+            return DefaultBus;
         }
 
         public IMessageSerializer GetSerializer(string busName)
@@ -73,10 +64,6 @@ namespace Messaging.Hosting
             return handlers.Where(h => h.MessageType == messageType && Receives(h.Buses, busName));
         }
 
-        /// <summary>
-        /// The message types a bus receives: every type with a handler on that bus, plus every type added with
-        /// <see cref="MessagingBuilder.AddMessages"/> for that bus.
-        /// </summary>
         public IEnumerable<MessageRegistration> GetMessageRegistrations(string busName)
         {
             IEnumerable<Type> handled = handlers
@@ -96,7 +83,11 @@ namespace Messaging.Hosting
         {
             List<string> errors = new List<string>();
 
-            if (DefaultBus != null && !buses.ContainsKey(DefaultBus))
+            if (DefaultBus == null && buses.Count > 0)
+            {
+                errors.Add("No default bus: call UseDefaultBus(configuration[\"Messaging:DefaultBus\"]) and set Messaging:DefaultBus.");
+            }
+            else if (DefaultBus != null && !buses.ContainsKey(DefaultBus))
             {
                 errors.Add($"The default bus '{DefaultBus}' is not configured.");
             }

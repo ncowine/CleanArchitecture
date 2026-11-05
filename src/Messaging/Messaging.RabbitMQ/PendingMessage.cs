@@ -2,18 +2,24 @@ using System;
 
 namespace Messaging.RabbitMQ
 {
-    /// <summary>A serialized message waiting in the outgoing buffer.</summary>
     internal sealed class PendingMessage
     {
-        public PendingMessage(PublishContext context, byte[] body)
+        public PendingMessage(string wireName, string routingKey, string messageId, byte[] body)
         {
-            Context = context;
+            WireName = wireName;
+            RoutingKey = routingKey;
+            MessageId = messageId;
             Body = body;
             CreatedUtc = DateTimeOffset.UtcNow;
         }
 
-        /// <summary>Wire name, message ID and the observer's extra headers.</summary>
-        public PublishContext Context { get; }
+        public string WireName { get; }
+
+        /// <summary>The wire name unless the publisher chose another key.</summary>
+        public string RoutingKey { get; }
+
+        /// <summary>Sent as the message-id property.</summary>
+        public string MessageId { get; }
 
         public byte[] Body { get; }
 

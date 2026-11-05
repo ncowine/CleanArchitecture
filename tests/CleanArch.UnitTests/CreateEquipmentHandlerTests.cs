@@ -13,8 +13,8 @@ public class CreateEquipmentHandlerTests
         var repository = new FakeEquipmentRepository();
         var changeNotifier = new FakeEquipmentChangeNotifier();
         var realtime = new FakeRealtimeDispatch();
-        var outbox = new FakeEquipmentOutbox();
-        var handler = new CreateEquipment.Handler(repository, changeNotifier, realtime, outbox);
+        var events = new FakeEquipmentEvents();
+        var handler = new CreateEquipment.Handler(repository, changeNotifier, realtime, events);
 
         var siteId = Guid.NewGuid();
         var id = await handler.Handle(
@@ -32,8 +32,8 @@ public class CreateEquipmentHandlerTests
         Assert.Equal("equipment", group);
         Assert.Equal("EquipmentCreated", evt.Type);
 
-        // The same event goes to both channels: the outbox (RabbitMQ) and real-time (SignalR).
-        var created = Assert.IsType<EquipmentCreated>(Assert.Single(outbox.Enqueued));
+        // The same event goes to both channels: other applications (RabbitMQ) and real-time (SignalR).
+        var created = Assert.IsType<EquipmentCreated>(Assert.Single(events.Published));
         Assert.Same(created, evt.Payload);
         Assert.Equal(id, created.Id);
         Assert.Equal("ThinkPad X1", created.Name);

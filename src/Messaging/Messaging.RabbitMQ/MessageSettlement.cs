@@ -1,6 +1,5 @@
 namespace Messaging.RabbitMQ
 {
-    /// <summary>How a delivery is finished.</summary>
     internal enum MessageSettlement
     {
         Ack,

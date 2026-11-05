@@ -76,7 +76,7 @@ namespace Common.RabbitMQ
 
             ILogger logger = Logger ?? TraceLogger.Instance;
 
-            bus = new RabbitMQBus(CreateOptions(config), NewtonsoftMessageSerializer.Instance, new PrismDispatcher(eventAggregator, registry), null, logger);
+            bus = new RabbitMQBus(CreateOptions(config), NewtonsoftMessageSerializer.Instance, new PrismDispatcher(eventAggregator, registry), logger);
 
             int subscribedEvents = RemoteEventSubscriptions.Join(this);
 
@@ -91,7 +91,7 @@ namespace Common.RabbitMQ
         }
 
         /// <summary>
-        /// Queues <paramref name="payload"/> as <paramref name="eventType"/>, routed with the event's full name or with its
+        /// Queues <paramref name="payload"/> as <paramref name="eventType"/>, routed with the exchange name or with the event's
         /// entry in <see cref="RabbitMQConfig.RoutingKeys"/>.
         /// </summary>
         public void Publish(Type eventType, object payload)
@@ -124,23 +124,25 @@ namespace Common.RabbitMQ
         /// Starts receiving <paramref name="eventType"/> from the bus, until <see cref="UnregisterQueue"/>, whether or not
         /// anything is subscribed. Subscribing to the event does this for as long as it has subscribers.
         /// </summary>
-        public async Task RegisterQueue(Type eventType)
+        public Task RegisterQueue(Type eventType)
         {
             EnsureInitialized();
 
             RemoteEventDescriptor descriptor = GetDescriptor(eventType);
             registeredQueues[descriptor.EventName] = true;
-            await bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType)).ConfigureAwait(false);
+            bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType));
+            return Task.CompletedTask;
         }
 
         /// <summary>Stops receiving <paramref name="eventType"/> from the bus. Publishing is not affected.</summary>
-        public async Task UnregisterQueue(Type eventType)
+        public Task UnregisterQueue(Type eventType)
         {
             EnsureInitialized();
 
             RemoteEventDescriptor descriptor = GetDescriptor(eventType);
             registeredQueues.TryRemove(descriptor.EventName, out _);
-            await bus.Unsubscribe(descriptor.EventName).ConfigureAwait(false);
+            bus.Unsubscribe(descriptor.EventName);
+            return Task.CompletedTask;
         }
 
         public void Dispose()
@@ -164,7 +166,7 @@ namespace Common.RabbitMQ
                 return false;
             }
 
-            _ = LogFailure(bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType)), descriptor);
+            bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType));
             return true;
         }
 
@@ -174,7 +176,7 @@ namespace Common.RabbitMQ
             RemoteEventDescriptor descriptor = FindOwn(remoteEvent);
             if (descriptor != null && !registeredQueues.ContainsKey(descriptor.EventName))
             {
-                _ = LogFailure(bus.ReleaseSubscription(descriptor.EventName), descriptor);
+                bus.Unsubscribe(descriptor.EventName);
             }
         }
 
@@ -182,23 +184,6 @@ namespace Common.RabbitMQ
         {
             RemoteEventDescriptor descriptor = registry.Find(remoteEvent.GetType());
             return ReferenceEquals(descriptor?.GetEvent(eventAggregator), remoteEvent) ? descriptor : null;
-        }
-
-        /// <summary>A failure is only logged: the bus remembers what was asked and applies it the next time it connects.</summary>
-        private async Task LogFailure(Task bindingChange, RemoteEventDescriptor descriptor)
-        {
-            try
-            {
-                await bindingChange.ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is OperationCanceledException || ex is ObjectDisposedException)
-            {
-                // The application is shutting down.
-            }
-            catch (Exception ex)
-            {
-                (Logger ?? TraceLogger.Instance).LogError(ex, "[{Bus}] Could not change the binding for {Event}.", config.BusName, descriptor.EventName);
-            }
         }
 
         private RabbitMQBusOptions CreateOptions(RabbitMQConfig config)

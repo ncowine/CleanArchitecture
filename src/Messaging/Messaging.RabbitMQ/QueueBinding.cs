@@ -2,7 +2,6 @@ using System.Collections.Generic;
 
 namespace Messaging.RabbitMQ
 {
-    /// <summary>One binding of the bus's queue to an exchange.</summary>
     internal sealed class QueueBinding
     {
         public QueueBinding(string exchange, string routingKey, IDictionary<string, object> arguments)

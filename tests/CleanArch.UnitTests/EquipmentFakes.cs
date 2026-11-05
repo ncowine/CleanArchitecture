@@ -48,11 +48,11 @@ internal sealed class FakeEquipmentChangeNotifier : IEquipmentChangeNotifier
     public void Notify(Guid equipmentId, Guid? siteId = null) => Notified.Add((equipmentId, siteId));
 }
 
-internal sealed class FakeEquipmentOutbox : IEquipmentOutbox
+internal sealed class FakeEquipmentEvents : IEquipmentEvents
 {
-    public List<object> Enqueued { get; } = new();
+    public List<object> Published { get; } = new();
 
-    public void Enqueue<TEvent>(TEvent integrationEvent) where TEvent : class => Enqueued.Add(integrationEvent);
+    public void Publish<TEvent>(TEvent integrationEvent) where TEvent : class => Published.Add(integrationEvent);
 }
 
 internal sealed class FakeRealtimeDispatch : IRealtimeDispatch

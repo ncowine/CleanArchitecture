@@ -18,21 +18,24 @@ Each behaviour below is either a **fact** confirmed by the user or an **assumpti
 | F2 | **One exchange per application.** An application publishes only to its own exchange. Another application receives those events by binding its queue to that exchange. | `LegacyModelSpecTests.F2_*` |
 | F3 | Every application uses the default virtual host, `/`. | `LegacyModelRegistryTests.F3_VirtualHost_IsTheDefault` |
 | F4 | Shared versions: RabbitMQ.Client 7.1.2, Prism.Core 8.1.97, Newtonsoft.Json 12.0.3. | Package versions in `Directory.Packages.props` |
+| F5 | The **routing key** is the **publishing application's name**, which is also its exchange name (`AppA`), whatever the event. Confirmed 2026-11-05. | `LegacyModelSpecTests.F5_A3_A4_A5_PublishedMessage_OnTheWire` |
+| F6 | The queue binds its **own** exchange **once**, keyed by the application's own name. Confirmed 2026-11-05. | `LegacyModelSpecTests.F6_F7_Bindings_OnePerExchange_KeyedByTheExchangeName` |
+| F7 | For each **subscribed** exchange the queue gets **one** binding, keyed by that exchange's owner's name. So every event on a subscribed exchange arrives, and the receiver drops those it doesn't know. Confirmed 2026-11-05. | `F6_F7_…` |
 
 ## Assumptions (to check)
 
 | ID | Assumed behaviour | Test | What to check in the real library |
 |---|---|---|---|
 | A1 | On connect, an application declares **its own exchange** as **topic**, **durable**, not auto-delete. | `A1_OwnExchange_IsDeclaredByItsApp_AsDurableTopic` | The `ExchangeDeclare` call: type, durability, auto-delete, arguments. |
-| A2 | The **routing key** is the event's **full type name** (`AppA.Events.OrderSaved`). | `A2_A3_A4_A5_PublishedMessage_OnTheWire` | The routing key passed to `BasicPublish`. Full name, short name or something else? |
-| A3 | Headers: `event-type` (full type name) and `source-id` (a random ID per process). | `A2_A3_A4_A5_…` | Header names and values, if headers are used at all. |
-| A4 | Properties: content type `application/json`, a new message ID, app ID = client name, a timestamp. | `A2_A3_A4_A5_…` | The `BasicProperties` that are set. |
-| A5 | Body: the payload alone, as JSON with Newtonsoft default settings. No envelope or wrapper. | `A2_A3_A4_A5_…` (compared with `Golden/compat-payload.json`) | Serializer settings, and whether there's a wrapper object. |
+| A2 | *(replaced by fact F5)* | | |
+| A3 | Headers: `event-type` (full type name) and `source-id` (a random ID per process). | `F5_A3_A4_A5_…` | Header names and values. With the app name as the routing key, `event-type` is the only thing that says which event a message is. |
+| A4 | Properties: content type `application/json`, a new message ID, app ID = client name, a timestamp. | `F5_A3_A4_A5_…` | The `BasicProperties` that are set. |
+| A5 | Body: the payload alone, as JSON with Newtonsoft default settings. No envelope or wrapper. | `F5_A3_A4_A5_…` (compared with `Golden/compat-payload.json`) | Serializer settings, and whether there's a wrapper object. |
 | A6 | Publishing goes through an in-memory outstanding queue, sent in the background with publisher confirms. | *(not observable on the wire)* | Whether the real library buffers messages and uses confirms. |
 | A7 | **One queue per running process**, named `clientname.instanceid`, exclusive, auto-delete, non-durable. | `A7_Queue_IsExclusivePerProcess_AndRemovedWhenTheAppStops` | The `QueueDeclare` call: name, flags, arguments. |
-| A8 | The queue binds **one routing key per known event** (every `PubSubEvent<T>` in the registered assemblies) on the application's **own** exchange. | `A8_A9_Bindings_OnePerKnownEvent_OnOwnAndSubscribedExchanges` | Which bindings are made on the own exchange: per event, a pattern, or `#`. |
-| A9 | For each **subscribed** exchange, the queue gets the same per-event bindings. The subscriptions are a list of exchange names in configuration. | `A8_A9_…` | How an application chooses what to take from another application's exchange, and where that's configured. **A sample App.config would answer this.** |
-| A10 | A received message's event is found from the `event-type` header, falling back to the routing key, among the registered events. Unknown events are ignored. | `A10_EventIsResolvedFromTheHeader_ThenFromTheRoutingKey` | How the receiver works out which event a message is. |
+| A8 | *(replaced by fact F6)* | | |
+| A9 | *(replaced by fact F7)* The subscriptions are a list of exchange names in configuration. | | Where the subscribed exchanges are configured. **A sample App.config would answer this.** |
+| A10 | A received message's event is found from the `event-type` header among the registered events. A message without it, or naming an unknown event, is ignored. | `A10_EventIsResolvedFromTheHeader_WithoutItTheMessageIsIgnored` | How the receiver works out which event a message is. |
 | A11 | An application drops its **own** messages when they come back (matching `source-id`). | `F2_A11_A15_…` | Whether the real library filters its own messages, and how. |
 | A12 | Messages are acknowledged manually and **always** acknowledged, even when a subscriber throws. The error is logged. | `A12_FailingSubscriber_MessageIsAcked_AndNotRedelivered` | Ack mode (auto or manual) and error handling. |
 | A13 | Reconnecting is done by the library's own loops, not by the client's automatic recovery. | *(not observable on the wire)* | `AutomaticRecoveryEnabled` and how reconnects work. |
@@ -50,6 +53,12 @@ ADR 0002 section 2 says subscribers only **check** other applications' exchanges
 Step 6 proves the first point on a broker: when an owner declares its exchange as `direct`, a legacy subscriber can't connect (`CoreTopologyTests.A16_Consequence_LegacySubscriberCannotJoinANonTopicExchange`). Until A16 is confirmed, keep exchanges that legacy applications subscribe to as `topic`.
 
 Confirming A16 is high on the list.
+
+## Why F5 to F7 matter
+
+Bindings are per exchange, not per event, so the broker's binding count grows with clients × exchanges, not clients × events. A load test on 2026-11-05 (500 clients, 200 events each, 3 exchanges) showed why that matters: one binding per event meant 300,000 bindings and crashed a local broker, while one per exchange meant 1,500 and started in under 2 seconds. The cost is that every client receives every event on the exchanges it subscribes to and drops the ones nobody listens for.
+
+The new libraries follow the same rule (ADR 0002, section 2), so mixing old and new apps adds no bindings. The frozen baseline in `tests/Fixtures/Common.RabbitMQ.Baseline` predates this and routes by event name, so it only takes part in checks of its own headers and body.
 
 ## Still unknown
 

@@ -16,8 +16,8 @@ public class DeleteEquipmentHandlerTests
         var cache = new FakeEquipmentCacheInvalidator();
         var changeNotifier = new FakeEquipmentChangeNotifier();
         var realtime = new FakeRealtimeDispatch();
-        var outbox = new FakeEquipmentOutbox();
-        var handler = new DeleteEquipment.Handler(repository, cache, changeNotifier, realtime, outbox);
+        var events = new FakeEquipmentEvents();
+        var handler = new DeleteEquipment.Handler(repository, cache, changeNotifier, realtime, events);
 
         var deleted = await handler.Handle(new DeleteEquipment.Command(asset.Id), default);
 
@@ -30,7 +30,7 @@ public class DeleteEquipmentHandlerTests
         Assert.Equal("equipment", group);
         Assert.Equal("EquipmentDeleted", evt.Type);
 
-        var sent = Assert.IsType<EquipmentDeleted>(Assert.Single(outbox.Enqueued));
+        var sent = Assert.IsType<EquipmentDeleted>(Assert.Single(events.Published));
         Assert.Same(sent, evt.Payload);
         Assert.Equal(asset.Id, sent.Id);
     }
@@ -42,8 +42,8 @@ public class DeleteEquipmentHandlerTests
         var cache = new FakeEquipmentCacheInvalidator();
         var changeNotifier = new FakeEquipmentChangeNotifier();
         var realtime = new FakeRealtimeDispatch();
-        var outbox = new FakeEquipmentOutbox();
-        var handler = new DeleteEquipment.Handler(repository, cache, changeNotifier, realtime, outbox);
+        var events = new FakeEquipmentEvents();
+        var handler = new DeleteEquipment.Handler(repository, cache, changeNotifier, realtime, events);
 
         var deleted = await handler.Handle(new DeleteEquipment.Command(Guid.NewGuid()), default);
 
@@ -51,6 +51,6 @@ public class DeleteEquipmentHandlerTests
         Assert.Empty(cache.Invalidated);
         Assert.Empty(changeNotifier.Notified);
         Assert.Empty(realtime.Published);
-        Assert.Empty(outbox.Enqueued);
+        Assert.Empty(events.Published);
     }
 }

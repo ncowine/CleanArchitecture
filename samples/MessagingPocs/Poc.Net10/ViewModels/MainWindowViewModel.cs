@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using Equipment.Messages;
 using Messaging.Hosting;
 using Messaging.RabbitMQ;
+using Poc.Shapes;
 using Poc.Shared;
 
 namespace Poc.Net10.ViewModels;
@@ -22,7 +23,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool wasConnected;
 
     [ObservableProperty]
-    private string title = $"net10 — modern app, API events only (pid {Environment.ProcessId})";
+    private string title = $"net10 — modern app, API events + POC shapes (pid {Environment.ProcessId})";
 
     [ObservableProperty]
     private string connection = "Connecting…";
@@ -56,6 +57,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         subscriptions.Add(subscriber.Subscribe<EquipmentCreated>(List.Apply, ui));
         subscriptions.Add(subscriber.Subscribe<EquipmentUpdated>(List.Apply, ui));
         subscriptions.Add(subscriber.Subscribe<EquipmentDeleted>(List.Apply, ui));
+
+        // The ten POC shape events, sent by the legacy apps in the legacy format and read here as plain classes.
+        subscriptions.Add(subscriber.Subscribe<StatusChanged>(LogShape, ui));
+        subscriptions.Add(subscriber.Subscribe<MaintenanceScheduled>(LogShape, ui));
+        subscriptions.Add(subscriber.Subscribe<CostRecorded>(LogShape, ui));
+        subscriptions.Add(subscriber.Subscribe<WarrantyChecked>(LogShape, ui));
+        subscriptions.Add(subscriber.Subscribe<TagsChanged>(LogShape, ui));
+        subscriptions.Add(subscriber.Subscribe<LocationMoved>(LogShape, ui));
+        subscriptions.Add(subscriber.Subscribe<AttributesChanged>(LogShape, ui));
+        subscriptions.Add(subscriber.Subscribe<UsageReported>(LogShape, ui));
+        subscriptions.Add(subscriber.Subscribe<BatchCounted>(LogShape, ui));
+        subscriptions.Add(subscriber.Subscribe<AuditRequested>(LogShape, ui));
 
         busLog.Written += message => ui.Post(state => AddLog($"[bus] {message}"), null);
 
@@ -121,7 +134,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         wasConnected = connected;
         if (connected)
         {
-            Connection = "RabbitMQ: connected, bound to the API's exchange (CleanArch) only";
+            Connection = "RabbitMQ: connected, bound to the API's exchange (CleanArch), plus the shape events from the legacy apps";
             await List.LoadAsync();
         }
         else
@@ -143,6 +156,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             AddLog($"request failed: {ex.Message}");
         }
+    }
+
+    private void LogShape<TMessage>(TMessage message)
+    {
+        AddLog($"{typeof(TMessage).Name}: {message}");
     }
 
     private void AddLog(string line)

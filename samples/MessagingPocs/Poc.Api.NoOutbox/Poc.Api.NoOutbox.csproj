@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Messaging\Messaging.Hosting\Messaging.Hosting.csproj" />
     <ProjectReference Include="..\..\..\src\Modules\Equipment\Equipment.Messages\Equipment.Messages.csproj" />
+    <ProjectReference Include="..\Poc.Shapes\Poc.Shapes.csproj" />
   </ItemGroup>
 
 </Project>

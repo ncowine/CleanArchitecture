@@ -9,6 +9,8 @@
       these classes live in namespace "Equipment" to match the API's wire names ("Equipment.EquipmentCreated", …). The
       payloads are the API's own Equipment.Messages classes: one contract, read by Newtonsoft here and written by
       System.Text.Json in the API.
+    - Shapes/: ten POC-only events, one per payload shape that can break legacy/modern JSON compatibility. Their payloads
+      are Poc.Shapes classes, which the modern apps receive as [Message] classes.
   -->
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
@@ -21,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Common.RabbitMQ\Common.RabbitMQ.csproj" />
     <ProjectReference Include="..\..\..\src\Modules\Equipment\Equipment.Messages\Equipment.Messages.csproj" />
+    <ProjectReference Include="..\Poc.Shapes\Poc.Shapes.csproj" />
   </ItemGroup>
 
 </Project>

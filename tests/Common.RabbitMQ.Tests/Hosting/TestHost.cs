@@ -45,7 +45,6 @@ namespace Common.RabbitMQ.Tests.Hosting
             services.AddLogging();
             services.AddSingleton<HandledMessages>();
             services.AddScoped<ScopeMarker>();
-            services.AddHealthChecks().AddMessaging();
             services.AddMessaging(messaging =>
             {
                 messaging.AddBus(CompatBus.Name, options =>
@@ -61,6 +60,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     options.OutstandingPollInterval = TimeSpan.FromMilliseconds(20);
                     configureBus?.Invoke(options);
                 });
+                messaging.UseDefaultBus(CompatBus.Name);
                 configure(messaging);
             });
 

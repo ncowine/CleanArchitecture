@@ -15,7 +15,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 {
     /// <summary>
     /// <see cref="IMessageSubscriber"/>: receiving in ordinary code (for example a WPF view model) with no handler classes and
-    /// no Prism, against the frozen baseline Prism build over a real broker.
+    /// no Prism, against the legacy adapter over a real broker.
     /// </summary>
     public class HostingSubscriberTests
     {
@@ -27,7 +27,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
                 await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
                 {
@@ -36,14 +36,14 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
 
-                    baseline.PublishRemote(CompatPayloads.Golden());
+                    legacy.PublishRemote(CompatPayloads.Golden());
                     CompatMessage message = await received.Next(TestBus.Timeout);
                     Assert.Equal(42, message?.Id);
                     Assert.Equal("compat", message.Name);
 
                     subscription.Dispose();
                     subscription.Dispose();
-                    baseline.PublishRemote(CompatPayloads.Golden());
+                    legacy.PublishRemote(CompatPayloads.Golden());
                     await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
                     Assert.Equal(1, received.Count);
                 }
@@ -51,27 +51,23 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task Subscribe_BindsTheType_WithNothingRegistered()
+        public async Task Subscribe_Receives_WithNothingRegistered()
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
                 await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
                 {
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
 
-                    // Bound in the background: keep sending until it's in place.
+                    // The queue is already bound to the exchange: subscribing takes effect at once.
                     Received<CompatMessage> received = new Received<CompatMessage>();
                     host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
-                    for (int i = 0; i < 50 && received.Count == 0; i++)
-                    {
-                        baseline.PublishRemote(CompatPayloads.Golden());
-                        await Task.Delay(100, TestContext.Current.CancellationToken);
-                    }
+                    legacy.PublishRemote(CompatPayloads.Golden());
 
-                    Assert.True(received.Count > 0);
+                    Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
                 }
             }
         }
@@ -106,7 +102,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
                 await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => messaging.AddMessages(typeof(CompatMessage).Assembly)))
                 {
@@ -116,7 +112,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
 
-                    baseline.PublishRemote(CompatPayloads.Golden());
+                    legacy.PublishRemote(CompatPayloads.Golden());
 
                     Assert.NotNull(await received.Next(TestBus.Timeout));
                     Assert.Equal(1, uiContext.Posts);
@@ -129,7 +125,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
                 await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => messaging.AddMessages(typeof(CompatMessage).Assembly)))
                 {
@@ -146,7 +142,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
 
-                    baseline.PublishRemote(CompatPayloads.Golden());
+                    legacy.PublishRemote(CompatPayloads.Golden());
 
                     Assert.True(await Task.WhenAny(done.Task, Task.Delay(TestBus.Timeout, TestContext.Current.CancellationToken)) == done.Task);
                     Assert.Equal("first,second:Compat.Events.CompatEvent", order);
@@ -159,7 +155,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 string service = "svc-" + Guid.NewGuid().ToString("N");
 
                 await using (TestHost host = await TestHost.Start(
@@ -183,7 +179,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await bus.WaitUntilConnected();
                     await host.WaitUntilConnected();
 
-                    baseline.PublishRemote(CompatPayloads.Golden());
+                    legacy.PublishRemote(CompatPayloads.Golden());
 
                     CapturedMessage dead = null;
                     for (int wait = 0; wait < 100 && dead == null; wait++)

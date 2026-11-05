@@ -24,7 +24,7 @@ namespace Legacy.RabbitMQ
             publishMethod = eventType.GetMethod(nameof(PubSubEvent<object>.Publish), new[] { payloadType });
         }
 
-        /// <summary>Assumptions A2 and A3: the full type name is the routing key and the event-type header.</summary>
+        /// <summary>Assumption A3: the full type name is the event-type header (fact F5: the routing key is the application name).</summary>
         public string EventName { get; }
 
         public Type EventType { get; }

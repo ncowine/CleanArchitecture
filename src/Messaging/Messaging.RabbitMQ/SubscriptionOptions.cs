@@ -10,13 +10,12 @@ namespace Messaging.RabbitMQ
     /// </summary>
     public sealed class SubscriptionOptions
     {
-        /// <summary>The other application's exchange.</summary>
         public string Exchange { get; set; }
 
         /// <summary>
         /// Routing keys to bind: patterns for a topic exchange (<c>orders.*.saved</c>, <c>AppA.Events.#</c>), exact keys for a
-        /// direct exchange, anything for a fanout exchange. Empty means one binding per message type the bus handles, keyed
-        /// by its wire name, as legacy applications do.
+        /// direct exchange, anything for a fanout exchange. Empty means one binding keyed by <see cref="Exchange"/>, the routing
+        /// key its owner publishes every message with, as legacy applications do.
         /// </summary>
         public List<string> RoutingKeys { get; set; } = new List<string>();
 

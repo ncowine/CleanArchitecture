@@ -9,7 +9,7 @@ namespace Poc.Net8.Events;
 /// <remarks>
 /// It's local because of WHERE it lives, not because of an attribute: App.xaml.cs registers only the
 /// Poc.Legacy.Events assembly with the legacy adapter, and this class is in the app's own assembly. So the adapter
-/// never binds it, never receives it, and PublishRemote on it throws ("not registered"). Use Publish().
+/// never receives it, and PublishRemote on it throws ("not registered"). Use Publish().
 /// ✅ DO keep app-internal events in the app's own project, apart from the events assembly you register.
 /// ❌ DON'T put a local event in Poc.Legacy.Events: everything there is registered, so it would be bound on the broker
 ///    and could be published to other apps by accident.

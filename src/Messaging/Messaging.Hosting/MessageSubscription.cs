@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 
 namespace Messaging.Hosting
 {
-    /// <summary>One subscription made through <see cref="IMessageSubscriber"/>.</summary>
     internal sealed class MessageSubscription
     {
         public MessageSubscription(Type messageType, Func<object, MessageContext, CancellationToken, Task> invoke)

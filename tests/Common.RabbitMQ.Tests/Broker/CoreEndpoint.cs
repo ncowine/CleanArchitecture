@@ -7,7 +7,7 @@ using Messaging.RabbitMQ;
 
 namespace Common.RabbitMQ.Tests.Broker
 {
-    /// <summary>A bare <see cref="RabbitMQBus"/> subscribed to <see cref="CompatEvent"/>'s wire name, with an optional observer.</summary>
+    /// <summary>A bare <see cref="RabbitMQBus"/> subscribed to <see cref="CompatEvent"/>'s wire name.</summary>
     public sealed class CoreEndpoint : ICompatEndpoint, IInboundDispatcher
     {
         public static readonly string WireName = typeof(CompatEvent).FullName;
@@ -17,7 +17,7 @@ namespace Common.RabbitMQ.Tests.Broker
         private int attempts;
 
         /// <param name="configure">Changes the test defaults, for example to use a shared queue.</param>
-        public CoreEndpoint(BrokerSettings broker, string exchangeName, string clientName, IMessagingObserver observer, Action<RabbitMQBusOptions> configure = null)
+        public CoreEndpoint(BrokerSettings broker, string exchangeName, string clientName, Action<RabbitMQBusOptions> configure = null)
         {
             RabbitMQBusOptions options = new RabbitMQBusOptions
             {
@@ -35,7 +35,7 @@ namespace Common.RabbitMQ.Tests.Broker
             };
             configure?.Invoke(options);
 
-            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, observer, Log);
+            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, Log);
             bus.Start(new[] { new MessageRegistration(WireName, typeof(CompatPayload)) });
         }
 

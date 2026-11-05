@@ -36,7 +36,6 @@ namespace Messaging.Prism
             IMessagePublisher publisher = ContainerLocator.Container?.Resolve<IMessagePublisher>()
                 ?? throw new InvalidOperationException("No IMessagePublisher available. Register MessagingClient.Publisher in the Prism container.");
 
-            // Buffers the message; the broker gets it in the background.
             publisher.Publish(message, options);
         }
     }

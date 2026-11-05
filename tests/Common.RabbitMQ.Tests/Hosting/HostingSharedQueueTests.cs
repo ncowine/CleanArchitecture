@@ -34,7 +34,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 
             ServiceCollection services = new ServiceCollection();
             services.AddLogging();
-            services.AddMessaging(messaging => messaging.AddBus("Legacy", configuration.GetSection("Messaging:Buses:Legacy")));
+            services.AddMessaging(messaging => messaging.AddBus("Legacy", configuration.GetSection("Messaging:Buses:Legacy")).UseDefaultBus("Legacy"));
 
             using (ServiceProvider provider = services.BuildServiceProvider())
             {
@@ -63,7 +63,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     options.PrefetchCount = 1;
                 };
 
-                ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 await using (TestHost first = await TestHost.Start(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
                 await using (TestHost second = await TestHost.Start(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
                 {

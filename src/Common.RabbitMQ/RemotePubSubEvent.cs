@@ -6,10 +6,9 @@ namespace Common.RabbitMQ
     /// <summary>
     /// Base class for events that travel between applications over RabbitMQ.
     /// Use <see cref="RemotePubSubEventExtensions.PublishRemote{TPayload}"/> to send; subscribe as with any Prism event.
-    /// Nothing has to be registered: subscribing is what binds the queue, so an application only receives what it listens
-    /// for. When the last subscriber goes, the binding is removed. A subscriber held weakly gives no signal when it is
-    /// collected, so that one is noticed at the next message. Bindings change in the background, so a message sent right
-    /// after subscribing, or while nothing is subscribed, is missed.
+    /// Nothing has to be registered. The queue is bound once per exchange, so every event on it arrives; subscribing is
+    /// what stops this one being dropped, and when the last subscriber goes it is dropped again. A subscriber held weakly
+    /// gives no signal when it is collected, so that one is noticed at the next message.
     /// <para>Events that stay inside the application derive from <see cref="PubSubEvent{TPayload}"/> directly.</para>
     /// </summary>
     public abstract class RemotePubSubEvent<TPayload> : PubSubEvent<TPayload>, IRemoteEvent

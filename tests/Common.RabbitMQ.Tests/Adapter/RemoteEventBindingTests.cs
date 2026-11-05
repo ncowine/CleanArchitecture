@@ -9,7 +9,7 @@ using Xunit;
 namespace Common.RabbitMQ.Tests.Adapter
 {
     /// <summary>
-    /// A <see cref="RemotePubSubEvent{TPayload}"/> needs no registration: subscribing binds it. A plain
+    /// A <see cref="RemotePubSubEvent{TPayload}"/> needs no registration: subscribing receives it. A plain
     /// <see cref="PubSubEvent{TPayload}"/> stays local unless its assembly is added to the registry.
     /// </summary>
     [Collection(ServiceProviderCollection.Name)]
@@ -23,7 +23,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         }
 
         [Fact]
-        public async Task SubscribingAfterInit_BindsThatEventOnly_AndItArrives()
+        public async Task SubscribingAfterInit_ReceivesThatEvent()
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
@@ -31,34 +31,15 @@ namespace Common.RabbitMQ.Tests.Adapter
                 AdapterApp sender = topology.StartAdapter(App, null);
                 await topology.WaitUntilConnected(receiver, sender);
 
-                Assert.False(await topology.IsRoutable(App, typeof(SubscribedAfterInit).FullName));
-
                 Received<Order> received = receiver.Listen<SubscribedAfterInit, Order>();
-                await WaitUntilRoutable(topology, typeof(SubscribedAfterInit));
-
-                Assert.False(await topology.IsRoutable(App, typeof(NeverSubscribed).FullName));
 
                 sender.PublishRemote<SubscribedAfterInit, Order>(new Order { Id = 7 });
-                Assert.Equal(7, (await NextPublished(received))?.Id);
+                Assert.Equal(7, (await received.Next(TestBus.Timeout))?.Id);
             }
         }
 
         [Fact]
-        public async Task Subscribing_InAnotherApplication_DoesNotBindThisOne()
-        {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
-            {
-                new EventAggregator().GetEvent<SubscribedInAnotherApp>().Subscribe(_ => { });
-
-                AdapterApp app = topology.StartAdapter(App, null);
-                await topology.WaitUntilConnected(app);
-
-                Assert.False(await topology.IsRoutable(App, typeof(SubscribedInAnotherApp).FullName));
-            }
-        }
-
-        [Fact]
-        public async Task SubscribingBeforeInit_BindsWhenItConnects_WithNothingRegistered()
+        public async Task SubscribingBeforeInit_Receives_WithNothingRegistered()
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
@@ -71,11 +52,14 @@ namespace Common.RabbitMQ.Tests.Adapter
                     service.Init(topology.Broker.CreateCurrentConfig("Main", topology.Exchange(App), App));
                     AdapterApp sender = topology.StartAdapter(App, null);
                     await topology.WaitUntilConnected(sender);
-                    await WaitUntilRoutable(topology, typeof(SubscribedBeforeInit));
+                    for (int i = 0; i < 100 && !service.IsConsumerConnected; i++)
+                    {
+                        await Task.Delay(100, TestContext.Current.CancellationToken);
+                    }
 
                     sender.PublishRemote<SubscribedBeforeInit, Order>(new Order { Id = 8 });
 
-                    Assert.Equal(8, (await NextPublished(received))?.Id);
+                    Assert.Equal(8, (await received.Next(TestBus.Timeout))?.Id);
                 }
             }
         }
@@ -107,36 +91,6 @@ namespace Common.RabbitMQ.Tests.Adapter
                 Assert.Contains("local", error.Message);
                 Assert.Equal(0, service.OutstandingCount);
             }
-        }
-
-        /// <summary>Skips the routability probes, whose empty bodies are delivered as null once the event is bound.</summary>
-        private static async Task<Order> NextPublished(Received<Order> received)
-        {
-            for (int i = 0; i < 200; i++)
-            {
-                Order order = await received.Next(TestBus.Timeout);
-                if (order != null)
-                {
-                    return order;
-                }
-            }
-
-            return null;
-        }
-
-        private static async Task WaitUntilRoutable(LegacyTopology topology, Type eventType)
-        {
-            for (int i = 0; i < 100; i++)
-            {
-                if (await topology.IsRoutable(App, eventType.FullName))
-                {
-                    return;
-                }
-
-                await Task.Delay(100, TestContext.Current.CancellationToken);
-            }
-
-            Assert.Fail($"{eventType.Name} was never bound.");
         }
     }
 }

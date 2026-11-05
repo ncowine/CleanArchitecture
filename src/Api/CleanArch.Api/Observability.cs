@@ -3,7 +3,6 @@ using BuildingBlocks.Caching;
 using BuildingBlocks.Outbox;
 using CleanArch.Api.Authentication;
 using Equipment.Infrastructure.Persistence;
-using Messaging.Hosting;
 using Onboarding.Infrastructure.Persistence;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
@@ -64,10 +63,8 @@ internal static class ObservabilityExtensions
                 // Token exchanges for On-Behalf-Of downstream calls. Without this the IdP round-trip is
                 // invisible and reads as unexplained latency on the downstream span.
                 .AddSource(OnBehalfOfDiagnostics.ActivitySourceName)
-                // RabbitMQ publishes and receives (only emitted when messaging is configured).
-                .AddSource(MessagingTelemetry.Name)
-                // A span per outbox delivery, parented to the request that wrote the row, so request -> publish ->
-                // consume is one trace despite the outbox's delay.
+                // A span per outbox delivery, parented to the request that wrote the row, so a delivery stays in
+                // the request's trace despite the outbox's delay.
                 .AddSource(OutboxDiagnostics.ActivitySourceName)
                 // A child span per database query. Without it a slow handler is one opaque block: you can
                 // see the request took four seconds but not that 3.9 of them were a single SELECT — or
@@ -110,15 +107,6 @@ internal static class ObservabilityExtensions
                 // Built-in .NET runtime metrics (GC, heap, thread pool, CPU) — no extra package needed.
                 .AddMeter("System.Runtime")
                 .AddMeter(OutboxDiagnostics.MeterName)
-                .AddMeter(MessagingTelemetry.Name)
-                // The messaging library records handling time in SECONDS but declares no buckets, so it gets
-                // OpenTelemetry's defaults (0, 5, 10, 25 …), which are sized for milliseconds: every message lands
-                // in the first bucket and p95 reads as 4.75s however fast the handler is. These are the same
-                // boundaries ASP.NET Core uses for http.server.request.duration.
-                .AddView(MessagingTelemetry.ProcessDuration, new ExplicitBucketHistogramConfiguration
-                {
-                    Boundaries = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10],
-                })
                 // Every DataCache<,> publishes on this one shared meter, tagged with which cache it is
                 // (see CacheMetrics.cs) — so a new cache is covered automatically, with no wildcard and
                 // nothing to keep in sync here.

@@ -3,7 +3,6 @@ using Prism.Events;
 
 namespace Messaging.Prism
 {
-    /// <summary>What <see cref="MessageEventReceiver"/> needs from a <see cref="MessageEvent{TMessage}"/>, whatever its message.</summary>
     internal interface IReceivedEvent
     {
         Type MessageType { get; }

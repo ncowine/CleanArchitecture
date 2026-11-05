@@ -8,7 +8,6 @@ namespace Messaging
         /// </summary>
         void Publish<TMessage>(TMessage message);
 
-        /// <summary>As <see cref="Publish{TMessage}(TMessage)"/>, with per-call settings such as the bus or the routing key.</summary>
         void Publish<TMessage>(TMessage message, PublishOptions options);
     }
 }

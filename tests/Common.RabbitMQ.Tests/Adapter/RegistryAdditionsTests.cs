@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using AppA.Events;
 using Common.Events;
 using Messaging;
@@ -45,33 +44,17 @@ namespace Common.RabbitMQ.Tests.Adapter
         }
 
         [Fact]
-        public void Router_WithOneBus_NeedsNoDefault()
+        public void Router_WithoutADefault_IsRefusedAtInit_EvenWithOneBus()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
             using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry))
             {
                 RabbitMQService only = router.AddBus(UnreachableConfig("Only"));
-                router.Init();
 
-                router.Publish(typeof(OrderSaved), new Order { Id = 1 });
-
-                Assert.Equal(1, only.OutstandingCount);
-            }
-        }
-
-        [Fact]
-        public void Router_WithSeveralBuses_AndNoDefault_IsRefused()
-        {
-            RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry))
-            {
-                router.AddBus(UnreachableConfig("First"));
-                router.AddBus(UnreachableConfig("Second"));
-                router.Init();
-
-                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => router.Publish(typeof(OrderSaved), new Order { Id = 1 }));
-                Assert.Contains("no default", error.Message);
-                Assert.True(router.Buses.All(b => b.OutstandingCount == 0));
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => router.Init());
+                Assert.Contains("Messaging:DefaultBus", error.Message);
+                Assert.Throws<InvalidOperationException>(() => router.Publish(typeof(OrderSaved), new Order { Id = 1 }));
+                Assert.Equal(0, only.OutstandingCount);
             }
         }
 
@@ -117,7 +100,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         public void PublishRemote_ToAnUnknownBus_ThrowsBeforeRaisingLocally()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry().Add(typeof(OrderSaved).Assembly);
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry))
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry) { DefaultBus = "Only" })
             {
                 RabbitMQService only = router.AddBus(UnreachableConfig("Only"));
                 router.Init();

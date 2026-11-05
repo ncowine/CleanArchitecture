@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using Messaging;
 
 namespace Common.RabbitMQ.Tests.Hosting
@@ -13,11 +12,5 @@ namespace Common.RabbitMQ.Tests.Hosting
 
         /// <summary>Identifies the DI scope the handler ran in.</summary>
         public Guid ScopeId { get; set; }
-
-        /// <summary><c>CorrelationContext.Current</c> inside the handler.</summary>
-        public string CorrelationId { get; set; }
-
-        /// <summary><c>Activity.Current</c> inside the handler.</summary>
-        public Activity Activity { get; set; }
     }
 }

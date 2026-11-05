@@ -68,8 +68,8 @@ namespace Common.RabbitMQ
         public ILogger Logger { get; set; }
 
         /// <summary>
-        /// The bus events go to when the publisher names none, usually <c>Messaging:DefaultBus</c> from configuration. Set it
-        /// before <see cref="Init"/>. Null with one bus means that bus; null with several means a publish must name one.
+        /// The bus events go to when the publisher names none, usually <c>Messaging:DefaultBus</c> from configuration. Required,
+        /// even with one bus: set it before <see cref="Init"/>, which throws without it.
         /// </summary>
         public string DefaultBus { get; set; }
 
@@ -124,7 +124,12 @@ namespace Common.RabbitMQ
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(DefaultBus) && !buses.ContainsKey(DefaultBus))
+            if (string.IsNullOrWhiteSpace(DefaultBus))
+            {
+                throw new InvalidOperationException(NoDefaultBus);
+            }
+
+            if (!buses.ContainsKey(DefaultBus))
             {
                 throw new InvalidOperationException($"The default bus '{DefaultBus}' is not configured for this application.");
             }
@@ -164,18 +169,14 @@ namespace Common.RabbitMQ
                 throw new ArgumentNullException(nameof(eventType));
             }
 
-            if (!string.IsNullOrWhiteSpace(DefaultBus))
+            if (string.IsNullOrWhiteSpace(DefaultBus))
             {
-                return GetRequiredBus(DefaultBus);
+                throw new InvalidOperationException($"Cannot publish {eventType.Name}: {NoDefaultBus}");
             }
 
-            if (buses.Count == 1)
-            {
-                return buses.Values.Single();
-            }
-
-            throw new InvalidOperationException(
-                $"Cannot publish {eventType.Name}: this application has {buses.Count} buses and no default. Set Messaging:DefaultBus, or name the bus when publishing.");
+            return GetRequiredBus(DefaultBus);
         }
+
+        private const string NoDefaultBus = "No default bus: set Messaging:DefaultBus in the configuration.";
     }
 }

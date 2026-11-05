@@ -157,13 +157,13 @@ public sealed class Handler : IRequestHandler<Command, Guid>
 {
     private readonly IEquipmentRepository _equipment;
     private readonly IRealtimeDispatch _realtime;
-    private readonly IEquipmentOutbox _outbox;
+    private readonly IEquipmentEvents _events;
 
-    public Handler(IEquipmentRepository equipment, IRealtimeDispatch realtime, IEquipmentOutbox outbox)
+    public Handler(IEquipmentRepository equipment, IRealtimeDispatch realtime, IEquipmentEvents events)
     {
         _equipment = equipment;
         _realtime = realtime;
-        _outbox = outbox;
+        _events = events;
     }
 
     public async Task<Guid> Handle(Command command, CancellationToken cancellationToken)
@@ -179,7 +179,7 @@ public sealed class Handler : IRequestHandler<Command, Guid>
             AssetTag = asset.AssetTag,
             Status = asset.Status.ToString(),
         };
-        _outbox.Enqueue(created);                   // the same event to RabbitMQ, via the outbox (tutorial 67)
+        _events.Publish(created);                   // the same event to RabbitMQ, after the commit (tutorial 67)
         _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentCreated), created));
 
         return asset.Id;

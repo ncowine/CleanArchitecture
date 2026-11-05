@@ -61,7 +61,7 @@ namespace Messaging.Prism
             }
         }
 
-        /// <summary>Checked under the lock, so a subscribe at the same moment either keeps the binding or creates it again.</summary>
+        /// <summary>Checked under the lock, so a subscribe at the same moment either keeps the message received or starts it again.</summary>
         public static void StopIfUnused(IReceivedEvent receivedEvent)
         {
             lock (gate)

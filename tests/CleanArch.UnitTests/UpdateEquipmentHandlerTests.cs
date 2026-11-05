@@ -22,8 +22,8 @@ public class UpdateEquipmentHandlerTests
         var cache = new FakeEquipmentCacheInvalidator();
         var changeNotifier = new FakeEquipmentChangeNotifier();
         var realtime = new FakeRealtimeDispatch();
-        var outbox = new FakeEquipmentOutbox();
-        var handler = new UpdateEquipment.Handler(repository, cache, changeNotifier, realtime, outbox);
+        var events = new FakeEquipmentEvents();
+        var handler = new UpdateEquipment.Handler(repository, cache, changeNotifier, realtime, events);
 
         var updated = await handler.Handle(
             new UpdateEquipment.Command(asset.Id, "ThinkPad X1 Carbon", EquipmentCategory.Other, "LAP-002"), default);
@@ -39,7 +39,7 @@ public class UpdateEquipmentHandlerTests
         Assert.Equal("equipment", group);
         Assert.Equal("EquipmentUpdated", evt.Type);
 
-        var sent = Assert.IsType<EquipmentUpdated>(Assert.Single(outbox.Enqueued));
+        var sent = Assert.IsType<EquipmentUpdated>(Assert.Single(events.Published));
         Assert.Same(sent, evt.Payload);
         Assert.Equal(asset.Id, sent.Id);
         Assert.Equal("ThinkPad X1 Carbon", sent.Name);
@@ -54,8 +54,8 @@ public class UpdateEquipmentHandlerTests
         var cache = new FakeEquipmentCacheInvalidator();
         var changeNotifier = new FakeEquipmentChangeNotifier();
         var realtime = new FakeRealtimeDispatch();
-        var outbox = new FakeEquipmentOutbox();
-        var handler = new UpdateEquipment.Handler(repository, cache, changeNotifier, realtime, outbox);
+        var events = new FakeEquipmentEvents();
+        var handler = new UpdateEquipment.Handler(repository, cache, changeNotifier, realtime, events);
 
         var updated = await handler.Handle(
             new UpdateEquipment.Command(Guid.NewGuid(), "Name", EquipmentCategory.Laptop, "TAG"), default);
@@ -64,6 +64,6 @@ public class UpdateEquipmentHandlerTests
         Assert.Empty(cache.Invalidated);
         Assert.Empty(changeNotifier.Notified);
         Assert.Empty(realtime.Published);
-        Assert.Empty(outbox.Enqueued);
+        Assert.Empty(events.Published);
     }
 }

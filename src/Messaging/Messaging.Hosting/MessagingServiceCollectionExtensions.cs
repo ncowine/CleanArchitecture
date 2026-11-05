@@ -8,11 +8,6 @@ namespace Messaging.Hosting
 {
     public static class MessagingServiceCollectionExtensions
     {
-        /// <summary>
-        /// Adds messaging: one keyed <see cref="RabbitMQBus"/> per bus, <see cref="IMessagePublisher"/>,
-        /// <see cref="IConfirmedMessagePublisher"/>, <see cref="IMessageSubscriber"/>, scoped async handlers, and a hosted service that starts and stops the buses. Telemetry is added with
-        /// <see cref="MessagingBuilder.AddTelemetry"/>.
-        /// </summary>
         public static IServiceCollection AddMessaging(this IServiceCollection services, Action<MessagingBuilder> configure)
         {
             if (services == null)
@@ -27,10 +22,8 @@ namespace Messaging.Hosting
 
             MessagingRegistry registry = new MessagingRegistry();
             services.AddSingleton(registry);
-            services.AddSingleton<TelemetryObserver>();
             services.AddSingleton<MessagePublisher>();
             services.AddSingleton<IMessagePublisher>(provider => provider.GetRequiredService<MessagePublisher>());
-            services.AddSingleton<IConfirmedMessagePublisher>(provider => provider.GetRequiredService<MessagePublisher>());
             services.AddSingleton<MessageSubscriber>();
             services.AddSingleton<IMessageSubscriber>(provider => provider.GetRequiredService<MessageSubscriber>());
             services.AddSingleton<IMessageSink>(provider => provider.GetRequiredService<MessageSubscriber>());
@@ -56,7 +49,6 @@ namespace Messaging.Hosting
                 options,
                 serializer,
                 new ScopedDispatcher(provider.GetRequiredService<IServiceScopeFactory>(), registry, name),
-                registry.TelemetryEnabled ? provider.GetRequiredService<TelemetryObserver>() : null,
                 provider.GetService<ILogger<RabbitMQBus>>());
         }
     }

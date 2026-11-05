@@ -20,10 +20,9 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         private readonly List<MessageRegistration> registrations = new List<MessageRegistration>();
         private readonly ConcurrentQueue<MessageContext> contexts = new ConcurrentQueue<MessageContext>();
         private readonly RabbitMQBusOptions options;
-        private readonly IMessagingObserver observer;
         private RabbitMQBus bus;
 
-        public CoreApp(BrokerSettings broker, string exchangeName, string clientName, Action<RabbitMQBusOptions> configure, IMessagingObserver observer)
+        public CoreApp(BrokerSettings broker, string exchangeName, string clientName, Action<RabbitMQBusOptions> configure)
         {
             options = new RabbitMQBusOptions
             {
@@ -40,7 +39,6 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 RetryDelay = TimeSpan.FromMilliseconds(50),
             };
             configure?.Invoke(options);
-            this.observer = observer;
         }
 
         public RabbitMQBus Bus => bus;
@@ -69,7 +67,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         /// <summary>Creates the bus without starting it, to change its subscriptions first.</summary>
         public RabbitMQBus CreateBus(Microsoft.Extensions.Logging.ILogger logger = null)
         {
-            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, observer, logger);
+            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, logger);
             return bus;
         }
 

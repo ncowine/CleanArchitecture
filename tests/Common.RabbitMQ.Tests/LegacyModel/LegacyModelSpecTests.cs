@@ -130,7 +130,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         }
 
         [Fact]
-        public async Task A2_A3_A4_A5_PublishedMessage_OnTheWire()
+        public async Task F5_A3_A4_A5_PublishedMessage_OnTheWire()
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
@@ -143,7 +143,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 CapturedMessage message = await capture.Next(TestBus.Timeout);
                 Assert.NotNull(message);
                 Assert.Equal(sender.ExchangeName, message.Exchange);
-                Assert.Equal("AppA.Events.OrderSaved", message.RoutingKey);                         // A2
+                Assert.Equal(sender.ExchangeName, message.RoutingKey);                               // F5
                 Assert.Equal("AppA.Events.OrderSaved", message.Headers[LegacyHeaders.EventType]);   // A3
                 Assert.Equal(sender.InstanceId, message.Headers[LegacyHeaders.SourceId]);           // A3
                 Assert.Equal("application/json", message.ContentType);                               // A4
@@ -177,7 +177,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         }
 
         [Fact]
-        public async Task A8_A9_Bindings_OnePerKnownEvent_OnOwnAndSubscribedExchanges()
+        public async Task F6_F7_Bindings_OnePerExchange_KeyedByTheExchangeName()
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
@@ -185,21 +185,19 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 LegacyApp app = topology.Start(AppB, new[] { AppA }, AppBEvents, AppAEvents);
                 await topology.WaitUntilConnected(app);
 
-                // A8: own exchange, every known event (including other apps' events it knows).
-                Assert.True(await topology.IsRoutable(AppB, "AppB.Events.CustomerChanged"));
-                Assert.True(await topology.IsRoutable(AppB, "AppA.Events.OrderSaved"));
+                // F6: own exchange, keyed by its own name; event names aren't bound.
+                Assert.True(await topology.IsRoutable(AppB, topology.Exchange(AppB)));
+                Assert.False(await topology.IsRoutable(AppB, "AppB.Events.CustomerChanged"));
 
-                // A9: subscribed exchange, the same per-event bindings, nothing else.
-                Assert.True(await topology.IsRoutable(AppA, "AppA.Events.OrderSaved"));
-                Assert.True(await topology.IsRoutable(AppA, "AppA.Events.OrderSelected"));
-                Assert.True(await topology.IsRoutable(AppA, "AppB.Events.CustomerChanged"));
-                Assert.False(await topology.IsRoutable(AppA, "AppA.Events.NotAnEvent"));
+                // F7: subscribed exchange, keyed by its owner's name, nothing else.
+                Assert.True(await topology.IsRoutable(AppA, topology.Exchange(AppA)));
+                Assert.False(await topology.IsRoutable(AppA, "AppA.Events.OrderSaved"));
                 Assert.False(await topology.IsRoutable(AppA, "orders.eu.saved"));
             }
         }
 
         [Fact]
-        public async Task A10_EventIsResolvedFromTheHeader_ThenFromTheRoutingKey()
+        public async Task A10_EventIsResolvedFromTheHeader_WithoutItTheMessageIsIgnored()
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
@@ -209,15 +207,16 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 await topology.WaitUntilConnected(app);
                 byte[] body = GoldenFile.Read("compat-payload.json");
 
-                // Routed by the OrderSaved binding, but the header says CustomerChanged: the header wins.
-                Dictionary<string, object> headers = new Dictionary<string, object> { [LegacyHeaders.EventType] = "AppB.Events.CustomerChanged" };
-                await topology.PublishRaw(AppA, "AppA.Events.OrderSaved", headers, body);
-                Customer customer = await customers.Next(TestBus.Timeout);
-                Assert.Equal(42, customer?.Id);
-
-                // No header: the routing key decides.
-                await topology.PublishRaw(AppA, "AppA.Events.OrderSaved", null, body);
+                // Every message on AppA's exchange carries AppA's name as its key: only the header says which event it is.
+                string key = topology.Exchange(AppA);
+                await topology.PublishRaw(AppA, key, new Dictionary<string, object> { [LegacyHeaders.EventType] = "AppA.Events.OrderSaved" }, body);
                 AssertGolden(await orders.Next(TestBus.Timeout));
+                await topology.PublishRaw(AppA, key, new Dictionary<string, object> { [LegacyHeaders.EventType] = "AppB.Events.CustomerChanged" }, body);
+                Assert.Equal(42, (await customers.Next(TestBus.Timeout))?.Id);
+
+                // No header, or an event AppB doesn't know: ignored.
+                await topology.PublishRaw(AppA, key, null, body);
+                await topology.PublishRaw(AppA, key, new Dictionary<string, object> { [LegacyHeaders.EventType] = "AppA.Events.NotAnEvent" }, body);
 
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
                 Assert.Equal(1, orders.Count);
