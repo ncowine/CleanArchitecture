@@ -32,20 +32,20 @@ public static class UpdateEquipment
         private readonly IEquipmentCacheInvalidator _cache;
         private readonly IEquipmentChangeNotifier _changeNotifier;
         private readonly IRealtimeDispatch _realtime;
-        private readonly IEquipmentOutbox _outbox;
+        private readonly IEquipmentEvents _events;
 
         public Handler(
             IEquipmentRepository equipment,
             IEquipmentCacheInvalidator cache,
             IEquipmentChangeNotifier changeNotifier,
             IRealtimeDispatch realtime,
-            IEquipmentOutbox outbox)
+            IEquipmentEvents events)
         {
             _equipment = equipment;
             _cache = cache;
             _changeNotifier = changeNotifier;
             _realtime = realtime;
-            _outbox = outbox;
+            _events = events;
         }
 
         public async Task<bool> Handle(Command command, CancellationToken cancellationToken)
@@ -69,7 +69,7 @@ public static class UpdateEquipment
                 AssetTag = asset.AssetTag,
                 Status = asset.Status.ToString(),
             };
-            _outbox.Enqueue(updated);
+            _events.Publish(updated);
             _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentUpdated), updated));
 
             return true;

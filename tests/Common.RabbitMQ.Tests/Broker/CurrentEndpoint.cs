@@ -1,3 +1,4 @@
+using System;
 using Compat.Events;
 using Prism.Events;
 
@@ -14,7 +15,7 @@ namespace Common.RabbitMQ.Tests.Broker
             service = new RabbitMQService(eventAggregator, new RemoteEventRegistry(typeof(CompatEvent).Assembly));
             eventAggregator.GetEvent<CompatEvent>().Subscribe(Received.Add, ThreadOption.PublisherThread, keepSubscriberReferenceAlive: true);
             service.Init(broker.CreateCurrentConfig(CompatBus.Name, exchangeName, clientName));
-            queueName = $"{clientName}.{CompatBus.Name}.{service.InstanceId}".ToLowerInvariant();
+            queueName = $"{clientName}.{CompatBus.Name}.{Environment.UserName}.{service.InstanceId}".ToLowerInvariant();
         }
 
         public CompatBuild Build => CompatBuild.Current;

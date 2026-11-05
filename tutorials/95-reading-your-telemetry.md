@@ -362,31 +362,21 @@ raised and never acted on. Nothing retries it for you. See scenario 11.
 ### Messaging (RabbitMQ)
 
 Empty unless the API runs with a `Messaging` section (a broker configured). Read it top to
-bottom: the tiles say whether anything is wrong right now, the graphs say since when and for
-which event, and the log says why.
+bottom: the tiles say whether anything is wrong right now, and the log says why.
 
 | Tile | Healthy | Unhealthy |
 |---|---|---|
 | **Broker reachable** | Up | Down: Prometheus cannot scrape RabbitMQ, so the broker, its host or the `rabbitmq_prometheus` plugin is gone. No application can publish or receive. *Not scraped* means the `rabbitmq` job is missing from `prometheus.yml` |
-| **API connection to broker** | consumer and publisher both Connected | Either Disconnected while the broker is Up: the cause is on the API side — credentials, vhost permissions, the network. The API keeps serving requests and the outbox holds its events; nothing is received until it reconnects. *Messaging off* means no broker is configured |
 | **Dead-lettered** | 0 | Anything above zero: messages the API received but never handled — every attempt failed, or the body was unreadable. Nothing retries them. Read them in the management UI (`:15672` → Queues → `cleanarch.api.main.dead-letter`), fix the cause, then move them back or purge |
 | **Waiting to be handled** | near 0 | Climbing: handlers are slower than arrivals, or the consumer is disconnected |
-
-| Graph | Healthy | Unhealthy |
-|---|---|---|
-| **Events/sec** | *published* follows the writes that raise events, a poll interval behind; *received* follows what other apps send | A line at zero while traffic continues: events stopped flowing. Flat *published* with writes happening and the connection Up: the outbox isn't relaying — check **Outbox dispatch** above |
-| **Failures/sec by event & reason** | empty | *publish …*: the broker didn't confirm; the outbox retries. *handle …*: a handler throws; it is retried, then dead-lettered. The reason is the exception type |
-| **Handling p95 by event** | milliseconds | Seconds: the handler is slow, and the next messages queue behind it. It rises before the backlog does |
 
 **Connection & dead-letter log** is the *why* behind the tiles: connections lost and regained,
 failed connects with the broker's reason (`ACCESS_REFUSED`, connection refused), and messages
 retried, dead-lettered or dropped.
 
-The connection state comes from the API itself (`AddTelemetry()` on the
-messaging builder); broker reachability, the dead-letter queue and the backlog come from
-RabbitMQ (the `rabbitmq_prometheus` plugin, scraped on `:15692/metrics/per-object`). Two
-sources on purpose: the API can't report on a broker it can't reach, and the broker can't
-see why the API isn't connecting.
+Broker reachability, the dead-letter queue and the backlog come from RabbitMQ (the
+`rabbitmq_prometheus` plugin, scraped on `:15692/metrics/per-object`). The messaging library
+exports no metrics of its own, so the API's side of the connection shows only in the log.
 
 ### Runtime (collapsed)
 
@@ -529,10 +519,6 @@ Scraped from `http://localhost:5235/metrics`. This is the real list, not a sampl
 | `dotnet_monitor_lock_contentions_total` | — | Lock contention |
 | `dns_lookup_duration_seconds` | — | DNS, when a dependency is "slow" for no reason |
 | `outbox_delivered_total`, `outbox_failed_total`, `outbox_dead_lettered_total` | — | The one business metric this app defines ([50 §7](50-instrumenting-an-application.md#7-step-4--add-your-own-metric)) |
-| `messaging_client_sent_messages_total` | `messaging_destination_name`, `messaging_bus_name`, `error_type` | RabbitMQ publishes, confirmed or failed (failed ones carry `error_type`) |
-| `messaging_client_consumed_messages_total` | `messaging_destination_name`, `messaging_bus_name` | Messages received and passed to handlers |
-| `messaging_process_duration_seconds_*` | `messaging_destination_name`, `messaging_bus_name`, `error_type` | Time to handle one message; failed attempts carry `error_type` |
-| `messaging_client_connected` | `messaging_bus_name`, `messaging_connection_role` | 1 while the bus's consumer or publisher connection is open, 0 while not |
 | `up{job="rabbitmq"}` | — | Written by Prometheus: 1 while it can scrape the broker |
 | `rabbitmq_queue_messages`, `_ready` | `queue`, `vhost` | From the broker: messages in a queue, and those not yet handed to a consumer |
 
@@ -1259,7 +1245,7 @@ before you need them.
 
 ## 13. The alerts worth having
 
-A dashboard nobody is looking at is not monitoring. Seven rules ship with this repo, in
+A dashboard nobody is looking at is not monitoring. Six rules ship with this repo, in
 [`observability/grafana/provisioning/alerting/cleanarch-api.yaml`](../observability/grafana/provisioning/alerting/cleanarch-api.yaml).
 Add more only when a real incident proves you needed one.
 
@@ -1270,7 +1256,6 @@ Add more only when a real incident proves you needed one.
 | **Service down** | Prometheus cannot scrape `/metrics` | 5m | critical |
 | **Outbox message dead-lettered** | any message was given up on in the last hour | 1m | warning |
 | **RabbitMQ broker unreachable** | Prometheus cannot scrape RabbitMQ | 5m | critical |
-| **API disconnected from RabbitMQ** | the API's consumer or publisher connection is down while the broker is reachable | 5m | critical |
 | **Messages dead-lettered** | the API's dead-letter queue is not empty | 1m | warning |
 
 The two connection rules never page twice for one outage: while the broker is unreachable, the
@@ -1283,7 +1268,7 @@ messages in it are work nobody has done yet.
 Prometheus can evaluate alerting rules perfectly well, but it **cannot notify anyone** — that
 needs a separate Alertmanager process with its own config and its own receivers. Grafana is
 already running, already has Prometheus as a data source, and already has contact points and
-notification policies. One component instead of two, for the same seven alerts.
+notification policies. One component instead of two, for the same six alerts.
 
 ### Turning them on
 
@@ -1298,7 +1283,7 @@ place `datasources.yaml` went — and restart:
 <grafana>/conf/provisioning/alerting/cleanarch-api.yaml
 ```
 
-Then check **Alerting → Alert rules**. Seven rules in a `CleanArch` folder, all Normal on a
+Then check **Alerting → Alert rules**. Six rules in a `CleanArch` folder, all Normal on a
 healthy service.
 
 ### Three design points that matter more than the thresholds

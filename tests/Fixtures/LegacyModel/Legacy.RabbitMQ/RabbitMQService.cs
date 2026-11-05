@@ -79,7 +79,7 @@ namespace Legacy.RabbitMQ
 
             this.config = config;
 
-            // Assumption A8: every known event is received, from every exchange (own and subscribed).
+            // Assumption A8: every known event is handled, whichever exchange (own or subscribed) it arrives on.
             foreach (RemoteEventDescriptor descriptor in registry.Events)
             {
                 registeredEvents[descriptor.EventName] = descriptor;
@@ -210,13 +210,10 @@ namespace Legacy.RabbitMQ
                     autoDelete: true,
                     cancellationToken: token).ConfigureAwait(false);
 
-                // Assumptions A8 and A9: one binding per known event, on every exchange, routing key = full type name.
+                // Facts F6 and F7: one binding per exchange, keyed by the exchange's (= its owner's) name.
                 foreach (string exchange in exchanges)
                 {
-                    foreach (RemoteEventDescriptor descriptor in registeredEvents.Values)
-                    {
-                        await channel.QueueBindAsync(queue.QueueName, exchange, descriptor.EventName, cancellationToken: token).ConfigureAwait(false);
-                    }
+                    await channel.QueueBindAsync(queue.QueueName, exchange, exchange, cancellationToken: token).ConfigureAwait(false);
                 }
 
                 AsyncEventingBasicConsumer consumer = new AsyncEventingBasicConsumer(channel);
@@ -274,9 +271,10 @@ namespace Legacy.RabbitMQ
                     return;
                 }
 
-                // Assumption A10: the event-type header decides the event; the routing key is the fallback.
-                string eventName = ReadHeader(headers, MessageHeaders.EventType) ?? args.RoutingKey;
-                if (!registeredEvents.TryGetValue(eventName, out RemoteEventDescriptor descriptor))
+                // Assumption A10: the event-type header decides the event. The routing key is the publisher's name (fact F5),
+                // so a message without the header can't be identified.
+                string eventName = ReadHeader(headers, MessageHeaders.EventType);
+                if (eventName == null || !registeredEvents.TryGetValue(eventName, out RemoteEventDescriptor descriptor))
                 {
                     WriteLog($"Ignored unknown event '{eventName}'.");
                     return;
@@ -424,10 +422,10 @@ namespace Legacy.RabbitMQ
                 },
             };
 
-            // Fact F2 and assumption A2: to this application's own exchange, routing key = full type name.
+            // Facts F2 and F5: to this application's own exchange, routing key = the application (= exchange) name.
             await channel.BasicPublishAsync(
                 exchange: config.ExchangeName,
-                routingKey: message.EventName,
+                routingKey: config.ExchangeName,
                 mandatory: false,
                 basicProperties: properties,
                 body: message.Body,

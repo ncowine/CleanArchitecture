@@ -16,7 +16,8 @@
             <Button Content="Delete selected (HTTP)" Command="{Binding DeleteSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />
             <Button Content="Reload (HTTP)" Command="{Binding ReloadCommand}" Padding="10,4" Margin="0,0,8,0" />
             <Button Content="Dispose of selected (RabbitMQ → API)" Command="{Binding DisposeSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />
-            <Button Content="Flag selected (RabbitMQ, tuple → POC API)" Command="{Binding FlagSelectedCommand}" Padding="10,4" />
+            <Button Content="Flag selected (RabbitMQ, tuple → POC API)" Command="{Binding FlagSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />
+            <Button Content="Send all 10 shapes (RabbitMQ → everyone)" Command="{Binding SendShapesCommand}" Padding="10,4" />
         </WrapPanel>
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <Button DockPanel.Dock="Right" Content="Send note on selected (RabbitMQ → legacy apps)" Command="{Binding SendNoteCommand}" Padding="10,4" Margin="8,0,0,0" />

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Ten POC-only events, each with a payload shape that can break JSON compatibility between the legacy format
+    (Newtonsoft 12, through Common.RabbitMQ) and the modern one (System.Text.Json, through Messaging.Hosting).
+
+    One class per event serves both sides, the way the API's Equipment.Messages does:
+    - the legacy apps send it as the payload of a RemotePubSubEvent<T> (Poc.Legacy.Events/Shapes);
+    - modern apps receive it as a plain [Message] class.
+    The wire name is the legacy event's full name, "Poc.Legacy.Events.Shapes.<Name>", because that's how a legacy app
+    names an event.
+
+    netstandard2.0, so the net472, net8 and net10 apps can all load it. Its only reference is Messaging.Abstractions.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Messaging\Messaging.Abstractions\Messaging.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

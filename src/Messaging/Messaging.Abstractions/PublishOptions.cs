@@ -1,9 +1,7 @@
 namespace Messaging
 {
-    /// <summary>Per-call settings for <see cref="IMessagePublisher.Publish{TMessage}(TMessage, PublishOptions)"/>.</summary>
     public sealed class PublishOptions
     {
-        /// <summary>Sends this message to the bus with this name instead of the default bus.</summary>
         public string Bus { get; set; }
 
         /// <summary>

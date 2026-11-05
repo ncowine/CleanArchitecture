@@ -1,7 +1,5 @@
 using BuildingBlocks.Caching;
 using BuildingBlocks.Messaging;
-using BuildingBlocks.Outbox;
-using BuildingBlocks.Outbox.Messaging;
 using BuildingBlocks.Persistence;
 using Equipment.Application;
 using Equipment.Application.Abstractions;
@@ -63,33 +61,12 @@ public static class DependencyInjection
         // equipment for a new hire's onboarding saga.
         services.AddScoped<IEquipmentReservationService, EquipmentReservationService>();
 
+        // Integration events for other applications, published after the commit: the events behavior is registered
+        // first, so it runs outside the transaction.
+        services.AddScoped<EquipmentEvents>();
+        services.AddScoped<IEquipmentEvents>(provider => provider.GetRequiredService<EquipmentEvents>());
+        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(EquipmentEventsBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
-
-        // Integration events for other applications. Off by default: nothing is recorded until the host calls
-        // AddEquipmentIntegrationEvents (it does when "Messaging" is configured). TryAdd, so the order of the two
-        // calls doesn't matter.
-        services.TryAddScoped<IEquipmentOutbox, NoBrokerEquipmentOutbox>();
-
-        return services;
-    }
-
-    /// <summary>
-    /// Sends Equipment's integration events (every <c>[Message]</c> class in Equipment.Messages, such as
-    /// <see cref="EquipmentCreated"/>) to RabbitMQ through the module's outbox (docs/messaging/adr/0003): the handler
-    /// stages the event in the same transaction as the change, and the outbox processor relays it with a confirmed
-    /// publish once committed.
-    /// </summary>
-    /// <remarks>
-    /// Call from the host only when it has also called <c>AddMessaging</c>: the relay needs
-    /// <c>IConfirmedMessagePublisher</c>.
-    /// </remarks>
-    public static IServiceCollection AddEquipmentIntegrationEvents(this IServiceCollection services)
-    {
-        services.AddScoped<OutboxWriter<EquipmentDbContext>>();
-        services.RemoveAll<IEquipmentOutbox>();
-        services.AddScoped<IEquipmentOutbox, EquipmentOutbox>();
-
-        services.AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentCreated).Assembly);
 
         return services;
     }

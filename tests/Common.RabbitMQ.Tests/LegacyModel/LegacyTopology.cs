@@ -65,9 +65,9 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         /// Creates an application on the core with its own exchange named after <paramref name="app"/>. Register its message
         /// types with <see cref="CoreApp.Listen{T}"/>, then call <see cref="CoreApp.Start"/>.
         /// </summary>
-        public CoreApp CreateCore(string app, Action<RabbitMQBusOptions> configure = null, IMessagingObserver observer = null)
+        public CoreApp CreateCore(string app, Action<RabbitMQBusOptions> configure = null)
         {
-            CoreApp instance = new CoreApp(Broker, Exchange(app), app, configure, observer);
+            CoreApp instance = new CoreApp(Broker, Exchange(app), app, configure);
             coreApps.Add(instance);
             return instance;
         }

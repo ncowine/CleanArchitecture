@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using AppA.Events;
 using Common.RabbitMQ.Tests.Broker;
@@ -10,197 +9,92 @@ using Xunit;
 namespace Common.RabbitMQ.Tests.Adapter
 {
     /// <summary>
-    /// When the last subscriber of a <see cref="RemotePubSubEvent{TPayload}"/> goes, its binding goes. The application's
-    /// queue is the only one on the exchange, so "routable" means "this application has the binding".
+    /// Unsubscribing from a <see cref="RemotePubSubEvent{TPayload}"/> never touches the broker: the queue is bound once per
+    /// exchange. These check that the event keeps arriving, or arrives again, whatever order subscribers come and go in.
     /// </summary>
     public class RemoteEventUnsubscribeTests
     {
         private const string App = "unsubscribe";
 
-        /// <summary>Long enough for a wrongly started binding change to reach the broker.</summary>
-        private static readonly TimeSpan SettlePeriod = TimeSpan.FromMilliseconds(500);
-
-        private static readonly string WireName = typeof(ComesAndGoes).FullName;
-
         [Fact]
-        public async Task UnsubscribingWithTheToken_RemovesTheBinding_AndSubscribingAgainRestoresIt()
+        public async Task UnsubscribingWithTheToken_ThenSubscribingAgain_Receives()
         {
-            await WithApp(async (topology, app) =>
+            await WithApp(async (topology, app, sender) =>
             {
                 PubSubEvent<Order> remoteEvent = app.Events.GetEvent<ComesAndGoes>();
-
-                SubscriptionToken token = remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                await WaitForBinding(topology, true);
-
-                remoteEvent.Unsubscribe(token);
-                await WaitForBinding(topology, false);
+                remoteEvent.Unsubscribe(remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true));
 
                 Received<Order> received = new Received<Order>();
                 remoteEvent.Subscribe(received.Add, keepSubscriberReferenceAlive: true);
-                await WaitForBinding(topology, true);
-
-                AdapterApp sender = topology.StartAdapter(App, null);
-                await topology.WaitUntilConnected(sender);
                 sender.PublishRemote<ComesAndGoes, Order>(new Order { Id = 9 });
 
-                Order order;
-                do
-                {
-                    // The probes above arrive too, with empty bodies.
-                    order = await received.Next(TestBus.Timeout);
-                }
-                while (order == null && received.Count < 200);
-
-                Assert.Equal(9, order?.Id);
+                Assert.Equal(9, (await received.Next(TestBus.Timeout))?.Id);
             });
         }
 
         [Fact]
-        public async Task DisposingTheToken_RemovesTheBinding()
+        public async Task UnsubscribingOneAction_TheOtherStillReceives()
         {
-            await WithApp(async (topology, app) =>
-            {
-                SubscriptionToken token = app.Events.GetEvent<ComesAndGoes>().Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                await WaitForBinding(topology, true);
-
-                token.Dispose();
-
-                await WaitForBinding(topology, false);
-            });
-        }
-
-        [Fact]
-        public async Task UnsubscribingAnAction_RemovesTheBinding_OnlyWithTheLastSubscriber()
-        {
-            await WithApp(async (topology, app) =>
+            await WithApp(async (topology, app, sender) =>
             {
                 PubSubEvent<Order> remoteEvent = app.Events.GetEvent<ComesAndGoes>();
                 Action<Order> first = _ => { };
-                Action<Order> second = _ => { };
+                Received<Order> second = new Received<Order>();
                 remoteEvent.Subscribe(first, keepSubscriberReferenceAlive: true);
-                remoteEvent.Subscribe(second, keepSubscriberReferenceAlive: true);
-                await WaitForBinding(topology, true);
+                remoteEvent.Subscribe(second.Add, keepSubscriberReferenceAlive: true);
 
                 remoteEvent.Unsubscribe(first);
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-                Assert.True(await topology.IsRoutable(App, WireName));
+                sender.PublishRemote<ComesAndGoes, Order>(new Order { Id = 10 });
 
-                remoteEvent.Unsubscribe(second);
-                await WaitForBinding(topology, false);
-            });
-        }
-
-        [Fact]
-        public async Task ACollectedSubscriber_RemovesTheBinding_AtTheNextMessage()
-        {
-            await WithApp(async (topology, app) =>
-            {
-                SubscribeWeakly(app.Events);
-                await WaitForBinding(topology, true);
-
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                GC.Collect();
-
-                // WaitForBinding's probes are the next messages.
-                await WaitForBinding(topology, false);
+                Assert.Equal(10, (await second.Next(TestBus.Timeout))?.Id);
             });
         }
 
         [Fact]
         public async Task QuickChanges_EndInTheLastState()
         {
-            await WithApp(async (topology, app) =>
+            await WithApp(async (topology, app, sender) =>
             {
                 PubSubEvent<Order> remoteEvent = app.Events.GetEvent<ComesAndGoes>();
-                SubscriptionToken token = null;
                 for (int i = 0; i < 30; i++)
                 {
-                    token = remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                    token.Dispose();
+                    remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true).Dispose();
                 }
 
-                token = remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-                Assert.True(await topology.IsRoutable(App, WireName));
+                Received<Order> received = new Received<Order>();
+                remoteEvent.Subscribe(received.Add, keepSubscriberReferenceAlive: true);
+                sender.PublishRemote<ComesAndGoes, Order>(new Order { Id = 11 });
 
-                for (int i = 0; i < 30; i++)
-                {
-                    token.Dispose();
-                    token = remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                }
-
-                token.Dispose();
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-                Assert.False(await topology.IsRoutable(App, WireName));
+                Assert.Equal(11, (await received.Next(TestBus.Timeout))?.Id);
             });
         }
 
         [Fact]
         public async Task SubscribingAfterUnregisterQueue_Resumes()
         {
-            await WithApp(async (topology, app) =>
+            await WithApp(async (topology, app, sender) =>
             {
                 PubSubEvent<Order> remoteEvent = app.Events.GetEvent<ComesAndGoes>();
                 remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                await WaitForBinding(topology, true);
-
                 await app.Service.UnregisterQueue(typeof(ComesAndGoes));
-                Assert.False(await topology.IsRoutable(App, WireName));
 
-                remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                await WaitForBinding(topology, true);
+                Received<Order> received = new Received<Order>();
+                remoteEvent.Subscribe(received.Add, keepSubscriberReferenceAlive: true);
+                sender.PublishRemote<ComesAndGoes, Order>(new Order { Id = 12 });
+
+                Assert.Equal(12, (await received.Next(TestBus.Timeout))?.Id);
             });
         }
 
-        [Fact]
-        public async Task RegisterQueue_KeepsTheBinding_AfterTheLastSubscriber_UntilUnregisterQueue()
-        {
-            await WithApp(async (topology, app) =>
-            {
-                await app.Service.RegisterQueue(typeof(ComesAndGoes));
-                SubscriptionToken token = app.Events.GetEvent<ComesAndGoes>().Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                await WaitForBinding(topology, true);
-
-                token.Dispose();
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-                Assert.True(await topology.IsRoutable(App, WireName));
-
-                await app.Service.UnregisterQueue(typeof(ComesAndGoes));
-                await WaitForBinding(topology, false);
-            });
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void SubscribeWeakly(IEventAggregator eventAggregator)
-        {
-            int seen = 0;
-            eventAggregator.GetEvent<ComesAndGoes>().Subscribe(_ => seen++);
-        }
-
-        private static async Task WithApp(Func<LegacyTopology, AdapterApp, Task> test)
+        private static async Task WithApp(Func<LegacyTopology, AdapterApp, AdapterApp, Task> test)
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
                 AdapterApp app = topology.StartAdapter(App, null);
-                await topology.WaitUntilConnected(app);
-                await test(topology, app);
+                AdapterApp sender = topology.StartAdapter(App, null);
+                await topology.WaitUntilConnected(app, sender);
+                await test(topology, app, sender);
             }
-        }
-
-        private static async Task WaitForBinding(LegacyTopology topology, bool bound)
-        {
-            for (int i = 0; i < 100; i++)
-            {
-                if (await topology.IsRoutable(App, WireName) == bound)
-                {
-                    return;
-                }
-
-                await Task.Delay(100, TestContext.Current.CancellationToken);
-            }
-
-            Assert.Fail(bound ? "The event was never bound." : "The binding was never removed.");
         }
     }
 }

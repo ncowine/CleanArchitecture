@@ -34,14 +34,12 @@ namespace Common.RabbitMQ.Tests.Adapter
         }
 
         [Fact]
-        public void WithoutADefault_SeveralBuses_RefuseToPublish()
+        public void WithoutADefault_InitIsRefused()
         {
             using (RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), Load(Buses), typeof(OrderSaved).Assembly))
             {
-                router.Init();
-
-                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => router.Publish(typeof(OrderSaved), new Order { Id = 1 }));
-                Assert.Contains("no default", error.Message);
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => router.Init());
+                Assert.Contains("Messaging:DefaultBus", error.Message);
             }
         }
 

@@ -3,7 +3,7 @@
 How the API's RabbitMQ messaging is written, why it is written that way, and how it works, with pseudo code and
 examples. For the library manual (every app type, every setting), see [README.md](README.md).
 
-Last reviewed: 2026-10-22, at commit `56e83db`.
+Last reviewed: 2026-11-05. The outbox was removed that day: the API now publishes right after the commit.
 
 ## Contents
 
@@ -15,7 +15,7 @@ Last reviewed: 2026-10-22, at commit `56e83db`.
 - [Configuration and the on/off switch](#configuration-and-the-onoff-switch)
 - [Receiving](#receiving)
 - [Reliability](#reliability)
-- [Correlation and telemetry](#correlation-and-telemetry)
+- [Monitoring](#monitoring)
 - [Legacy compatibility](#legacy-compatibility)
 - [Worked example: adding a new event](#worked-example-adding-a-new-event)
 - [Gotchas and further reading](#gotchas-and-further-reading)
@@ -28,7 +28,7 @@ and the API has two other mechanisms for related jobs.
 
 | Mechanism | Job | Who receives | Guarantee |
 | --- | --- | --- | --- |
-| RabbitMQ | Tell *other applications* that something changed | Any app bound to the API's exchange (legacy WPF apps, modern WPF apps, other services) | At least once, survives restarts and broker outages |
+| RabbitMQ | Tell *other applications* that something changed | Any app bound to the API's exchange (legacy WPF apps, modern WPF apps, other services) | Best effort: survives broker outages while the API keeps running, lost if the API stops first |
 | SignalR | Refresh *screens that are open right now* | Clients connected to `/hubs/presence` | Best effort, lost if nobody is connected |
 | Outbox saga | Run a multi-step process *inside the API* across module databases | Other modules, called in-process | At least once, with compensation |
 
@@ -40,51 +40,42 @@ Why a broker instead of HTTP calls or SignalR for this job:
 - **The legacy apps already speak RabbitMQ.** The existing desktop estate uses `Common.RabbitMQ` and Prism events over
   RabbitMQ. The new library speaks the same wire format, so the API can talk to them without changing them.
 
-Three rules shaped the design ([ADRs 0001-0003](adr/)):
+Three rules shaped the design ([ADRs 0001-0002](adr/)):
 
 1. **Handlers never see a transport.** A handler says *what happened*; the host decides *where it goes*. Domain and
    application code may not reference RabbitMQ, and a test enforces it.
-2. **An event goes out if and only if its change was committed.** So the API never publishes directly; it publishes
-   through the outbox.
+2. **An event never goes out for a change that rolled back.** Events are collected while the command runs and published
+   only after its transaction commits.
 3. **Legacy apps stay as they are.** Zero changes to `Common.RabbitMQ` or the wire format, and as few moving parts as
    possible.
 
 ## The big picture
 
-An Equipment change becomes a RabbitMQ message in two halves. The request saves the event as a row next to the
-change. A background service in the same API process then publishes that row and marks it sent only once the broker
-confirms.
+A handler collects the event while the command runs. Once the transaction has committed, the event goes to the bus,
+which buffers it in memory and sends it to the broker in the background.
 
 ```mermaid
 flowchart TB
     subgraph Request["In the HTTP request"]
-        H["CreateEquipment handler<br/>builds EquipmentCreated once<br/>_outbox.Enqueue(event): stages, sends nothing"]
-        W["IEquipmentOutbox → OutboxWriter<br/>adds an OutboxMessage row to the DbContext<br/>no SaveChanges here"]
-        T["TransactionBehavior<br/>commits the asset and the row together"]
-        H --> W --> T
+        H["CreateEquipment handler<br/>builds EquipmentCreated once<br/>_events.Publish(event): collects, sends nothing"]
+        T["TransactionBehavior<br/>commits the asset"]
+        E["EquipmentEventsBehavior<br/>after the commit: IMessagePublisher.Publish"]
+        H --> T --> E
     end
-    DB[("Equipment DB<br/>OutboxMessages: one row per event<br/>ProcessedOnUtc set after the broker's ack")]
-    subgraph Background["Background service, same API process"]
-        P["OutboxProcessor (EquipmentDbContext)<br/>every 2 s: 20 oldest unsent rows<br/>3 failed attempts, then dead-letter"]
-        D["MessagingOutboxDispatcher<br/>row JSON back to EquipmentCreated<br/>broker down: deferred, attempt not counted"]
-        B["RabbitMQBus.PublishConfirmedAsync<br/>returns only after the broker's ack"]
-        P --> D --> B
-    end
-    MQ{{"RabbitMQ broker<br/>exchange CleanArch, routing key = wire name"}}
+    B["RabbitMQBus buffer<br/>sent in the background, retried while the broker is down"]
+    MQ{{"RabbitMQ broker<br/>exchange CleanArch, routing key = CleanArch"}}
     R1["net472 / net8 POC · legacy Prism app<br/>PubSubEvent&lt;T&gt; named after the wire name"]
     R2["net10 POC · modern WPF<br/>IMessageSubscriber, UI thread"]
     R3["Any other app<br/>binds its own queue"]
-    T -- COMMIT --> DB
-    DB -- polled --> P
-    B -- "publish, wait for ack" --> MQ
+    E --> B
+    B -- publish --> MQ
     MQ --> R1
     MQ --> R2
     MQ --> R3
 ```
 
-Read it top-down: the request half ends at the commit. The background half runs on its own timer, picks the row up
-from the Equipment database, and hands it to the broker. The broker copies it to every queue bound to the `CleanArch`
-exchange. The API doesn't know who those receivers are.
+The broker copies the message to every queue bound to the `CleanArch` exchange. The API doesn't know who those
+receivers are.
 
 ## Message contracts
 
@@ -135,9 +126,8 @@ other projects translate between your code and that engine. It lives in `src/Mes
 | --- | --- | --- |
 | `Messaging.Abstractions` | `[Message]`, `IMessagePublisher`, `IMessageHandler<T>`, `MessageContext`. No dependencies. | Contracts, every app |
 | `Messaging.RabbitMQ` | `RabbitMQBus`, the engine: connect, declare, publish, consume, retry, reconnect. Knows nothing about DI or Prism. | Everything, indirectly |
-| `Messaging.Hosting` | DI registration (`AddMessaging`), handlers, subscribers, JSON, telemetry, `MessagingClient` for desktop apps | The API, modern WPF apps |
+| `Messaging.Hosting` | DI registration (`AddMessaging`), handlers, subscribers, JSON, `MessagingClient` for desktop apps | The API, modern WPF apps |
 | `Messaging.Prism` | Bridges received messages to Prism's `IEventAggregator` as `MessageEvent<T>` | Modern WPF apps that keep Prism |
-| `BuildingBlocks.Outbox.Messaging` | The outbox relay: `MessagingOutboxDispatcher<TContext>` | The API only |
 
 ### Bus, handler, subscriber
 
@@ -147,32 +137,23 @@ Three words cover the configuration. All of it happens in one `AddMessaging` cal
 services.AddMessaging(messaging => messaging
     .AddBus("Main", config.GetSection("Messaging:Buses:Main"))  // a connection + this app's exchange
     .AddHandlers(typeof(OrderSavedHandler).Assembly)            // every IMessageHandler<T> in it, on every bus
-    .Subscribe("OtherApp", "OtherApp.Events.#")                 // also receive from another app's exchange
-    .AddTelemetry());                                            // traces, metrics, correlation-id header
+    .Subscribe("OtherApp", "OtherApp.Events.#"));               // also receive from another app's exchange
 ```
 
 - **Bus**: one connection to a broker plus this app's own exchange. An app can have several; the API has one, `Main`.
-- **Publishing** needs no registration: a message goes to the default bus, with its wire name as the routing key.
-  With one bus that bus is the default; with several, `UseDefaultBus` picks it from `Messaging:DefaultBus`.
-  `PublishOptions.Bus` and `PublishOptions.RoutingKey` override them for one call. The outbox always uses the default.
+- **Publishing** needs no registration: a message goes to the default bus, with the exchange name as the routing key and its wire name in the `event-type` header.
+  `UseDefaultBus` picks it from `Messaging:DefaultBus`, which is required even with one bus.
+  `PublishOptions.Bus` and `PublishOptions.RoutingKey` override them for one call. The API always uses the default.
 - **Handler**: an `IMessageHandler<T>` class, resolved in its own DI scope for every received message. For servers.
 - **Subscriber**: `IMessageSubscriber.Subscribe<T>(callback)` at runtime, for view models and other code that isn't a
   DI handler.
 
 The API mostly publishes, so it mostly uses the bus. Handlers and subscribers are for receivers.
 
-### Two ways to publish
+### Publishing
 
-The engine has two publish paths. The difference is what "done" means.
-
-| | `IMessagePublisher.Publish` | `IConfirmedMessagePublisher.PublishConfirmedAsync` |
-| --- | --- | --- |
-| Returns when | The message is serialized and in an in-memory buffer | The broker has confirmed it |
-| Broker down | Message waits in the buffer | Throws `BrokerUnavailableException` |
-| Process crashes | Buffered messages are lost | Nothing was promised yet; the caller retries |
-| Used by | Legacy-style apps | The API's outbox relay |
-
-In pseudo code:
+`IMessagePublisher.Publish` serializes the message, puts it in an in-memory buffer and returns. A background loop sends
+the buffer to the broker and removes each message only once the broker has confirmed it.
 
 ```
 Publish(message):
@@ -184,20 +165,10 @@ Publish(message):
         for each item in buffer:
             publish to own exchange, wait for broker confirm
             remove from buffer only after the confirm
-
-PublishConfirmedAsync(message, messageId):
-    if stopped or not connected: throw BrokerUnavailableException
-    for each bus the message is routed to:
-        publish(bytes, headers, message-id = messageId, mandatory = true)
-        wait up to 30 s for the broker's confirm
-            confirmed            -> done
-            returned (no queue)  -> log "No queue is bound ...", done
-            nack, no confirm in 30 s, connection dropped
-                                 -> throw BrokerUnavailableException
 ```
 
-The API uses only the confirmed path. A buffered publish could report success while the message is still in memory,
-and the outbox would then mark the row sent and lose it on a restart ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md)).
+While the broker is down, messages wait in the buffer. If the API process stops, whatever is still in the buffer is
+lost.
 
 ### What goes on the wire
 
@@ -207,113 +178,39 @@ Every message is JSON plus a few headers:
 | --- | --- | --- |
 | `event-type` | Always | The wire name: what the message is |
 | `source-id` | Always | Which running program sent it; used to drop echoes |
-| `correlation-id` | With `AddTelemetry()` | Ties the message to the request that caused it |
-| `traceparent`, `tracestate` | With `AddTelemetry()` | Distributed tracing |
-| message-id (AMQP property) | Confirmed publishes | The outbox row's id, so a resend keeps the same id |
+| message-id (AMQP property) | Always | A new id per message |
 
 Receivers ignore headers they don't know, so headers can be added without breaking anyone.
 
 ## Sending from the API
 
-The API sends in two phases: **the request saves the event as a database row, and a background service publishes that
-row later**. Nothing is sent to RabbitMQ while the request runs. This is the transactional outbox pattern.
-
-### Why not publish straight from the handler?
-
-Publishing directly gives two bad outcomes, both real:
-
-- **Publish, then the commit fails.** Other apps hear about equipment that was never saved.
-- **Commit, then the publish fails** (broker down, process killed). The equipment exists, but nobody is ever told.
-
-The outbox removes both. The event is a row in the same database as the change, saved in the same transaction. Either
-both exist or neither does. A separate loop then keeps trying until the broker confirms.
-
-### Phase 1: inside the request
-
-The handler builds the event and hands it to its module's outbox (`CreateEquipment.cs:55-64`):
+The handler builds the event and hands it to its module's event collector (`CreateEquipment.cs`):
 
 ```csharp
 var created = new EquipmentCreated { Id = asset.Id, Name = asset.Name, ... };
-_outbox.Enqueue(created);   // RabbitMQ, via the outbox
+_events.Publish(created);   // RabbitMQ, after the commit
 _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentCreated), created));  // SignalR
 ```
 
-`_outbox` is an `IEquipmentOutbox`. With messaging on, it's `EquipmentOutbox`, which forwards to the shared
-`OutboxWriter<EquipmentDbContext>`:
+`_events` is an `IEquipmentEvents`. Both calls only collect; nothing is sent while the command runs. Two pipeline
+behaviors around the transaction send them once it has committed:
 
 ```
-OutboxWriter.Enqueue(event):
-    db.OutboxMessages.Add(new OutboxMessage {
-        Id            = new Guid,
-        Type          = "EquipmentCreated",           // short class name
-        Content       = JSON of the event,
-        OccurredOnUtc = now,
-        CorrelationId = the current request's correlation id
-    })
-    // no SaveChanges here
+EquipmentEventsBehavior (outside the transaction):
+    response = next()                      // TransactionBehavior: handler, SaveChanges, commit
+    for each collected event:
+        IMessagePublisher.Publish(event)   // buffered; never fails the request
+    return response
 ```
 
-It only *adds* the row to the DbContext. `TransactionBehavior` then commits the asset and the row together. If the
-handler or the commit throws, both are rolled back.
+If the handler, a validator or the commit throws, `next()` throws too and nothing is published.
 
-Why `IEquipmentOutbox` and not the shared `IOutbox`? `IOutbox` is a single DI registration, and Onboarding already owns
-it for its saga. Equipment gets its own interface so the two don't collide, but both wrap the same `OutboxWriter`, so
-every outbox row has the same format.
+### What this does not guarantee
 
-### Phase 2: the background relay
-
-`OutboxProcessor<EquipmentDbContext>` is a hosted service that starts with the API (`OutboxProcessor.cs`):
-
-```
-every 2 seconds:
-    rows = OutboxMessages where ProcessedOnUtc is null and DeadLetteredOnUtc is null
-           order by OccurredOnUtc, take 20
-
-    for each row:
-        row.Attempts += 1
-        restore row.CorrelationId into this scope
-        try:
-            dispatcher.DispatchAsync(row.Id, row.Type, row.Content)
-            row.ProcessedOnUtc = now                         // sent
-        catch OutboxDeliveryDeferredException:              // broker down
-            row.Attempts -= 1                                // not the message's fault
-            stop this batch                                  // keep the order; retry next poll
-        catch any other exception:
-            if row.Attempts >= 3: row.DeadLetteredOnUtc = now
-            else: leave it for the next poll
-
-    SaveChanges
-```
-
-The processor is generic: it knows nothing about RabbitMQ. The RabbitMQ part is the dispatcher,
-`MessagingOutboxDispatcher<EquipmentDbContext>`:
-
-```
-DispatchAsync(rowId, type, content):
-    messageType = lookup(type)            // "EquipmentCreated" -> typeof(EquipmentCreated)
-                                          // unknown -> InvalidOperationException (counts as a failed attempt)
-    message = JSON.deserialize(content, messageType)
-    carry the correlation id into the messaging library
-    try:
-        await confirmedPublisher.PublishConfirmedAsync(message, messageId: rowId)
-    catch BrokerUnavailableException:
-        throw OutboxDeliveryDeferredException   // tells the processor: retry later, don't count it
-```
-
-The type list is every `[Message]` class in `Equipment.Messages`
-(`AddOutboxPublishing<EquipmentDbContext>(typeof(EquipmentCreated).Assembly)`). Two classes with
-the same short name are refused at startup, because the row's `Type` column couldn't tell them apart.
-
-### Why it's split into three pieces
-
-| Piece | Project | Knows about |
-| --- | --- | --- |
-| `OutboxWriter`, `OutboxProcessor` | `BuildingBlocks.Outbox` | EF Core only. Also used by Onboarding's saga. |
-| `MessagingOutboxDispatcher` | `BuildingBlocks.Outbox.Messaging` | The outbox and the messaging library |
-| `RabbitMQBus` | `Messaging.RabbitMQ` | RabbitMQ only |
-
-The generic outbox stays free of RabbitMQ, so a module can use it for in-process work without a broker. The relay is
-the one small piece that connects the two.
+Publishing after the commit leaves one gap: **the change is saved, and the event is lost** if the API stops before
+the bus has sent it. An outbox (the event saved as a row in the same transaction) would close that gap, at the cost of
+a table, a background processor and a relay. The API went without one on 2026-11-05 to keep things simple; receivers
+should treat these events as hints and reload from the API when it matters.
 
 ## Configuration and the on/off switch
 
@@ -342,10 +239,7 @@ var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
 if (messagingBus.Exists())
 {
     builder.Services.AddMessaging(messaging => messaging
-        .AddBus("Main", messagingBus)
-        .AddTelemetry());
-
-    builder.Services.AddEquipmentIntegrationEvents();   // the module says WHICH events it publishes
+        .AddBus("Main", messagingBus));
 }
 ```
 
@@ -353,25 +247,20 @@ What each switch position does:
 
 | | Section present | Section missing |
 | --- | --- | --- |
-| `IEquipmentOutbox` | `EquipmentOutbox`: writes rows | `NoBrokerEquipmentOutbox`: does nothing |
-| Outbox rows in the Equipment DB | Written with every change | None |
-| `OutboxProcessor<EquipmentDbContext>` | Running | Not registered |
+| `IMessagePublisher` | Registered by `AddMessaging` | Not registered |
+| Equipment's events | Published after each commit | Dropped by `EquipmentEventsBehavior` |
 | RabbitMQ connection | Opened at startup, reconnects on its own | None |
 | SignalR | Works | Works, unchanged |
 | Handler code | Identical | Identical |
 
-How the swap works: the module registers the do-nothing outbox with `TryAddScoped`. `AddEquipmentIntegrationEvents`
-removes it and registers the real one, plus `AddOutboxPublishing`. So the handler always gets an `IEquipmentOutbox`
-and never checks whether messaging is on.
+The handler always gets an `IEquipmentEvents` and never checks whether messaging is on. Why a missing broker turns
+messaging off instead of failing: a developer without RabbitMQ installed still gets a working API.
 
-Why a missing broker turns messaging off instead of failing: a developer without RabbitMQ installed still gets a
-working API, and no outbox rows pile up with nothing to send them.
-
-There's deliberately **no messaging health check on `/health`**. It would report Unhealthy while the broker is down
-and take the API out of the load balancer, for an outage the outbox already absorbs: events wait and go out
-afterwards. Instead, the connection state is a metric (`messaging_client_connected`), shown on the dashboard's messaging row
-and alerted on by "API disconnected from RabbitMQ" and "RabbitMQ broker unreachable" in
-`observability/grafana/provisioning/alerting/cleanarch-api.yaml`.
+There's **no messaging health check**; the library doesn't have one. A check on `/health` would report Unhealthy while
+the broker is down and take the API out of the load balancer, for an outage the bus already absorbs: it buffers events
+and sends them on reconnect. Instead, a broker outage is alerted on by "RabbitMQ broker unreachable" in
+`observability/grafana/provisioning/alerting/cleanarch-api.yaml`. A problem on the API's side of the connection
+(credentials, vhost permissions) shows only in the log.
 
 For production, `guest`/`guest` only works from the broker's own machine. Give the API its own broker account and
 keep the password out of `appsettings.json` (environment variable or secret store).
@@ -395,17 +284,18 @@ the wire names). That README also covers the one event the API receives, from th
 } } }
 ```
 
-No routing keys in the subscription means *one binding per message type this app receives*, keyed by wire name. So
-subscribing to the three Equipment classes gives the app three bindings: `Equipment.EquipmentCreated`, `Equipment.EquipmentUpdated`, `Equipment.EquipmentDeleted`.
+No routing keys in the subscription means *one binding*, keyed by the exchange name (`CleanArch`), which is the key
+every message on it carries. So the app receives everything the API publishes and drops what it doesn't subscribe to.
+Subscribing or unsubscribing never changes the binding.
 
 ### What happens when a message arrives
 
 ```
 on message from queue:
     if source-id == this program: skip               // an echo of our own message
-    wireName = header "event-type" (or routing key)
+    wireName = header "event-type"
     type = registry[wireName]                        // "Equipment.EquipmentCreated" -> EquipmentCreated
-    if unknown: skip                                 // desktop queue
+    if unknown or not subscribed: ack and skip       // normal: the queue gets the whole exchange
     message = JSON.deserialize(body, type)
     run handlers, then sinks (subscribers, Prism bridge)
     ack                                              // broker deletes it
@@ -470,111 +360,31 @@ publish.
 
 ## Reliability
 
-The guarantee is: **an event reaches the broker if and only if its change was committed, and it may arrive more than
-once.** Every failure below ends in one of three places: sent later, dead-lettered for a person to look at, or never
-written because the change rolled back.
+The guarantee is: **an event is never published for a change that rolled back; it is published once otherwise, unless
+the API stops before sending it.**
 
 | What goes wrong | What happens | Where it ends |
 | --- | --- | --- |
-| Validation or a domain rule fails in the handler | Transaction rolls back; no outbox row exists | Nothing sent, correctly |
-| The commit fails | Same: change and row roll back together | Nothing sent, correctly |
-| API crashes right after the commit | Row is in the database; the processor finds it after restart | Sent later |
-| RabbitMQ down for seconds or hours | Dispatcher throws `OutboxDeliveryDeferredException`; attempt not counted; batch stops to keep order | Sent, in order, once the broker is back |
-| Connection drops mid-publish | `BrokerUnavailableException` → deferred, as above | Sent later |
-| Broker refuses the message (nack), e.g. a receiver's full queue | `BrokerUnavailableException` → deferred | Sent later |
-| Broker blocks publishers (memory or disk alarm), or the link is half-open | No confirm within 30 s → `BrokerUnavailableException` → deferred | Sent later, possibly twice |
-| API shutting down while the processor polls | Bus already stopped → `BrokerUnavailableException` → deferred | Sent after restart |
-| No queue is bound for the routing key | Published as mandatory, so the broker returns it; logged as "No queue is bound …" | Marked sent; nobody received it |
-| No `[Message]` on the class, bad JSON, unknown type | Counts as a failed attempt; retried every 2 s | Dead-lettered after 3 attempts (`DeadLetteredOnUtc` set) |
-| Broker confirms, then the API crashes before saving `ProcessedOnUtc` | Row still looks unsent; it's published again after restart | **Duplicate**, same message-id |
+| Validation or a domain rule fails in the handler | Transaction rolls back; the collected events are discarded | Nothing sent, correctly |
+| The commit fails | Same | Nothing sent, correctly |
+| RabbitMQ down while the API runs | Events wait in the bus's buffer | Sent once the broker is back |
+| API stops with events still in the buffer | They're gone | **Lost** |
+| No queue is bound for the routing key | The broker drops it | Nobody received it |
 | Receiver's handler throws (server, shared queue) | Retried 3 times, 1 s apart, in the receiver | Receiver's `<queue>.dead-letter` |
 | Receiver's handler throws (desktop) | Logged and acked, as legacy apps always did | Dropped |
 | Desktop app offline | Its per-instance queue doesn't exist | Missed; it reloads from the API on reconnect |
 
-### Receivers must handle duplicates
+### Receivers should be idempotent
 
-At-least-once means a receiver can see the same event twice. The message-id is the outbox row's id and never changes
-on a resend, so a receiver can skip what it has already handled:
+A message can be delivered twice when a connection drops between the broker's delivery and the receiver's ack. The
+simplest rule for these events: make the handler an upsert. Applying "equipment X now looks like this" twice gives the
+same result as applying it once. That's what the POC list's `Apply` does.
 
-```
-on EquipmentCreated(message, context):
-    if processed.contains(context.MessageId): return
-    apply(message)
-    processed.add(context.MessageId)
-```
+## Monitoring
 
-For these events a simpler rule often works: make the handler an upsert. Applying "equipment X now looks like this"
-twice gives the same result as applying it once. That's what the POC list's `Apply` does.
-
-### Why a broker outage doesn't use up attempts
-
-The processor dead-letters a row after 3 failed attempts, 2 seconds apart. If a broker outage counted, any outage
-longer than about 6 seconds would park perfectly good messages. So the dispatcher separates "the broker isn't there"
-(deferred, free) from "this message is broken" (counts). The batch also stops at the first deferred row, so messages
-can't overtake each other while the broker is down.
-
-### Dead letters
-
-A dead-lettered row stays in the Equipment database with its `Error` text. Onboarding has admin endpoints to search
-and replay its dead letters (`AddOutboxAdmin`). Equipment doesn't yet, because those services are registered once and
-Onboarding owns them. Until then, a dead-lettered Equipment row is fixed with SQL: correct the cause, then clear
-`DeadLetteredOnUtc` and `Attempts`.
-
-## Correlation and telemetry
-
-One correlation id follows a change **from the HTTP request, through the outbox row, onto the RabbitMQ message, into
-the receiving app**, even though the publish happens seconds later on another thread.
-
-```
-HTTP request             X-Correlation-ID: 7f3a...  (or a new one)
-  -> OutboxWriter         row.CorrelationId = 7f3a...
-  ... up to 2 s later, background thread ...
-  -> OutboxProcessor      correlation.Set(row.CorrelationId)
-  -> MessagingOutboxDispatcher
-        using MessagingCorrelation.Begin(7f3a...)   // hand it to the messaging library
-        PublishConfirmedAsync(...)                   // header correlation-id: 7f3a...
-  -> receiving app        context.CorrelationId == 7f3a...
-```
-
-The hand-over in the dispatcher is needed because the API and the messaging library each keep their own ambient
-correlation context. The processor restores the API's; the dispatcher copies it into the library's for the duration
-of the publish.
-
-On the receiving side, the async `Subscribe` overload gets a `MessageContext` with `MessageId` (the outbox row id) and
-`CorrelationId`. Log both, and one change can be followed from the request log in the API to the receiving app.
-
-### Metrics and traces
-
-`.AddTelemetry()` in `AddMessaging` turns on tracing, metrics and the `correlation-id` and `traceparent` headers.
-`Observability.cs` adds the `Messaging` source and meter to OpenTelemetry, so they reach the Grafana stack with
-everything else.
-
-| Metric | Meaning |
-| --- | --- |
-| `messaging.client.sent.messages` | Messages the broker confirmed |
-| `messaging.client.consumed.messages` | Messages received |
-| `messaging.process.duration` | Time spent handling a received message, in seconds |
-| `outbox_delivered_total` | Outbox rows sent |
-| `outbox_failed_total` | Failed attempts that will be retried |
-| `outbox_dead_lettered_total` | Rows given up on |
-
-A rising `outbox_dead_lettered_total` needs a person. Deferred rows during a broker outage don't show up as failures;
-they show up as a growing backlog of unsent rows.
-
-The trace follows the same path as the correlation id. `OutboxWriter` stores the request's W3C `traceparent` on the
-row (`OutboxMessage.TraceParent`), and the processor starts an `outbox deliver <Type>` span (source
-`CleanArch.Outbox`) with it as the parent. The `publish` span nests under that, and its `traceparent` header carries
-the trace to the consumer's `process` span, so one Tempo trace shows:
-
-```
-POST /api/equipment                          (request)
-  └ outbox deliver EquipmentCreated          (seconds later, or hours after a broker outage)
-      └ publish Equipment.Messages...        (ends when the broker confirms)
-          └ process Equipment.Messages...    (in the receiving app)
-```
-
-A failed or deferred attempt marks its span as an error, and each retry is a new span in the same trace. Rows written
-outside a trace (or before the column existed) start a trace of their own, as before.
+The messaging library logs through `ILogger` and exports no traces or metrics. The bus logs a warning while a
+publish fails and stays buffered. The broker's own metrics (reachability, queue depth, dead letters) are on the
+Grafana dashboard's messaging row.
 
 ## Legacy compatibility
 
@@ -600,7 +410,7 @@ The original `Common.RabbitMQ` had problems [ADR 0001](adr/0001-decouple-messagi
 ```
 legacy WPF (net472)  -> Common.RabbitMQ (Prism adapter, public API unchanged) --\
 modern WPF (net8)    -> Messaging.Hosting [+ Messaging.Prism]                   -> Messaging.RabbitMQ -> broker
-CleanArch.Api        -> Messaging.Hosting -> outbox relay                    --/
+CleanArch.Api        -> Messaging.Hosting                                    --/
 ```
 
 The test for this design: when the last legacy app is retired, deleting `Common.RabbitMQ` needs no change in
@@ -623,13 +433,11 @@ The rules that keep them compatible:
 
 - **A message a legacy app must receive uses the legacy event's full .NET type name as its wire name.** Legacy apps
   identify messages by type name; new code declares it explicitly.
-- **Keep the default routing key** (the wire name) for anything legacy apps receive. Legacy apps bind by wire name, so
-  a custom routing key never reaches them.
+- **Keep the default routing key** (the exchange name) for anything legacy apps receive. Legacy apps bind each exchange
+  with its owner's name, so a custom routing key never reaches them.
 - **JSON must be identical.** The server serializes with System.Text.Json configured to produce the same bytes as
-  legacy Newtonsoft.Json. Golden-file tests in `tests/Common.RabbitMQ.Tests` compare the bytes, and a frozen copy of
-  the original library checks it can still receive them.
-- **Legacy apps keep their buffered publishing.** ADR 0003 changes nothing for them: same adapter, same behaviour if
-  they crash with messages in the buffer.
+  legacy Newtonsoft.Json. Golden-file tests in `tests/Common.RabbitMQ.Tests` compare the bytes.
+- **Everyone publishes the same way.** The API and legacy apps both buffer and send in the background.
 
 Equipment's events use new-style wire names (`Equipment.EquipmentCreated`) because no legacy app consumes them today.
 A message meant for legacy apps would follow the rules above instead.
@@ -650,7 +458,7 @@ public sealed class EquipmentRetired
 }
 ```
 
-**2. The handler** stages it, inside the same unit of work as the change:
+**2. The handler** collects it, inside the same unit of work as the change:
 
 ```csharp
 public async Task<Unit> Handle(Command command, CancellationToken ct)
@@ -659,14 +467,14 @@ public async Task<Unit> Handle(Command command, CancellationToken ct)
     asset.Retire(command.Reason);
 
     var retired = new EquipmentRetired { Id = asset.Id, Reason = command.Reason };
-    _outbox.Enqueue(retired);                                    // RabbitMQ, after the commit
+    _events.Publish(retired);                                    // RabbitMQ, after the commit
     _realtime.Publish(RealtimeGroups.Equipment(),                // SignalR, optional
         new RealtimeEvent(nameof(EquipmentRetired), retired));
     return Unit.Value;
 }
 ```
 
-**3. A receiver** subscribes, which also binds its queue to the new message:
+**3. A receiver** subscribes. Its queue already binds `CleanArch`, so nothing changes on the broker:
 
 ```csharp
 _subscriptions.Add(subscriber.Subscribe<EquipmentRetired>(List.Apply, _ui));
@@ -676,7 +484,7 @@ _subscriptions.Add(subscriber.Subscribe<EquipmentRetired>(List.Apply, _ui));
 
 | Skipped | Symptom |
 | --- | --- |
-| The contract outside `Equipment.Messages` | Row is written, then fails with "Unknown outbox message type 'EquipmentRetired'" and is dead-lettered after 3 attempts |
+| `[Message]` on the contract | Publishing throws, after the commit: the change is saved and the event isn't sent |
 | The receiver's subscription | No binding for the new wire name; the queue never gets the message, and nothing errors |
 
 ### Check it works
@@ -684,40 +492,29 @@ _subscriptions.Add(subscriber.Subscribe<EquipmentRetired>(List.Apply, _ui));
 1. Start RabbitMQ on `localhost:5672`.
 2. Run the API in Development, so the `Messaging` section is present.
 3. Retire an asset through Swagger.
-4. Within about 2 seconds the row's `ProcessedOnUtc` is set in the Equipment DB, and the RabbitMQ management page shows
-   a message published to `CleanArch` with routing key `Equipment.EquipmentRetired`.
+4. The RabbitMQ management page shows a message published to `CleanArch` with routing key
+   `Equipment.EquipmentRetired`.
 
 Two test suites guard the design: `TransportIndependenceTests` fails if a domain, application or contract assembly
-references RabbitMQ, the outbox relay or SignalR, and `OutboxMessagingTests` covers the relay.
+references RabbitMQ or SignalR, and `EquipmentIntegrationEventsTests` checks events go out only after the commit.
 
 ## Gotchas and further reading
 
 ### Gotchas
 
-- **"Enqueue" and "Publish" in a handler send nothing.** They stage. Sending happens after the commit (SignalR) or on
-  the next poll (RabbitMQ).
-- **No `Messaging` section, no events, no error.** `NoBrokerEquipmentOutbox` silently discards. If receivers hear
-  nothing, check the config first.
-- **The API never calls `IMessagePublisher` for events other apps rely on.** Always the outbox. A direct buffered
-  publish can be lost on a crash.
-- **Equipment uses `IEquipmentOutbox`, not `IOutbox`.** `IOutbox` belongs to Onboarding's saga. Injecting it in an
-  Equipment handler would add the row to the Onboarding DbContext, outside Equipment's transaction.
-- **Each outbox type needs a unique short class name.** The row stores `typeof(T).Name`, so two `Created` classes in
-  different namespaces are refused at startup.
-- **A broker outage stops the batch.** Rows behind a deferred row wait, which keeps order. If Onboarding ever shares its
-  outbox with RabbitMQ, saga steps would wait too ([tutorial 67](../../tutorials/67-messaging-with-rabbitmq.md),
-  section B).
+- **"Publish" in a handler sends nothing.** It collects. Sending happens after the commit.
+- **No `Messaging` section, no events, no error.** `EquipmentEventsBehavior` drops them. If receivers hear nothing,
+  check the config first.
+- **Don't call `IMessagePublisher` from a handler.** It would send before the commit. Use `IEquipmentEvents`.
 - **Changing a shared queue's settings fails at the broker.** A queue's arguments can't change once it exists. The bus
   logs which queue; put the setting back, or delete the queue and lose its messages.
 - **Desktop queues disappear with their connection.** Reload from the API after a reconnect.
-- **An event nobody is bound for is marked sent.** That's deliberate: holding it would stall the outbox whenever no
-  receiver runs. The "No queue is bound …" log line is how a missing or mistyped binding shows up.
 
 ### Not built yet
 
 - Onboarding publishing to RabbitMQ.
 - The API *receiving* messages (no handlers registered).
-- Dead-letter search and replay endpoints for Equipment's outbox.
+- A guarantee that a committed change's event is sent (that needs an outbox).
 
 ### Further reading
 
@@ -726,6 +523,6 @@ references RabbitMQ, the outbox relay or SignalR, and `OutboxMessagingTests` cov
 | [README.md](README.md) | The library manual: glossary, recipes for each app type, configuration reference, troubleshooting |
 | [ADR 0001](adr/0001-decouple-messaging-from-prism.md) | Why the library is layered the way it is |
 | [ADR 0002](adr/0002-exchange-per-owner-and-configurable-routing.md) | Exchange per application, routing keys, bindings |
-| [ADR 0003](adr/0003-server-publishes-through-the-outbox.md) | Why the API publishes through the outbox with a confirmed publish |
-| [Tutorial 67](../../tutorials/67-messaging-with-rabbitmq.md) | Step-by-step build of the Equipment events, and the shared-outbox design |
+| [ADR 0003](adr/0003-server-publishes-through-the-outbox.md) | The outbox design the API used until 2026-11-05 (superseded) |
+| [Tutorial 67](../../tutorials/67-messaging-with-rabbitmq.md) | Step-by-step build of the Equipment events |
 | [MessagingPocs README](../../samples/MessagingPocs/README.md) | Running the three desktop POCs against the API |

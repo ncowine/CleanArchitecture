@@ -5,6 +5,7 @@
 - **Amended:** 2026-09-26. Legacy projects stay at their current paths, and every library that legacy apps load targets net472 explicitly (sections 1 and 7).
 - **Amended by:** [ADR 0002](0002-exchange-per-owner-and-configurable-routing.md) (2026-09-26), for sections 1–3 and the step-0 test baseline: one exchange per application, configurable exchange types and routing keys, and events found by assembly. Where the two conflict, ADR 0002 wins.
 - **Amended:** 2026-11-03. The core logs through `ILogger`, so it depends on `Microsoft.Extensions.Logging.Abstractions`, and the `Log` event is gone from `RabbitMQBus`, `RabbitMQService` and `RabbitMQServiceRouter`. A plain string event had no levels, structure or stack traces, and legacy apps are already taking `Microsoft.Extensions.*` packages for `appsettings.json`. **This is a breaking change for a legacy app that subscribes to `Log`:** it sets `Logger` instead. An app that sets nothing still gets its messages in Trace output. Non-SDK apps must install the new package and its dependencies themselves.
+- **Amended:** 2026-11-05. Tracing, metrics, correlation IDs and the observer hook are gone from the library, to start from bare bones: `IMessagingObserver`, `AddTelemetry()`, `MessagingTelemetry`, `CorrelationContext`, `MessageContext.CorrelationId` and the `correlation-id`, `traceparent` and `tracestate` headers. Logging through `ILogger` stays. The health check (`AddHealthChecks().AddMessaging()`) was removed the same day; nothing registered it. The observer and telemetry parts of sections 1 and 5 no longer apply. The frozen headers are unchanged, and receivers still ignore headers they don't know. **Breaking for callers of `RabbitMQBus`, `MessageContext` or `AddTelemetry()`;** `Common.RabbitMQ`'s public API is unchanged.
 
 ## Context
 
@@ -99,7 +100,7 @@ The legacy projects keep their paths. Legacy apps reference them by relative `Pr
 
 ### 3. Compatibility contract (frozen)
 
-- **Routing key** = wire name; **topic exchange**, durable.
+- **Routing key** = the publisher's exchange name (amended 2026-11-05, legacy fact F5; originally the wire name); **topic exchange**, durable.
 - **Headers** `event-type` (wire name) and `source-id` (sender instance, used to drop the sender's own echo).
 - **Body** = UTF-8 JSON as Newtonsoft 12 produces it with default settings.
 - Legacy client queue: one per instance, `exclusive`, `autoDelete`, non-durable, per-consumer QoS.

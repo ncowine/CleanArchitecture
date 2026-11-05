@@ -5,7 +5,7 @@
 
     - Separate from Equipment.Contracts (in-process interfaces other modules call): this project is consumed by desktop
       apps, so it targets netstandard2.0 instead of the API's net10.0.
-    - The same classes travel over both channels: RabbitMQ (through the module's outbox) and SignalR (the real-time
+    - The same classes travel over both channels: RabbitMQ (published after the commit) and SignalR (the real-time
       hub). One contract per event, whichever way a client listens.
     - Its only reference is Messaging.Abstractions (no dependencies), for the [Message("wire name")] attribute.
   -->

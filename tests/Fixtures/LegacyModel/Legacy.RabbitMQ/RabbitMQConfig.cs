@@ -19,7 +19,7 @@ namespace Legacy.RabbitMQ
         /// <summary>This application's own exchange: it publishes here and declares it (fact F2, assumption A1).</summary>
         public string ExchangeName { get; set; }
 
-        /// <summary>Other applications' exchanges this application receives from (fact F2, assumptions A9 and A16).</summary>
+        /// <summary>Other applications' exchanges this application receives from (facts F2 and F7, assumption A16).</summary>
         public List<string> SubscribeTo { get; set; } = new List<string>();
 
         /// <summary>Shown in the management UI, sent as app-id and used as the queue name prefix.</summary>

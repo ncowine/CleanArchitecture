@@ -9,8 +9,8 @@ namespace Common.RabbitMQ
         public string Exchange { get; set; }
 
         /// <summary>
-        /// Routing keys or patterns to bind. Empty means one binding per event this application knows, keyed by the
-        /// event's full name, which is what legacy applications do.
+        /// Routing keys or patterns to bind. Empty means one binding keyed by <see cref="Exchange"/>, the routing key its
+        /// owner publishes every event with, which is what legacy applications do.
         /// </summary>
         public List<string> RoutingKeys { get; set; } = new List<string>();
     }

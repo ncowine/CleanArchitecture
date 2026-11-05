@@ -32,7 +32,8 @@ namespace Common.RabbitMQ.Tests.Broker
                 CapturedMessage message = await capture.Next(TestBus.Timeout);
                 Assert.NotNull(message);
                 Assert.Equal(bus.ExchangeName, message.Exchange);
-                Assert.Equal(WireName, message.RoutingKey);
+                // The baseline routes by event name; every other build, like the real legacy library, by exchange name.
+                Assert.Equal(build == CompatBuild.Baseline ? WireName : bus.ExchangeName, message.RoutingKey);
                 Assert.Equal(WireName, message.Headers[MessageHeaders.EventType]);
                 Assert.Equal(sender.InstanceId, message.Headers[MessageHeaders.SourceId]);
                 Assert.Equal("application/json", message.ContentType);
@@ -44,7 +45,6 @@ namespace Common.RabbitMQ.Tests.Broker
 
         [Theory]
         [InlineData(CompatBuild.Current)]
-        [InlineData(CompatBuild.Baseline)]
         [InlineData(CompatBuild.Core)]
         public async Task Receives_GoldenMessageFromAnotherApplication(CompatBuild build)
         {
@@ -57,15 +57,6 @@ namespace Common.RabbitMQ.Tests.Broker
             await ReceivesGoldenMessage(build, headers);
         }
 
-        [Theory]
-        [InlineData(CompatBuild.Current)]
-        [InlineData(CompatBuild.Baseline)]
-        [InlineData(CompatBuild.Core)]
-        public async Task Receives_ByRoutingKey_WhenHeadersAreMissing(CompatBuild build)
-        {
-            await ReceivesGoldenMessage(build, null);
-        }
-
         private static async Task ReceivesGoldenMessage(CompatBuild build, IDictionary<string, object> headers)
         {
             await using (TestBus bus = await TestBus.Create())
@@ -73,7 +64,7 @@ namespace Common.RabbitMQ.Tests.Broker
                 ICompatEndpoint receiver = bus.AddEndpoint(build, "compat-receiver");
                 await bus.WaitUntilConnected();
 
-                await bus.PublishRaw(WireName, headers, GoldenFile.Read(GoldenBody));
+                await bus.PublishRaw(headers, GoldenFile.Read(GoldenBody));
 
                 CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await receiver.Received.Next(TestBus.Timeout));
             }

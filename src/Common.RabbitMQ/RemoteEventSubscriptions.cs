@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace Common.RabbitMQ
 {
     /// <summary>
-    /// Connects <see cref="RemotePubSubEvent{TPayload}"/> subscriptions to the services that bind them. Static because Prism
+    /// Connects <see cref="RemotePubSubEvent{TPayload}"/> subscriptions to the services that receive them. Static because Prism
     /// creates the events and gives them no link back to the application; a view model can also subscribe before
     /// <see cref="RabbitMQService.Init"/>, so subscribed events are remembered until it runs.
     /// </summary>
@@ -27,7 +27,7 @@ namespace Common.RabbitMQ
             }
         }
 
-        /// <summary>Checked under the lock, so a subscribe at the same moment either keeps the binding or creates it again.</summary>
+        /// <summary>Checked under the lock, so a subscribe at the same moment either keeps the event received or starts it again.</summary>
         public static void StopIfUnused(IRemoteEvent remoteEvent)
         {
             lock (gate)

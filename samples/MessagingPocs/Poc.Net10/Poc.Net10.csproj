@@ -2,10 +2,11 @@
 
   <!--
     A modern WPF app: .NET 10, no Prism, the modern event format ([Message] classes, Messaging.Hosting). It accepts
-    events from the API only, over RabbitMQ or SignalR (Events:Transport in appsettings.json), and changes data through
-    the API over HTTP. It never publishes.
+    events from the API, over RabbitMQ or SignalR (Events:Transport in appsettings.json), and changes data through
+    the API over HTTP. It never publishes. Over RabbitMQ it also receives the ten POC shape events (Poc.Shapes) from
+    the legacy apps, as plain [Message] classes.
 
-    Note what it does NOT reference: Common.RabbitMQ or Poc.Legacy.Events. It can't even name a legacy app's event.
+    Note what it does NOT reference: Common.RabbitMQ or Poc.Legacy.Events. It can't name a legacy app's Prism event.
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -20,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Poc.Shared\Poc.Shared.csproj" />
+    <ProjectReference Include="..\Poc.Shapes\Poc.Shapes.csproj" />
     <ProjectReference Include="..\..\..\src\Messaging\Messaging.Hosting\Messaging.Hosting.csproj" />
   </ItemGroup>
 

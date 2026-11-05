@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Common.RabbitMQ;
 using Poc.Legacy.Events;
+using Poc.Legacy.Events.Shapes;
 using Poc.Net8.Events;
 using Poc.Shared;
 using Prism.Commands;
@@ -23,6 +24,7 @@ public sealed class MainWindowViewModel : BindableBase
     private readonly EquipmentApi api;
     private readonly RabbitMQService bus;
     private readonly DispatcherTimer connectionWatch;
+    private readonly ShapeEventsLog shapes;
     private readonly string me = $"net8 (pid {Environment.ProcessId})";
     private bool wasConnected;
     private string connection = "Connecting…";
@@ -51,6 +53,9 @@ public sealed class MainWindowViewModel : BindableBase
         events.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, ThreadOption.UIThread);
         events.GetEvent<EquipmentFlagged>().Subscribe(OnFlagged, ThreadOption.UIThread);
 
+        // The ten shape events, from any legacy window (this one included). Kept in a field: Prism holds them weakly.
+        shapes = new ShapeEventsLog(events, AddLog);
+
         bus = router.GetBus(App.BusName);
         busLog.Written += message => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
 
@@ -66,6 +71,7 @@ public sealed class MainWindowViewModel : BindableBase
             () => Selected is not null);
         ReloadCommand = new DelegateCommand(async () => await List.LoadAsync());
         SendNoteCommand = new DelegateCommand(SendNote, () => Selected is not null);
+        SendShapesCommand = new DelegateCommand(() => ShapeEvents.PublishAll(events));
     }
 
     public string Title => $"net8 — migrated legacy app, legacy event format ({me})";
@@ -110,6 +116,8 @@ public sealed class MainWindowViewModel : BindableBase
     public DelegateCommand ReloadCommand { get; }
 
     public DelegateCommand SendNoteCommand { get; }
+
+    public DelegateCommand SendShapesCommand { get; }
 
     private void SendNote()
     {

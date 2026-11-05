@@ -4,12 +4,11 @@ using Compat.Events;
 using Messaging;
 using Messaging.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Xunit;
 
 namespace Common.RabbitMQ.Tests.Hosting
 {
-    /// <summary>Configuration errors fail at startup, and health reflects the connections. None of these need a broker.</summary>
+    /// <summary>Configuration errors fail at startup. None of these need a broker.</summary>
     public class HostingConfigurationTests
     {
         /// <summary>Nothing listens here, so the bus never connects.</summary>
@@ -33,18 +32,6 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => publisher.Publish(new UnnamedMessage()));
                 Assert.Contains("[Message(", error.Message);
-            }
-        }
-
-        [Fact]
-        public async Task Health_IsUnhealthy_WhileTheBusIsDisconnected()
-        {
-            await using (TestHost host = await StartUnreachable(messaging => { }))
-            {
-                HealthReport report = await host.Services.GetRequiredService<HealthCheckService>().CheckHealthAsync(TestContext.Current.CancellationToken);
-
-                Assert.Equal(HealthStatus.Unhealthy, report.Status);
-                Assert.Equal("disconnected", report.Entries["messaging"].Data[$"{CompatBus.Name}.consumer"]);
             }
         }
 

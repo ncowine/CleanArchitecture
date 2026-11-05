@@ -7,24 +7,22 @@ using Xunit;
 namespace Common.RabbitMQ.Tests.Broker
 {
     /// <summary>
-    /// Current build ↔ baseline build over a real broker, in both directions (ADR 0001, delivery plan step 0).
-    /// Every sender reaches one receiver of each build, so the two cases cover all four directions.
+    /// The legacy adapter and the core over a real broker. The frozen baseline routes by event name, unlike the real
+    /// legacy library, so it is no longer part of this: its headers and body are still checked in <see cref="WireFormatTests"/>.
     /// </summary>
     public class CompatibilityMatrixTests
     {
         /// <summary>How long to keep listening for a message that must not arrive.</summary>
         private static readonly TimeSpan QuietPeriod = TimeSpan.FromSeconds(1);
 
-        [Theory]
-        [InlineData(CompatBuild.Current)]
-        [InlineData(CompatBuild.Baseline)]
-        public async Task PublishRemote_ReachesBothBuilds_AndIsNotEchoed(CompatBuild senderBuild)
+        [Fact]
+        public async Task PublishRemote_ReachesBothBuilds_AndIsNotEchoed()
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                ICompatEndpoint sender = bus.AddEndpoint(senderBuild, "compat-sender");
+                ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Current, "compat-sender");
                 ICompatEndpoint current = bus.AddEndpoint(CompatBuild.Current, "compat-current");
-                ICompatEndpoint baseline = bus.AddEndpoint(CompatBuild.Baseline, "compat-baseline");
+                ICompatEndpoint core = bus.AddEndpoint(CompatBuild.Core, "compat-core");
                 await bus.WaitUntilConnected();
 
                 CompatPayload payload = CompatPayloads.Golden();
@@ -34,13 +32,13 @@ namespace Common.RabbitMQ.Tests.Broker
                 Assert.Equal(1, sender.Received.Count);
 
                 AssertPayload(payload, await current.Received.Next(TestBus.Timeout));
-                AssertPayload(payload, await baseline.Received.Next(TestBus.Timeout));
+                AssertPayload(payload, await core.Received.Next(TestBus.Timeout));
 
                 // The sender's copy comes back from the broker alongside the others and must be dropped (source-id).
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
                 Assert.Equal(1, sender.Received.Count);
                 Assert.Equal(1, current.Received.Count);
-                Assert.Equal(1, baseline.Received.Count);
+                Assert.Equal(1, core.Received.Count);
             }
         }
 

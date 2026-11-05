@@ -122,7 +122,7 @@ namespace Messaging.Hosting
             string wireName = WireNames.Get(messageType);
 
             // Two types with one wire name would make incoming messages ambiguous, as MessagingRegistry.Validate says at
-            // startup. The owner is never forgotten: a shared queue's bus keeps the first type even with no subscribers left.
+            // startup. The owner is never forgotten, so another type can't take the wire name later.
             Type other = wireNameOwners.TryGetValue(wireName, out Type owner)
                 ? owner
                 : registry.BusNames.SelectMany(registry.GetMessageRegistrations).FirstOrDefault(r => r.WireName == wireName)?.MessageType;
@@ -141,7 +141,7 @@ namespace Messaging.Hosting
             MessageRegistration registration = new MessageRegistration(wireName, messageType);
             foreach (string busName in registry.BusNames)
             {
-                _ = ChangeBinding(busName, wireName, bus => bus.Subscribe(registration));
+                provider.GetRequiredKeyedService<RabbitMQBus>(busName).Subscribe(registration);
             }
         }
 
@@ -155,28 +155,11 @@ namespace Messaging.Hosting
             string wireName = WireNames.Get(messageType);
             foreach (string busName in registry.BusNames)
             {
-                // Handlers and AddMessages keep a type bound for the life of the application.
+                // Handlers and AddMessages keep a type subscribed for the life of the application.
                 if (!registry.GetMessageRegistrations(busName).Any(r => r.WireName == wireName))
                 {
-                    _ = ChangeBinding(busName, wireName, bus => bus.ReleaseSubscription(wireName));
+                    provider.GetRequiredKeyedService<RabbitMQBus>(busName).Unsubscribe(wireName);
                 }
-            }
-        }
-
-        /// <summary>A failure is only logged: the bus remembers what was asked and applies it the next time it connects.</summary>
-        private async Task ChangeBinding(string busName, string wireName, Func<RabbitMQBus, Task> change)
-        {
-            try
-            {
-                await change(provider.GetRequiredKeyedService<RabbitMQBus>(busName)).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (!(ex is OperationCanceledException || ex is ObjectDisposedException))
-            {
-                provider.GetService<ILogger<MessageSubscriber>>()?.LogError(ex, "[{Bus}] Could not change the binding for {WireName}.", busName, wireName);
-            }
-            catch (Exception)
-            {
-                // The application is shutting down.
             }
         }
 

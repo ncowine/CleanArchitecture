@@ -55,10 +55,10 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "method Common.RabbitMQ.RemoteEventRegistry.Add(System.Reflection.Assembly) : Common.RabbitMQ.RemoteEventRegistry",
             "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Messaging.PublishOptions = null) : System.Void",
 
-            // Subscribing binds the event (ADR 0002, update 2026-11-04).
+            // Subscribing starts receiving the event (ADR 0002, updates 2026-11-04 and 2026-11-05).
             "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Subscribe(System.Action<TPayload>, Prism.Events.ThreadOption, System.Boolean, System.Predicate<TPayload>) : Prism.Events.SubscriptionToken",
 
-            // The last subscriber going removes the binding (ADR 0002, update 2026-11-04).
+            // The last subscriber going stops receiving it (ADR 0002, updates 2026-11-04 and 2026-11-05).
             "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Unsubscribe(Prism.Events.SubscriptionToken) : System.Void",
             "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Unsubscribe(System.Action<TPayload>) : System.Void",
             "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Publish(TPayload) : System.Void",

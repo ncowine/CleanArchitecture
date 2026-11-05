@@ -60,15 +60,14 @@ namespace Common.RabbitMQ.Tests.Broker
                 case CompatBuild.Baseline:
                     return Track(new BaselineEndpoint(broker, ExchangeName, clientName));
                 default:
-                    return AddCoreEndpoint(clientName, null);
+                    return AddCoreEndpoint(clientName);
             }
         }
 
-        /// <param name="observer">Null for the bus's default: no observer, no extra headers.</param>
         /// <param name="configure">Changes the test defaults, for example to use a shared queue.</param>
-        public CoreEndpoint AddCoreEndpoint(string clientName, IMessagingObserver observer, Action<RabbitMQBusOptions> configure = null)
+        public CoreEndpoint AddCoreEndpoint(string clientName, Action<RabbitMQBusOptions> configure = null)
         {
-            CoreEndpoint endpoint = Track(new CoreEndpoint(broker, ExchangeName, clientName, observer, configure));
+            CoreEndpoint endpoint = Track(new CoreEndpoint(broker, ExchangeName, clientName, configure));
             if (endpoint.Bus.DeadLetterQueueName != null)
             {
                 // Shared queues are durable: they outlive the test unless deleted.
@@ -127,8 +126,8 @@ namespace Common.RabbitMQ.Tests.Broker
             await channel.QueueBindAsync(queue.QueueName, ExchangeName, routingKey).ConfigureAwait(false);
         }
 
-        /// <summary>Publishes as another application would, without either build.</summary>
-        public async Task PublishRaw(string routingKey, IDictionary<string, object> headers, byte[] body)
+        /// <summary>Publishes as another application would, without either build: routed with the exchange name.</summary>
+        public async Task PublishRaw(IDictionary<string, object> headers, byte[] body)
         {
             BasicProperties properties = new BasicProperties
             {
@@ -137,7 +136,7 @@ namespace Common.RabbitMQ.Tests.Broker
                 Headers = headers,
             };
 
-            await channel.BasicPublishAsync(ExchangeName, routingKey, mandatory: false, basicProperties: properties, body: body).ConfigureAwait(false);
+            await channel.BasicPublishAsync(ExchangeName, ExchangeName, mandatory: false, basicProperties: properties, body: body).ConfigureAwait(false);
         }
 
         /// <summary>Takes one message off <paramref name="queueName"/>, or null when it is empty.</summary>

@@ -5,7 +5,7 @@
 # Prometheus can evaluate alerting rules, but it cannot notify anyone — that needs a separate
 # Alertmanager process, its own config file and its own receivers. Grafana is already running,
 # already has Prometheus as a data source, and already has contact points and notification
-# policies. One component instead of two, for the same seven alerts.
+# policies. One component instead of two, for the same six alerts.
 #
 # WHAT FIRES, AND WHAT DOES NOT
 # These alert on SYMPTOMS a caller would notice, never on causes. "5% of requests are failing"
@@ -262,48 +262,7 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
-      # ── 6. The API lost the broker ────────────────────────────────────────────
-      - uid: cleanarch-messaging-disconnected
-        title: API disconnected from RabbitMQ
-        condition: THRESHOLD
-        for: 5m
-        # No data means messaging is off, or the API is down — Service down covers that.
-        noDataState: OK
-        execErrState: OK
-        labels:
-          severity: critical
-          service: CleanArch.Api
-        annotations:
-          summary: CleanArch.Api's consumer or publisher connection to RabbitMQ is down
-          description: >-
-            The broker is reachable, so the cause is on the API side: credentials, vhost
-            permissions, or the network between them. The API keeps serving requests and the
-            outbox holds its events, but nothing is received until it reconnects. The
-            "Connection & dead-letter log" panel has the broker's reason.
-          runbook_url: https://github.com/your-org/CleanArchitecture/blob/main/tutorials/95-reading-your-telemetry.md#messaging-rabbitmq
-        data:
-          - refId: QUERY
-            relativeTimeRange: { from: 600, to: 0 }
-            datasourceUid: prometheus
-            model:
-              refId: QUERY
-              instant: true
-              range: false
-              editorMode: code
-              # Silent while the broker itself is down: RabbitMQ broker unreachable already
-              # fired, and one outage should page once.
-              expr: min(messaging_client_connected{job="cleanarch-api"}) unless on() (min(up{job="rabbitmq"}) < 1)
-          - refId: THRESHOLD
-            relativeTimeRange: { from: 600, to: 0 }
-            datasourceUid: __expr__
-            model:
-              refId: THRESHOLD
-              type: threshold
-              expression: QUERY
-              conditions:
-                - evaluator: { type: lt, params: [1] }
-
-      # ── 7. Received work was given up on ──────────────────────────────────────
+      # ── 6. Received work was given up on ──────────────────────────────────────
       - uid: cleanarch-messages-dead-lettered
         title: Messages dead-lettered
         condition: THRESHOLD

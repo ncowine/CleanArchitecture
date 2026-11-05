@@ -17,7 +17,10 @@ namespace Common.RabbitMQ.Tests.Hosting
 {
     using Messaging.Prism;
 
-    /// <summary>The modern side: when the last subscriber goes, the binding goes, unless a registration still wants the type.</summary>
+    /// <summary>
+    /// The modern side: when the last subscriber goes, the type is dropped on arrival again, unless a registration still
+    /// wants it. The queue's binding (one per exchange) never changes, so a recording sink shows what is received.
+    /// </summary>
     public class HostingUnsubscribeTests
     {
         private const string App = "hosting-unsubscribe";
@@ -25,95 +28,89 @@ namespace Common.RabbitMQ.Tests.Hosting
 
         private static readonly TimeSpan SettlePeriod = TimeSpan.FromMilliseconds(500);
 
+        /// <summary>How long to wait for a message that must not arrive.</summary>
+        private static readonly TimeSpan QuietPeriod = TimeSpan.FromSeconds(1);
+
         [Fact]
-        public async Task DisposingTheLastSubscription_RemovesTheBinding_AndSubscribingAgainRestoresIt()
+        public async Task DisposingTheLastSubscription_StopsReceiving_AndSubscribingAgainResumes()
         {
-            await WithHost(messaging => { }, async (topology, host) =>
+            RecordingSink sink = new RecordingSink();
+            await WithHost(messaging => messaging.Services.AddSingleton<IMessageSink>(sink), async (topology, host) =>
             {
                 IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
                 IDisposable first = subscriber.Subscribe<CompatMessage>(_ => { });
                 IDisposable second = subscriber.Subscribe<CompatMessage>(_ => { });
-                await WaitForBinding(topology, true);
+                Assert.True(await IsReceived(topology, sink));
 
                 first.Dispose();
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-                Assert.True(await topology.IsRoutable(App, WireName));
+                Assert.True(await IsReceived(topology, sink));
 
                 second.Dispose();
-                await WaitForBinding(topology, false);
+                Assert.False(await IsReceived(topology, sink));
 
                 subscriber.Subscribe<CompatMessage>(_ => { });
-                await WaitForBinding(topology, true);
+                Assert.True(await IsReceived(topology, sink));
             });
         }
 
         [Fact]
-        public async Task AddMessages_KeepsTheBinding_AfterTheLastSubscription()
+        public async Task AddMessages_KeepsReceiving_AfterTheLastSubscription()
         {
-            await WithHost(messaging => messaging.AddMessages(typeof(CompatMessage).Assembly), async (topology, host) =>
+            RecordingSink sink = new RecordingSink();
+            await WithHost(messaging =>
             {
-                IDisposable subscription = host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { });
-                await WaitForBinding(topology, true);
+                messaging.AddMessages(typeof(CompatMessage).Assembly);
+                messaging.Services.AddSingleton<IMessageSink>(sink);
+            }, async (topology, host) =>
+            {
+                host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { }).Dispose();
 
-                subscription.Dispose();
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-
-                Assert.True(await topology.IsRoutable(App, WireName));
+                Assert.True(await IsReceived(topology, sink));
             });
         }
 
         [Fact]
-        public async Task MessageEvent_LastUnsubscribe_RemovesTheBinding_UnlessAnIMessageSubscriberStillListens()
+        public async Task MessageEvent_LastUnsubscribe_StopsReceiving_UnlessAnIMessageSubscriberStillListens()
         {
             EventAggregator eventAggregator = new EventAggregator();
-            await WithHost(messaging => messaging.UseEventAggregator(eventAggregator), async (topology, host) =>
+            RecordingSink sink = new RecordingSink();
+            await WithHost(messaging =>
+            {
+                messaging.UseEventAggregator(eventAggregator);
+                messaging.Services.AddSingleton<IMessageSink>(sink);
+            }, async (topology, host) =>
             {
                 PubSubEvent<CompatMessage> messageEvent = eventAggregator.GetEvent<MessageEvent<CompatMessage>>();
                 SubscriptionToken token = messageEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                await WaitForBinding(topology, true);
+                Assert.True(await IsReceived(topology, sink));
 
                 IDisposable subscription = host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { });
                 token.Dispose();
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-                Assert.True(await topology.IsRoutable(App, WireName));
+                Assert.True(await IsReceived(topology, sink));
 
                 subscription.Dispose();
-                await WaitForBinding(topology, false);
+                Assert.False(await IsReceived(topology, sink));
 
                 messageEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                await WaitForBinding(topology, true);
+                Assert.True(await IsReceived(topology, sink));
             });
         }
 
         [Fact]
-        public async Task MessageEvent_SubscribedInAnotherAggregator_DoesNotBindThisApplication()
+        public async Task Receive_IsCounted_ReceivingStopsWithTheLastStopReceiving()
         {
-            EventAggregator eventAggregator = new EventAggregator();
-            new EventAggregator().GetEvent<MessageEvent<CompatMessage>>().Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-
-            await WithHost(messaging => messaging.UseEventAggregator(eventAggregator), async (topology, host) =>
-            {
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-                Assert.False(await topology.IsRoutable(App, WireName));
-            });
-        }
-
-        [Fact]
-        public async Task Receive_IsCounted_TheBindingGoesWithTheLastStopReceiving()
-        {
-            await WithHost(messaging => { }, async (topology, host) =>
+            RecordingSink sink = new RecordingSink();
+            await WithHost(messaging => messaging.Services.AddSingleton<IMessageSink>(sink), async (topology, host) =>
             {
                 IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
                 subscriber.Receive(typeof(CompatMessage));
                 subscriber.Receive(typeof(CompatMessage));
-                await WaitForBinding(topology, true);
 
                 subscriber.StopReceiving(typeof(CompatMessage));
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-                Assert.True(await topology.IsRoutable(App, WireName));
+                Assert.True(await IsReceived(topology, sink));
 
                 subscriber.StopReceiving(typeof(CompatMessage));
-                await WaitForBinding(topology, false);
+                Assert.False(await IsReceived(topology, sink));
             });
         }
 
@@ -121,10 +118,10 @@ namespace Common.RabbitMQ.Tests.Hosting
         public async Task MessageEvent_RefusedForAWireNameConflict_LeavesNothingBehind_AndDoesNotAffectTheOtherType()
         {
             EventAggregator eventAggregator = new EventAggregator();
+            Received<CompatMessage> received = new Received<CompatMessage>();
             await WithHost(messaging => messaging.UseEventAggregator(eventAggregator), async (topology, host) =>
             {
-                host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { });
-                await WaitForBinding(topology, true);
+                host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
 
                 MessageEvent<Employees.Contracts.CompatMessageTwin> twin = eventAggregator.GetEvent<MessageEvent<Employees.Contracts.CompatMessageTwin>>();
                 Action<Employees.Contracts.CompatMessageTwin> handler = _ => { };
@@ -134,8 +131,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                 Assert.Throws<InvalidOperationException>(() => twin.Subscribe(handler, keepSubscriberReferenceAlive: true));
 
                 twin.Unsubscribe(handler);
-                await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-                Assert.True(await topology.IsRoutable(App, WireName));
+                await PublishGolden(topology);
+                Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
             });
         }
 
@@ -167,8 +164,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await previous.WaitUntilConnected();
                 }
 
-                Dictionary<string, object> headers = new Dictionary<string, object> { [WireHeaders.MessageType] = WireName };
-                await topology.PublishRaw(App, WireName, headers, GoldenFile.Read("compat-payload.json"));
+                await PublishGolden(topology);
 
                 EventAggregator eventAggregator = new EventAggregator();
                 Received<CompatMessage> received = new Received<CompatMessage>();
@@ -203,7 +199,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task SharedQueue_OneInstanceUnsubscribing_KeepsTheBindingForTheOthers()
+        public async Task SharedQueue_OneInstanceUnsubscribing_TheOthersStillReceive()
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
@@ -231,9 +227,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                         await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
                     }
 
-                    // Only B consumes now, so this reaches it if the queue is still bound.
-                    Dictionary<string, object> headers = new Dictionary<string, object> { [WireHeaders.MessageType] = WireName };
-                    await topology.PublishRaw(App, WireName, headers, GoldenFile.Read("compat-payload.json"));
+                    // Only B consumes now.
+                    await PublishGolden(topology);
 
                     Assert.Equal(42, (await atB.Next(TestBus.Timeout))?.Id);
                 }
@@ -256,19 +251,18 @@ namespace Common.RabbitMQ.Tests.Hosting
             }
         }
 
-        private static async Task WaitForBinding(LegacyTopology topology, bool bound)
+        private static Task PublishGolden(LegacyTopology topology)
         {
-            for (int i = 0; i < 100; i++)
-            {
-                if (await topology.IsRoutable(App, WireName) == bound)
-                {
-                    return;
-                }
+            Dictionary<string, object> headers = new Dictionary<string, object> { [WireHeaders.MessageType] = WireName };
+            return topology.PublishRaw(App, topology.Exchange(App), headers, GoldenFile.Read("compat-payload.json"));
+        }
 
-                await Task.Delay(100, TestContext.Current.CancellationToken);
-            }
-
-            Assert.Fail(bound ? "The message was never bound." : "The binding was never removed.");
+        /// <summary>Publishes one message and says whether it reached the sink, i.e. wasn't dropped on arrival.</summary>
+        private static async Task<bool> IsReceived(LegacyTopology topology, RecordingSink sink)
+        {
+            await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
+            await PublishGolden(topology);
+            return await sink.Next(QuietPeriod) != null;
         }
     }
 }

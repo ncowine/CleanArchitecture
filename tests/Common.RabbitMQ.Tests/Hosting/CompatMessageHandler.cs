@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Messaging;
@@ -40,8 +39,6 @@ namespace Common.RabbitMQ.Tests.Hosting
                 Message = message,
                 Context = context,
                 ScopeId = scope.Id,
-                CorrelationId = CorrelationContext.Current,
-                Activity = Activity.Current,
             });
 
             if (message.Name == Republish)

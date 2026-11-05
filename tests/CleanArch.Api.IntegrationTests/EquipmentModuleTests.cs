@@ -210,7 +210,7 @@ public sealed class EquipmentModuleTests : IAsyncLifetime
         var handler = ActivatorUtilities.CreateInstance<SiteRenamedHandler>(scope.ServiceProvider);
         await handler.Handle(
             new SiteRenamed { SiteId = london, Name = "London Campus" },
-            new MessageContext("ReferenceData.SiteRenamed", "Main", "m1", null, false,
+            new MessageContext("ReferenceData.SiteRenamed", "Main", "m1", false,
                 new Dictionary<string, string>(), "ReferenceData", "ReferenceData.SiteRenamed"),
             default);
 

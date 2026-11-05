@@ -21,8 +21,8 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
 > - `Common.Events` and `Employees.Contracts` are test fixtures here (`tests/Fixtures/`), not messages to use. This
 >   solution's messages go in each module's `*.Contracts` project.
 > - There's no messaging CI workflow here yet, and the build settings are isolated as described in PROVENANCE.md.
-> - **The API publishes only through its outbox**, with a publish that waits for the broker's confirm
->   ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md), and [recipe D](#d-a-server-aspnet-handlers) step 4).
+> - **The API publishes only after the commit** ([recipe D](#d-a-server-aspnet-handlers) step 4). The outbox it used
+>   until 2026-11-05 ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md)) was removed to keep things simple.
 >   Equipment's create/update/delete events are the working example (exchange `CleanArch`). Legacy apps are
 >   unchanged. Modern WPF apps only subscribe.
 > - **New to the API's messaging?** Start with [How the API uses RabbitMQ](how-the-api-uses-rabbitmq.md): the whole
@@ -91,7 +91,7 @@ The whole system uses a post office analogy. Each term has the everyday picture 
 | **Binding** | A forwarding rule: "copy letters labelled X from that desk into my mailbox". | A link from an exchange to a queue, with a pattern that says which messages to copy. |
 | **Routing key** | The label on the envelope that the sorting desk reads. | A string sent with every message. Bindings match against it. It decides **where** a message goes. |
 | **Wire name** | The form number printed inside the letter, like "Tax form 1040". | The message's identity, sent in the `event-type` header. It decides **what** a message is. Legacy events use their full .NET type name; new classes declare it with `[Message("...")]`. |
-| **Header** | A sticky note on the envelope. | Extra named values sent with a message: `event-type`, `source-id`, and optionally `correlation-id` and `traceparent`. |
+| **Header** | A sticky note on the envelope. | Extra named values sent with a message: `event-type` and `source-id`. |
 | **Exchange type** | How the sorting desk reads labels. | `topic` (patterns with `*` and `#`), `direct` (exact match), `fanout` (everyone gets everything), `headers` (match on headers, not the label). The default is `topic`. |
 | **Acknowledge (ack)** | Signing for a delivery. | Telling the broker "I've handled this message, delete it." Until then the broker keeps it. |
 | **Dead-letter queue** | The returns shelf. | A queue where messages that keep failing are parked instead of being lost. Named `<queue>.dead-letter`. |
@@ -104,7 +104,6 @@ The whole system uses a post office analogy. Each term has the everyday picture 
 | **Contract** | The agreed form layout. | A plain class describing a message's fields, e.g. `Employees.Contracts.EmployeeUpdated`. |
 | **Handler** | The clerk who processes one kind of letter. | A server class `IMessageHandler<T>` that runs when a message of type `T` arrives. |
 | **Serializer** | The typist who turns a form into text and back. | Converts a message object to JSON bytes and back. Legacy apps use Newtonsoft.Json; the server uses System.Text.Json set up to produce the same bytes. |
-| **Observer / telemetry** | The post office's CCTV and logbook. | Optional tracing, metrics and logs of every send and receive (OpenTelemetry style). |
 
 ---
 
@@ -120,7 +119,7 @@ flowchart TB
     subgraph FrontDoors["Front doors (translation only)"]
         A["Common.RabbitMQ<br/>legacy adapter"]
         P["Messaging.Prism<br/>event aggregator bridge"]
-        H["Messaging.Hosting<br/>DI, handlers, JSON, telemetry"]
+        H["Messaging.Hosting<br/>DI, handlers, JSON"]
     end
     Core["Messaging.RabbitMQ<br/><b>RabbitMQBus</b> - the only code that talks to RabbitMQ"]
     B[("RabbitMQ broker")]
@@ -146,9 +145,9 @@ Two ideas explain almost everything:
 
 | Project | Target | Depends on | What it is | Who uses it |
 |---|---|---|---|---|
-| `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `IMessageHandler<T>`, `[Message]`, `MessageContext`, `IMessageSerializer`, `IMessagingObserver`. | Everything below. |
+| `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `IMessageHandler<T>`, `[Message]`, `MessageContext`, `IMessageSerializer`. | Everything below. |
 | `Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | RabbitMQ.Client 7.1.2, Microsoft.Extensions.Logging.Abstractions 8.0 | **The engine**: `RabbitMQBus` and its options. | All front doors. |
-| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | Server-style setup: `AddMessaging`, handlers, `IMessageSubscriber`, System.Text.Json, telemetry, health checks, `MessagingClient`. | The API, modern WPF apps. |
+| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | Server-style setup: `AddMessaging`, handlers, `IMessageSubscriber`, System.Text.Json, `MessagingClient`. | The API, modern WPF apps. |
 | `Messaging/Messaging.Prism` | net8.0 | Prism.Core, Messaging.Hosting | Optional bridge: plain message classes as Prism events (`MessageEvent<T>`). | Modern WPF apps that like the Prism style. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
 | `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Newtonsoft 12.0.3, Configuration.Binder, the engine | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
@@ -164,8 +163,8 @@ Two ideas explain almost everything:
 |---|---|
 | `Common.RabbitMQ.Tests/Golden` | Message bodies are **byte-for-byte** what legacy apps expect (golden JSON files). |
 | `Common.RabbitMQ.Tests/PublicApi` | The legacy adapter's public API has **nothing removed or changed**, only approved additions. |
-| `Common.RabbitMQ.Tests/Broker` | The engine against a real broker: delivery, echo drop, headers, queues, retries, dead letters, observers. |
-| `Common.RabbitMQ.Tests/Hosting` | The server side and modern clients: handlers, JSON, telemetry, health, routing keys, the Prism bridge, `IMessageSubscriber`. |
+| `Common.RabbitMQ.Tests/Broker` | The engine against a real broker: delivery, echo drop, headers, queues, retries, dead letters. |
+| `Common.RabbitMQ.Tests/Hosting` | The server side and modern clients: handlers, JSON, health, routing keys, the Prism bridge, `IMessageSubscriber`. |
 | `Common.RabbitMQ.Tests/LegacyModel` | A **model of the real legacy library** and every assumption about it, plus the new code working with it. |
 | `Common.RabbitMQ.Tests/Adapter` | The legacy adapter's newer features: events by assembly, appsettings.json, routing rules. |
 | `Fixtures/Common.RabbitMQ.Baseline` | A **frozen copy** of the original library, so tests can prove old and new builds talk to each other. |
@@ -177,7 +176,7 @@ Two ideas explain almost everything:
 |---|---|
 | [`adr/0001-decouple-messaging-from-prism.md`](adr/0001-decouple-messaging-from-prism.md) | You want to know **why** the layers exist, and the compatibility rules. |
 | [`adr/0002-exchange-per-owner-and-configurable-routing.md`](adr/0002-exchange-per-owner-and-configurable-routing.md) | You want the topology: exchange per app, routing keys, events found by assembly, modern clients. |
-| [`adr/0003-server-publishes-through-the-outbox.md`](adr/0003-server-publishes-through-the-outbox.md) | You're publishing from the API: why it goes through the outbox, and what legacy apps keep. |
+| [`adr/0003-server-publishes-through-the-outbox.md`](adr/0003-server-publishes-through-the-outbox.md) | Superseded 2026-11-05. The outbox design the API used before it published after the commit. |
 | [`legacy-baseline-assumptions.md`](legacy-baseline-assumptions.md) | You're checking this code against the real legacy library. |
 
 ---
@@ -196,7 +195,6 @@ sequenceDiagram
     App->>FrontDoor: PublishRemote / Publish
     FrontDoor->>Bus: Enqueue(wire name, message, routing key)
     Bus->>Bus: serialize to JSON now
-    Bus->>Bus: observer may add headers (trace, correlation)
     Bus->>Buffer: add
     Bus-->>App: returns immediately
     loop background
@@ -224,9 +222,9 @@ that. The API avoids it by publishing through its outbox with a confirmed publis
 1. RabbitMQ puts a copy of the message in every queue whose binding matches its routing key.
 2. The engine reads the headers. On a **per-instance** queue, a message whose `source-id` is this program is an
    echo and is skipped.
-3. It finds the wire name in the `event-type` header (or, if missing, uses the routing key).
-4. It looks up which .NET type that wire name means. If it doesn't know it, the message is skipped (per-instance),
-   dead-lettered (shared, when it only binds known types), or skipped (shared, when it binds patterns).
+3. It finds the wire name in the `event-type` header. The routing key can't say: it's just the publisher's name.
+4. It looks up which .NET type that wire name means. If nothing in this app subscribes to it, the message is
+   acknowledged and skipped. That's normal: a queue receives everything on the exchanges it binds.
 5. It turns the JSON back into an object.
 6. It hands the object to the **dispatcher**, the one step that differs per front door:
    - **Legacy:** `eventAggregator.GetEvent<TheEvent>().Publish(payload)`, so your normal Prism subscribers run.
@@ -256,7 +254,9 @@ flowchart LR
 - **Only the owner creates (declares) its exchange.** The new code never creates another app's exchange: it just
   checks that it exists, and if it doesn't (the owner hasn't started yet), it keeps retrying until it does.
 - **Bindings decide what you receive:**
-  - No keys given: one binding per message type your app knows, keyed by its wire name. This is how legacy apps work.
+  - No keys given: **one** binding, keyed by the exchange's name, which is the key its owner publishes everything
+    with. You receive every message on that exchange and the ones nothing subscribes to are dropped. This is how
+    legacy apps work, and it keeps the broker's binding count at clients × exchanges, not clients × events.
   - Patterns (topic exchanges): `orders.*.saved` (`*` = exactly one word), `AppA.Events.#` (`#` = any number of words).
   - Exact keys (direct exchanges), nothing (fanout), or header matches (headers exchanges).
 - **Everyone uses the default virtual host `/`**, because apps can only bind to exchanges in their own vhost.
@@ -267,18 +267,18 @@ flowchart LR
 
 ### Routing keys
 
-- **Default:** the routing key is the wire name. Legacy apps rely on this.
+- **Default:** the routing key is the publisher's exchange name (= its application name). Legacy apps rely on this.
 - **Custom:** the publishing app may choose any key, for example `orders.eu.saved`, so subscribers can filter by
   region. The wire name still travels in the `event-type` header, so every receiver still knows what the message is.
-- **The catch:** subscribers only receive messages whose key matches their bindings. Legacy apps bind wire names, so
-  **custom keys don't reach legacy apps**. Keep the default key for anything legacy apps must receive.
+- **The catch:** subscribers only receive messages whose key matches their bindings. Legacy apps bind the exchange
+  name, so **custom keys don't reach legacy apps**. Keep the default key for anything legacy apps must receive.
 
 ### Two kinds of queue
 
 | | Per-instance queue (desktop apps) | Shared queue (servers) |
 |---|---|---|
 | How many | One per running program | One per service, shared by all its running copies |
-| Name | `clientname.busname.<random id>` | `clientname.busname`, plus `clientname.busname.dead-letter` |
+| Name | `clientname.busname.<windows user>.<random id>` | `clientname.busname`, plus `clientname.busname.dead-letter` |
 | Lifetime | Deleted when the program exits | Durable: survives restarts; messages wait while nothing runs |
 | Who gets a message | **Every** running copy | **One** running copy (the work is shared) |
 | Your own messages | Dropped (no echo) | Handled like any other message |
@@ -297,7 +297,6 @@ flowchart LR
 | A handler throws (shared queue) | Retried in the same process up to `MaxAttempts` times (3 by default), `RetryDelay` apart (1 s). Then it's moved to the dead-letter queue. |
 | The message body isn't valid JSON (shared queue) | Straight to the dead-letter queue, with no retries, because retrying can't fix it. |
 | A message keeps **crashing the whole process** | RabbitMQ counts deliveries lost with a connection. After `DeliveryLimit` (5) it dead-letters the message itself. |
-| An observer (telemetry) throws | Logged and ignored. It never affects delivery. |
 
 **Why retries happen in the process.** On RabbitMQ 4.x, a "put it back in the queue" rejection is **not counted**
 towards the queue's delivery limit. We measured one failing message being redelivered over 6,000 times in 3 seconds.
@@ -371,8 +370,8 @@ eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions {
 eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UIThread);
 ```
 
-Events don't belong to a bus. With one bus there is nothing to choose. With several, set `Messaging:DefaultBus` in
-configuration; to send one event elsewhere, pass that bus:
+Events don't belong to a bus. `Messaging:DefaultBus` in configuration names the bus they go to, and it is required,
+even with one bus: `Init` throws without it. To send one event elsewhere, pass that bus:
 
 ```csharp
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);              // the default bus
@@ -380,10 +379,10 @@ eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions {
 ```
 
 `RemotePubSubEvent<T>` is for events that travel, and `PubSubEvent<T>` for events that stay inside the app. A
-`RemotePubSubEvent<T>` needs no registration: subscribing to it binds the queue, on every bus, so an app only receives what
-it listens for, and the binding is removed when the last subscriber goes. A subscriber held weakly gives no signal when it
-is collected, so that one is noticed at the next message. Bindings change in the background, so a message published right
-after subscribing, or while nothing is subscribed, is missed.
+`RemotePubSubEvent<T>` needs no registration: subscribing to it is what stops it being dropped on arrival, on every bus,
+and when the last subscriber goes it is dropped again. Bindings never change: the queue is bound once per exchange. A
+subscriber held weakly gives no signal when it is collected, so that one is noticed at the next message. A message that
+arrives while nothing is subscribed is missed.
 An assembly of plain events not yet moved over can still travel with `RemoteEventRegistry.Add`, but all its events are
 bound at startup, used or not. `[RemoteEvent("bus")]` is gone, so remove it when you take this version.
 
@@ -484,17 +483,16 @@ publisher.Publish(new EmployeeSaved { Id = 7, Name = "Ada" });
 
 **Things to know about `IMessageSubscriber`:**
 
-- **Subscribing is what binds the queue**, so a client only receives what it listens for and nothing has to be
-  registered. The message class needs `[Message("...")]`. The binding is created in the background, so a message
-  published right after subscribing can be missed. `MessageEvent<T>` subscriptions work the same way.
+- **Subscribing is what stops a type being dropped on arrival**, so nothing has to be registered. The message class
+  needs `[Message("...")]`. It takes effect at once and never changes the broker's bindings (one per exchange).
+  `MessageEvent<T>` subscriptions work the same way.
 - `Subscribe` returns an `IDisposable`. **Dispose it to unsubscribe.** Subscriptions are strong references (Prism's
   are weak), so a window or view model that goes away before the app ends must dispose its subscriptions. When the last
-  subscriber for a type goes, its binding is removed, unless a handler or `AddMessages` still wants the type.
+  subscriber for a type goes, it is dropped on arrival again, unless a handler or `AddMessages` still wants the type.
 - **On a durable shared queue, subscribe before starting and stay subscribed.** The queue keeps last run's bindings and
-  messages, and a message for a type the app doesn't know yet is dead-lettered; subscribing later logs a warning. Its
-  binding belongs to every instance, so unsubscribing leaves it, and the broker can hand a message to an instance with
-  no subscriber left, which drops it and logs a warning at the first. Telemetry still counts those as handled. Give all
-  instances the same subscriptions.
+  messages, and a message for a type nothing has subscribed to yet is dropped; subscribing later logs a warning. The
+  broker can hand a message to an instance with no subscriber left, which drops it. Give all instances the same
+  subscriptions.
 - **With a synchronization context** (the UI thread's), the call is posted to it and runs later. Its exceptions go to
   the dispatcher (`Application.DispatcherUnhandledException`), not to the message, so they don't cause retries.
 - **Without one**, or with the async overload `Subscribe<T>((message, context, token) => ...)`, it runs on the
@@ -520,16 +518,12 @@ public class EmployeeSavedHandler : IMessageHandler<EmployeeSaved>
 ```csharp
 builder.Services.AddMessaging(messaging => messaging
     .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
-    .AddHandlers(typeof(EmployeeSavedHandler).Assembly)             // every IMessageHandler<T> in it
-    .AddTelemetry());                                                // tracing, metrics, logs
-
-builder.Services.AddHealthChecks().AddMessaging();
-app.MapHealthChecks("/health");
+    .AddHandlers(typeof(EmployeeSavedHandler).Assembly));           // every IMessageHandler<T> in it
 ```
 
-**3. Publish from anywhere.** Nothing to register: a message goes to the default bus, keyed by its wire name. With one
-bus that bus is the default; with several, call `messaging.UseDefaultBus(configuration["Messaging:DefaultBus"])`. To send
-one message elsewhere, name the bus.
+**3. Publish from anywhere.** Nothing to register: a message goes to the default bus, keyed by the exchange name. The
+default is required, even with one bus: call `messaging.UseDefaultBus(configuration["Messaging:DefaultBus"])`, or the
+buses don't start. To send one message elsewhere, name the bus.
 
 ```csharp
 publisher.Publish(new EmployeeCacheRefreshed { ... });
@@ -543,38 +537,28 @@ publisher.Publish(order, new PublishOptions { Bus = "Partners" });
 messaging.Subscribe("AppA", "AppA.Events.#");                                    // another app's exchange
 messaging.AddMessages(typeof(OrderSaved).Assembly);                              // bind everything, for a custom sink
 services.AddSingleton<IMessageSink, MySink>();                                   // see every message
-using (CorrelationContext.Begin(requestId)) { ... }                              // correlation ID for published messages
 ```
 
 Configuration mistakes stop the app at startup with a clear list of what's wrong, for example a handler on a bus that
 doesn't exist or a class without `[Message]`.
 
-**4. In CleanArchitecture: publish events through the outbox** ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md)).
+**4. In CleanArchitecture: publish events after the commit.**
 
-`Publish` only buffers, so a restart can lose a message. Events other applications rely on go through the
-module's outbox instead. The event is saved in the same transaction as the change, and delivered with a publish that
-waits for the broker's confirm:
+A handler must not call `Publish` itself: the change could still roll back. It collects the event, and a pipeline
+behavior around the transaction publishes it once the commit has succeeded:
 
 ```csharp
-// Program.cs, only when "Messaging" is configured: the module's integration events.
-builder.Services.AddEquipmentIntegrationEvents();   // the module's own outbox writer + AddOutboxPublishing
-
-// In a handler, inside the unit of work (IEquipmentOutbox, not a second IOutbox, which Onboarding owns):
-_outbox.Enqueue(created);
+// In a handler, inside the unit of work:
+_events.Publish(created);   // IEquipmentEvents: collected, sent by EquipmentEventsBehavior after the commit
 ```
 
-The step-by-step version, including the outbox table and the writer, is in
-[tutorial 67](../../tutorials/67-messaging-with-rabbitmq.md#11-step-4--send-it-through-the-modules-outbox).
+The step-by-step version is in
+[tutorial 67](../../tutorials/67-messaging-with-rabbitmq.md#11-step-4--send-it-after-the-commit).
 
-- A row is marked delivered only after the broker confirms it. The row's ID travels as the message-id.
-- While the broker is unreachable, rows wait without using up their 3 attempts, and go out in order afterwards. The
-  same applies when the broker refuses a message (a nack), sends no confirm within 30 s, or the bus has been stopped.
-- A message no queue is bound for is logged ("No queue is bound …") and still marked delivered: with no receiver
-  running, nobody is waiting for it.
-- Delivery is at least once, so receivers must tolerate a duplicate.
-- A module whose outbox also drives in-process steps (like Onboarding's saga) keeps its own dispatcher and hands the
-  rows it doesn't recognise to `MessagingOutboxDispatcher<TContext>` (`CanDispatch`, then `DispatchAsync`).
-- `IConfirmedMessagePublisher` is the publish underneath. Use it directly only where an outbox doesn't fit.
+- Nothing is published if the command or its commit fails.
+- Publishing buffers, as everywhere: events wait while the broker is down, and are lost if the API stops first.
+- Without a `Messaging` section there is no `IMessagePublisher`, and the events are dropped.
+- Delivery can still duplicate after a dropped connection, so receivers should tolerate one.
 
 ### E. Choosing between them
 
@@ -613,6 +597,17 @@ The step-by-step version, including the outbox table and the writer, is in
 | `PrefetchCount` | `50` | How many unacknowledged messages a queue may hand over at once. |
 | `Heartbeat` | `00:00:30` | Connection keep-alive. |
 
+**Who is connected.** Every app logs in with the same broker account, so the bus labels its connections itself:
+
+- **Connections list:** `Poc.Net10 [Main] consumer - jsmith` (app, bus, role, Windows user).
+- **A connection's page, *Client properties*:** `app`, `bus`, `user`, `machine`, `process_id` and `instance_id`.
+  The instance ID is the last part of a per-instance queue's name.
+- **Queues list:** a per-instance queue is named `<app>.<bus>.<windows user>.<instance id>` in lower case, e.g.
+  `poc.net10.main.jsmith.3b33e861…`. A shared queue belongs to the service, so it has no user in its name.
+- **A queue's *Consumers* list:** the consumer tag is the consumer connection's label.
+
+Channels have no name of their own in AMQP: a channel's page links to its connection.
+
 Example (`src/WebApi/appsettings.json`):
 
 ```json
@@ -627,7 +622,7 @@ Example (`src/WebApi/appsettings.json`):
 ### Legacy apps (`appsettings.json` → `Messaging:Buses:<name>`, bound onto `RabbitMQConfig`)
 
 The same section as above. The section key is the bus name; `Messaging:DefaultBus`, next to `Buses`, names the default
-when there are several. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`,
+and is required. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`,
 `ExchangeName`, `ExchangeType`, `ClientName`, `PrefetchCount` and `Subscriptions` (`Exchange`, `RoutingKeys`) mean
 the same and have the same defaults. The differences:
 
@@ -646,32 +641,18 @@ Server-only keys (`QueueMode`, retries, `HeaderMatch`, `ExchangeDurable`, `BindO
 | `event-type` | always | The wire name: **what** the message is. Frozen. |
 | `source-id` | always | Which running program sent it, for dropping echoes. Frozen. |
 | `x-dotnet-pub-seq-no` | always, added by RabbitMQ.Client | Internal sequence number. Nobody reads it. |
-| `correlation-id` | with `AddTelemetry()` | Groups related messages into one conversation. |
-| `traceparent`, `tracestate` | with `AddTelemetry()` | Distributed tracing (W3C trace context). |
 
 Receivers ignore headers they don't know, so new headers can always be added safely.
 
 ### Logging
 
-`RabbitMQBus` logs through `ILogger`; in a host that's the category `Messaging.RabbitMQ.RabbitMQBus`, with or without
-`AddTelemetry()`. To quieten it, set a level for that category in `Logging:LogLevel`.
+`RabbitMQBus` logs through `ILogger`; in a host that's the category `Messaging.RabbitMQ.RabbitMQBus`. To quieten it, set a level for that category in `Logging:LogLevel`.
 
 | Level | What |
 |---|---|
 | Information | Connected; an unknown event ignored |
-| Warning | Connection lost or failed (every `ReconnectDelay` while the broker is down, with a stack trace); a handler retrying; a publish failed and kept buffered; a message no queue is bound for |
-| Error | A message dead-lettered or dropped; an observer that threw |
-
-### Telemetry (servers)
-
-- **ActivitySource and Meter name:** `Messaging` (`MessagingTelemetry.Name`). In OpenTelemetry, add both with
-  `.AddSource("Messaging")` and `.AddMeter("Messaging")`.
-- **Metrics:**
-  - `messaging.client.sent.messages`
-  - `messaging.client.consumed.messages`
-  - `messaging.process.duration` (seconds)
-- **Health check:** `messaging`, tagged `ready`. It's **Unhealthy** while any bus is disconnected, and reports how
-  many messages each bus has buffered.
+| Warning | Connection lost or failed (every `ReconnectDelay` while the broker is down, with a stack trace); a handler retrying; a publish failed; a message no queue is bound for |
+| Error | A message dead-lettered or dropped |
 
 ---
 
@@ -788,7 +769,7 @@ The full reasoning is in the two ADRs. The short version:
 | Limit | Why | Workaround |
 |---|---|---|
 | Messages still in the outgoing buffer are lost if the process crashes. | Sending is fire-and-forget. | Legacy apps: accepted. The API: publish through the outbox (recipe D, step 4). |
-| Custom routing keys don't reach legacy apps. | Legacy apps bind exact wire names. | Use the default key for anything legacy apps must receive. |
+| Custom routing keys don't reach legacy apps. | Legacy apps bind the exchange name. | Use the default key for anything legacy apps must receive. |
 | A non-`topic` exchange locks out legacy subscribers. | Legacy apps re-declare exchanges they subscribe to as `topic` (assumption A16). | Keep `topic` where legacy apps subscribe. |
 | Running more than one API instance makes its in-memory cache drift. | A shared queue gives each message to one instance. | Use an external cache, or add per-instance delivery for cache handlers (not built yet). |
 | The legacy model is based on assumptions. | The real legacy library isn't available to this repository. | Check `docs/legacy-baseline-assumptions.md` against the real library. |

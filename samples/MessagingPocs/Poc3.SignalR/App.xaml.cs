@@ -12,8 +12,8 @@ namespace Poc3.SignalR;
 // POC 3 — SignalR from the API
 //
 // WHEN THIS IS THE RIGHT CHOICE
-//   The default for new modern desktop apps whose events come from the API (docs/messaging/adr/0003: the API makes
-//   the changes and modern apps only listen). The app talks to one thing, the API: HTTP for reads and changes,
+//   The default for new modern desktop apps whose events come from the API (the API makes the changes and modern
+//   apps only listen). The app talks to one thing, the API: HTTP for reads and changes,
 //   SignalR for "something changed". No broker account on the desktop, no broker port open to it, no messaging
 //   library to keep in step with the legacy apps.
 //   Not the right choice when the app needs events that only legacy apps publish: the API would have to receive and

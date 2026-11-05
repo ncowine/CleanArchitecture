@@ -18,20 +18,20 @@ public static class DeleteEquipment
         private readonly IEquipmentCacheInvalidator _cache;
         private readonly IEquipmentChangeNotifier _changeNotifier;
         private readonly IRealtimeDispatch _realtime;
-        private readonly IEquipmentOutbox _outbox;
+        private readonly IEquipmentEvents _events;
 
         public Handler(
             IEquipmentRepository equipment,
             IEquipmentCacheInvalidator cache,
             IEquipmentChangeNotifier changeNotifier,
             IRealtimeDispatch realtime,
-            IEquipmentOutbox outbox)
+            IEquipmentEvents events)
         {
             _equipment = equipment;
             _cache = cache;
             _changeNotifier = changeNotifier;
             _realtime = realtime;
-            _outbox = outbox;
+            _events = events;
         }
 
         public async Task<bool> Handle(Command command, CancellationToken cancellationToken)
@@ -48,7 +48,7 @@ public static class DeleteEquipment
 
             // Same event to both channels; both wait for the commit (see CreateEquipment for the full picture).
             var deleted = new EquipmentDeleted { Id = asset.Id };
-            _outbox.Enqueue(deleted);
+            _events.Publish(deleted);
             _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(EquipmentDeleted), deleted));
 
             return true;

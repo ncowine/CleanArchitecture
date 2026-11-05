@@ -8,7 +8,7 @@ it accepts.
 |---|---|---|---|---|---|
 | **`Poc.Net472`** | .NET Framework 4.7.2 | legacy (`RemotePubSubEvent<T>`) | `Common.RabbitMQ` + Prism | API, net472, net8 | net472, net8, **API** |
 | **`Poc.Net8`** | .NET 8 | legacy (`RemotePubSubEvent<T>`) | `Common.RabbitMQ` + Prism | API, net472, net8 | net472, net8 |
-| **`Poc.Net10`** | .NET 10 | modern (`[Message]` classes) | `Messaging.Hosting`, or SignalR | **API only** | nobody |
+| **`Poc.Net10`** | .NET 10 | modern (`[Message]` classes) | `Messaging.Hosting`, or SignalR | **API**, plus the POC shape events | nobody |
 | `Poc3.SignalR` | .NET 8 | modern | SignalR client | API only | nobody |
 
 All of them **change equipment over HTTP** (Add / Delete). The broker carries only events.
@@ -20,7 +20,7 @@ All of them **change equipment over HTTP** (Add / Delete). The broker carries on
 ```
                     HTTP POST/DELETE /equipment  (any window, Swagger, curl)
                                    │
-                            CleanArch.Api ── outbox ──► exchange "CleanArch" ──┬──► net472
+                            CleanArch.Api ─ commit ──► exchange "CleanArch" ──┬──► net472
                               ▲      │                  Equipment.Created/      ├──► net8
                               │      └── SignalR hub    Updated/Deleted         └──► net10 (RabbitMQ mode)
                               │           └──────────────────────────────────────► net10 (SignalR mode), POC 3
@@ -42,22 +42,56 @@ Each app **owns one exchange** and publishes only there; what it receives is dec
 |---|---|---|
 | net472 | `CleanArch`, `Poc.Net472` (own), `Poc.Net8` | the API's events, notes and disposals from both legacy apps |
 | net8 | `CleanArch`, `Poc.Net8` (own), `Poc.Net472` | the same |
-| net10 | `CleanArch` only | the API's events, nothing else |
+| net10 | `CleanArch`, `Poc.Net472`, `Poc.Net8` | the API's events, and the ten shape events |
 | the API (`cleanarch.api.main`, shared, durable) | `Poc.Net472` | `EquipmentDisposed` only: the one event it handles |
+| `Poc.Api.NoOutbox` (`poc.api.nooutbox.main`, shared, durable) | `Poc.Net472`, `Poc.Net8` | disposals, flags and the ten shape events |
 
-**"API only" for net10 is enforced twice, both by configuration:** the broker never routes a legacy app's message to
-its queue (it doesn't bind their exchanges), and it subscribes only to the API's `Equipment.Messages` classes, so it
-couldn't read one anyway. It doesn't even reference the legacy events project.
+Every queue binds each exchange **once**, keyed by the exchange's name, which is the routing key its owner publishes
+everything with (the real legacy library does the same). So a queue receives everything on the exchanges it binds, and
+drops what nothing in the app subscribes to. **net10 gets notes and disposals from the legacy apps too, and drops
+them:** it subscribes only to `Equipment.Messages` and `Poc.Shapes` classes. It doesn't reference the legacy events
+project.
 
 ### The events
 
 | Event | Wire name (`event-type`) | From | Format |
 |---|---|---|---|
-| Equipment created / updated / deleted | `Equipment.EquipmentCreated` … | the API, through its outbox (~2 s) | `Equipment.Messages` classes |
+| Equipment created / updated / deleted | `Equipment.EquipmentCreated` … | the API, after the commit | `Equipment.Messages` classes |
 | A note on a piece of equipment | `Poc.Legacy.Events.EquipmentNoteSent` | net472, net8 | `RemotePubSubEvent<EquipmentNote>` |
 | Equipment disposed of | `Poc.Legacy.Events.EquipmentDisposed` | net472 | `RemotePubSubEvent<EquipmentDisposal>` |
 | Equipment flagged | `Poc.Legacy.Events.EquipmentFlagged` | net472 | `RemotePubSubEvent<(Guid id, string name)>` |
+| Ten payload shapes (below) | `Poc.Legacy.Events.Shapes.<Name>` | net472, net8 | `RemotePubSubEvent<T>`, read by net10 and `Poc.Api.NoOutbox` as `Poc.Shapes` classes |
 | A row was selected (**local only**) | none: never on the wire | net472, net8, inside the app | `PubSubEvent<EquipmentRow?>` |
+
+### The ten shape events
+
+Each one carries a payload shape that can break JSON compatibility between the legacy format (Newtonsoft 12) and the
+modern one (System.Text.Json). **Send all 10 shapes** in a net472 or net8 window publishes one of each, the legacy way
+(`PublishRemote`); every net472 and net8 window, net10 in RabbitMQ mode, and `Poc.Api.NoOutbox` log what they read.
+The same values in every log means both formats agree.
+
+| Event | Shape | Sent |
+|---|---|---|
+| `StatusChanged` | an enum, as its number | `InRepair (1)` |
+| `MaintenanceScheduled` | a UTC `DateTime` and a `DateTimeOffset` | now + 14 days, and now |
+| `CostRecorded` | decimals, one whole | `1299.95`, `12` (the legacy format writes `12.0`) |
+| `WarrantyChecked` | nullable values, some null | `null`, `0`, `null` |
+| `TagsChanged` | a list of strings | `"laptop"`, `""`, `"Büro <3>"` |
+| `LocationMoved` | nested objects | HQ floor 2 → Annex floor -1 |
+| `AttributesChanged` | a dictionary; keys keep their case | `RAM`, `cpu`, `Screen.Size` (value with a `"`) |
+| `UsageReported` | `long`, `double`, `bool` | 5 000 000 000, 71.25, true |
+| `BatchCounted` | a list of objects | Laptop 12, Monitor 0 |
+| `AuditRequested` | no properties: the body is `{}` | — |
+
+One class per event serves both sides, as the API's `Equipment.Messages` does: `Poc.Shapes` holds the payloads, each
+with `[Message("Poc.Legacy.Events.Shapes.<Name>")]` for the modern apps, and `Poc.Legacy.Events/Shapes` wraps each in a
+`RemotePubSubEvent<T>` whose full name is that wire name. They're POC-only: nothing outside `samples/` uses them.
+
+Checked on 2026-11-05 against RabbitMQ 4.3.6. Sent from net472: net8, net10 (RabbitMQ) and `Poc.Api.NoOutbox` each
+logged the same ten values, `12.0` included. Sent from net8: `Poc.Api.NoOutbox` logged all ten again. net10 in SignalR
+mode received none, as expected. Checked again after the switch to exchange-name routing keys (one binding per
+exchange): sent from net472, net8, net10 and `Poc.Api.NoOutbox` each received all ten, and a laptop created over HTTP
+reached all three windows.
 
 **Local-only events.** `EquipmentSelected` (in each legacy app's own `Events/` folder) is raised with plain
 `Publish()` and heard by the status bar's view model in the same app. What keeps it off the broker is its base class:
@@ -89,8 +123,8 @@ event classes are the same either way.
 
 | | `RabbitMQ` (default) | `SignalR` |
 |---|---|---|
-| Delay after a change | ~2 s (outbox poll) | immediate |
-| Survives an API crash mid-change | ✅ the event waits in the outbox | ❌ best effort |
+| Delay after a change | immediate | immediate |
+| Survives an API crash mid-change | ❌ best effort | ❌ best effort |
 | Needs on the desktop | a broker account + the API key | the API key only |
 | Network | broker (5672) and the API | the API only |
 
@@ -126,15 +160,17 @@ SignalR is the default recommendation ([POC 3](#poc-3-signalr), fewer moving par
 
 **Things to try**
 
-- **Add a laptop in any window.** It appears everywhere, from the API's event: SignalR windows at once, RabbitMQ
-  windows about two seconds later.
+- **Add a laptop in any window.** It appears everywhere, from the API's event: SignalR and RabbitMQ windows
+  alike, right after the API commits.
 - **Send a note from net472 or net8.** Every net472 and net8 window logs it. The net10 windows log nothing.
+- **Send all 10 shapes from net472 or net8.** Every legacy window, net10 (RabbitMQ mode) and `Poc.Api.NoOutbox`
+  log the same ten values.
 - **Dispose of a laptop from net472.** The net8 window logs the disposal; the API logs
-  `Equipment … disposed by net472 …; removed from inventory: True`; ~2 s later the row disappears from **every**
+  `Equipment … disposed by net472 …; removed from inventory: True`; then the row disappears from **every**
   window, net10 included — through the API's `EquipmentDeleted`, not the disposal.
 - **Select a row in net472 or net8.** The status bar says so (a local event); no other window reacts.
 - **Watch the management UI** (`http://localhost:15672`) → Exchanges → `Poc.Net472` → Bindings: the net8 queues, the
-  other net472 queues and `cleanarch.api.main`, but no net10 queue.
+  other net472 queues, the net10 queues and the two APIs' queues, each bound once with the key `Poc.Net472`.
 - **Stop the API, dispose of something, start the API.** The disposal waits in the API's durable queue and is handled
   when it comes back. (Desktop queues are per window and vanish with it; the API's doesn't.)
 
@@ -162,16 +198,17 @@ Each is explained where it happens in the code.
 - ❌ Renaming or moving an event class. Its full name is the wire name: every app listening for the old one, the API
   included, silently stops receiving it.
 - ❌ Prism subscriptions with capturing lambdas. Weak references: they're collected and stop silently.
-- ❌ Deriving a local-only event from `RemotePubSubEvent<T>`. Subscribing binds it on the broker for nothing. Use
-  `PubSubEvent<T>`, which stays inside the app.
+- ❌ Deriving a local-only event from `RemotePubSubEvent<T>`. It isn't sent unless you call `PublishRemote`, but it
+  says the wrong thing to the next reader. Use `PubSubEvent<T>`, which stays inside the app.
 - ❌ Using the legacy adapter in a NEW app. It exists so existing apps keep working unchanged.
 
 **Modern format (net10)**
 
-- ❌ Expecting a message published right after subscribing, or while nothing is subscribed. Subscribing binds the queue
-  in the background, and the last subscriber going removes the binding (a durable shared queue keeps it).
+- ❌ Expecting a message that arrived while nothing was subscribed. It is dropped on arrival: subscribing doesn't
+  replay anything.
 - ❌ Forgetting to dispose `IMessageSubscriber` subscriptions. Strong references: closed windows leak.
-- ❌ Adding a legacy app's exchange to `Subscriptions`. That ends "API only".
+- ❌ Adding a legacy app's exchange to `Subscriptions` without routing keys: every event the app receives would bind
+  there, and its other events would follow.
 - ❌ Publishing. No `IMessagePublisher`: modern apps only listen.
 
 **SignalR (net10 in SignalR mode, POC 3)**
@@ -199,18 +236,17 @@ Unchanged: a .NET 8 app that listens only to the API's hub, with presence. The S
 
 ## An API without the outbox
 
-`Poc.Api.NoOutbox` is a small API that publishes straight to RabbitMQ and subscribes to events. It has no outbox and no
-database, and it needed no changes to the messaging libraries: it calls the two publishers `AddMessaging` already
-registers, and receives through an ordinary `IMessageHandler<T>`.
+`Poc.Api.NoOutbox` is a small API that publishes straight to RabbitMQ and subscribes to events. It has no database,
+and it needed no changes to the messaging libraries: it calls the publisher `AddMessaging` registers, and receives
+through an ordinary `IMessageHandler<T>`.
 
 | Endpoint | Publisher | Responds when | Broker down | Process crashes |
 |---|---|---|---|---|
-| `POST /equipment/confirmed` | `IConfirmedMessagePublisher` | the broker has confirmed: `201` | `503`, nothing is sent later | the caller got no `201`, so it knows to retry |
 | `POST /equipment/buffered` | `IMessagePublisher` | the message is in memory: `202` | `202`, sent after the bus reconnects | whatever is still in memory is lost |
 
 ```powershell
 dotnet run --project samples\MessagingPocs\Poc.Api.NoOutbox
-curl.exe -H "Content-Type: application/json" -d '{\"name\":\"Laptop\",\"category\":\"IT\",\"assetTag\":\"A-1\"}' http://localhost:5240/equipment/confirmed
+curl.exe -H "Content-Type: application/json" -d '{\"name\":\"Laptop\",\"category\":\"IT\",\"assetTag\":\"A-1\"}' http://localhost:5240/equipment/buffered
 ```
 
 It publishes the API's `EquipmentCreated` on the `CleanArch` exchange, so the same bytes reach the same receivers and
@@ -227,32 +263,32 @@ also handles this event, and deletes that equipment if it's running.
 **A tuple payload.** `EquipmentFlagged : RemotePubSubEvent<(Guid id, string name)>` is sent by **Flag selected** in the net472
 window. A tuple's names don't reach the wire, so the JSON is `{"Item1":"...","Item2":"..."}`, and the API's
 `EquipmentFlagged` class maps those with `[JsonPropertyName]`. It's received with `IMessageSubscriber.Subscribe` in
-`Program.cs` rather than a handler class, to show both styles: subscribing binds the queue, and a message that arrives
-before `Subscribe` is called is dead-lettered, so subscribe before `app.Run()`. Receiving into a tuple, or into a class without that
+`Program.cs` rather than a handler class, to show both styles: a message that arrives before `Subscribe` is called is dropped, so subscribe before
+`app.Run()`. Receiving into a tuple, or into a class without that
 mapping, doesn't throw: the values just come out as `Guid.Empty` and empty. The real API doesn't handle this event.
 
 **What you give up:** a change and its event can't be saved in one transaction. A database save can succeed and the
-publish then fail, and nothing sends that event later. That's fine for events that can be lost now and then. For events
-other applications rely on, use the outbox: [ADR 0003](../../docs/messaging/adr/0003-server-publishes-through-the-outbox.md)
-is the rule for `CleanArch.Api`, and this POC doesn't change it.
+API then stop before the event is sent, and nothing sends it later. `CleanArch.Api` accepts the same trade-off: it
+publishes after the commit, with no outbox.
 
 Checked against a local RabbitMQ 4.3.6, with a temporary queue bound to `CleanArch` rather than the POC windows. With
-the broker up, `confirmed` returned `201`, `buffered` returned `202`, and both messages arrived. With it stopped,
-`confirmed` returned `503` and `buffered` returned `202`. After a restart the buffered message arrived and `confirmed`
-worked again. For subscribing, the queue bound `Poc.Net472` for `Poc.Legacy.Events.EquipmentDisposed`, and a message
-published on that exchange through the management API, with the wire name as routing key and `event-type`, reached the
-handler. The net472 window itself wasn't used. For the tuple, `PublishRemote` through the real adapter on net472, from a small console app rather than the window, reached this API and a legacy listener on net8 with both values intact.
+the broker up, `buffered` returned `202` and the message arrived. With it stopped, `buffered` still returned `202`,
+and after a restart the buffered message arrived. For subscribing, a message published on `Poc.Net472` through the management API, with `event-type` set, reached the
+handler. (That check used the wire name as routing key; since 2026-11-05 the key is the exchange name, checked under *The
+ten shape events*.) The net472 window itself wasn't used. For the tuple, `PublishRemote` through the real adapter on net472, from a small console app rather than the window, reached this API and a legacy listener on net8 with both values intact.
 
 ## Layout
 
 ```
-Poc.Legacy.Events/   the legacy apps' RemotePubSubEvent<T> events; FromApi/ = the API's events under their wire names
+Poc.Legacy.Events/   the legacy apps' RemotePubSubEvent<T> events; FromApi/ = the API's events under their wire names;
+                     Shapes/ = the ten shape events, and ShapeEvents (send all) / ShapeEventsLog (receive all)
+Poc.Shapes/          the ten shape payloads as [Message] classes, read by both formats. netstandard2.0
 Poc.Shared/          EquipmentApi (HTTP), EquipmentList (load + apply), ApiOptions; SignalR/ (net8+ only). net472 + net8.0
 Poc.Net472/          legacy app: App.xaml.cs (RabbitMQServiceRouter.FromConfiguration), ViewModels/ (Subscribe, PublishRemote)
 Poc.Net8/            the same app on .NET 8
 Poc.Net10/           modern app: App.xaml.cs (Generic Host; RabbitMQ or SignalR), ViewModels/
 Poc3.SignalR/        SignalR only, with presence
-Poc.Api.NoOutbox/    an API that publishes straight to RabbitMQ, with no outbox, and subscribes
+Poc.Api.NoOutbox/    an API that publishes straight to RabbitMQ, with no database, and subscribes
 setup-exchanges.ps1  creates the four exchanges
 ```
 

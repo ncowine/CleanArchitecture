@@ -7,7 +7,7 @@
             <Run FontWeight="SemiBold" Text="Listening: " /><Run Text="{Binding Connection, Mode=OneWay}" />
         </TextBlock>
         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" Foreground="Gray" TextWrapping="Wrap"
-                   Text="Accepts the API's events only, in the modern format. Changes go to the API over HTTP. Notes and disposals between the legacy apps never reach this window." />
+                   Text="Accepts the API's events in the modern format, plus (over RabbitMQ) the ten POC shape events the legacy apps send. Changes go to the API over HTTP. Notes and disposals between the legacy apps never reach this window." />
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
             <Button Content="Add a laptop (HTTP)" Command="{Binding AddLaptopCommand}" Padding="10,4" Margin="0,0,8,0" />
             <Button Content="Delete selected (HTTP)" Command="{Binding DeleteSelectedCommand}" Padding="10,4" Margin="0,0,8,0" />

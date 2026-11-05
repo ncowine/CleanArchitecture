@@ -2,7 +2,6 @@ using Messaging.RabbitMQ;
 
 namespace Messaging.Hosting
 {
-    /// <summary>A subscription added in code, applied to its bus's options when the bus is created.</summary>
     internal sealed class PendingSubscription
     {
         public PendingSubscription(SubscriptionOptions subscription, string busName)

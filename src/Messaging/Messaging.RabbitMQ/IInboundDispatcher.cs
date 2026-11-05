@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 
 namespace Messaging.RabbitMQ
 {
-    /// <summary>Hands a received, deserialized message to the application.</summary>
     public interface IInboundDispatcher
     {
         /// <summary>

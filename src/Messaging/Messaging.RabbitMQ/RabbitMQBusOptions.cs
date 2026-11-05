@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 namespace Messaging.RabbitMQ
 {
-    /// <summary>Settings for one <see cref="RabbitMQBus"/>: one virtual host and exchange.</summary>
     public sealed class RabbitMQBusOptions
     {
         /// <summary>Logical bus name, used in the queue name and connection names.</summary>
@@ -31,8 +30,8 @@ namespace Messaging.RabbitMQ
         public bool ExchangeDurable { get; set; } = true;
 
         /// <summary>
-        /// Also bind the queue to the own exchange, one binding per message type the bus handles (the legacy behaviour).
-        /// On by default.
+        /// Also bind the queue to the own exchange, with the exchange name as the key (the legacy behaviour), so other
+        /// instances of this application receive what this one publishes. On by default.
         /// </summary>
         public bool BindOwnExchange { get; set; } = true;
 
@@ -55,7 +54,6 @@ namespace Messaging.RabbitMQ
 
         public TimeSpan Heartbeat { get; set; } = TimeSpan.FromSeconds(30);
 
-        /// <summary>Per-instance queues (the default, and the legacy topology) or one shared quorum queue.</summary>
         public QueueMode QueueMode { get; set; } = QueueMode.PerInstance;
 
         /// <summary>Shared queues only: the queue name. Defaults to <c>clientname.busname</c>, lower case.</summary>

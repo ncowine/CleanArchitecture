@@ -9,7 +9,7 @@ using Xunit;
 namespace CleanArch.UnitTests;
 
 /// <summary>
-/// The inner layers say WHAT happened; only the host decides HOW it travels (docs/messaging/adr/0003). These tests
+/// The inner layers say WHAT happened; only the host decides HOW it travels. These tests
 /// fail the moment a domain, an application layer or a message contract starts using RabbitMQ, the messaging engine,
 /// its hosting layer or SignalR directly.
 /// </summary>
@@ -22,7 +22,6 @@ public class TransportIndependenceTests
         "Messaging.Hosting",
         "Messaging.Prism",
         "Common.RabbitMQ",
-        "BuildingBlocks.Outbox.Messaging",
         "Microsoft.AspNetCore.SignalR",
         "Microsoft.AspNetCore.SignalR.Core",
         "Microsoft.AspNetCore.SignalR.Client",

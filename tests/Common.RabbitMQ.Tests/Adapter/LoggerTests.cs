@@ -16,7 +16,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         {
             RecordingLogger logger = new RecordingLogger();
 
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry()) { Logger = logger })
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry()) { Logger = logger, DefaultBus = "Main" })
             {
                 router.AddBus(new RabbitMQConfig { BusName = "Main", ExchangeName = "logger-test", ClientName = "logger-test", Port = 1 });
                 router.Init();

@@ -55,9 +55,9 @@ builder.Services
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 
-// Integration events with other applications, over RabbitMQ (docs/messaging/adr/0003). Only when a broker is
-// configured: without a "Messaging" section none of this runs, modules record no outbox events, and everything
-// else — SignalR included — works exactly as before. Every event published goes to this one bus under its
+// Integration events with other applications, over RabbitMQ. Only when a broker is configured: without a
+// "Messaging" section none of this runs, Equipment's events are dropped, and everything else — SignalR included —
+// works exactly as before. Every event published goes to this one bus under its
 // wire name; command handlers never see a transport.
 var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
 if (messagingBus.Exists())
@@ -67,14 +67,10 @@ if (messagingBus.Exists())
         .UseDefaultBus(builder.Configuration["Messaging:DefaultBus"])
         // Every IMessageHandler<T> in Equipment, e.g. EquipmentDisposed from a legacy desktop app's exchange
         // (Subscriptions in appsettings), on the API's shared, retried queue.
-        .AddHandlers(typeof(EquipmentDisposedHandler).Assembly)
-        .AddTelemetry());
-
-    // Equipment's outbox now records its events, and its processor relays them with a confirmed publish.
-    builder.Services.AddEquipmentIntegrationEvents();
+        .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));
 
     // Deliberately no messaging health check on /health: it reports Unhealthy while the broker is down, which would
-    // take the API out of service for an outage the outbox already absorbs (events wait and go out afterwards).
+    // take the API out of service for an outage the bus already absorbs (it buffers events and sends them on reconnect).
 }
 
 // Calling other APIs: each downstream gets a typed HttpClient and the ONE authentication method it accepts —

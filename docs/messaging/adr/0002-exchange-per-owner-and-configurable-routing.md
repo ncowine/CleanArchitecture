@@ -4,8 +4,9 @@
 - **Date:** 2026-09-26
 - **Amends:** [ADR 0001](0001-decouple-messaging-from-prism.md), sections 1–3, and the test baseline from delivery step 0. Everything else in ADR 0001 stands: the layers, the core and hosting split, serialization, observability, shared queues and dependency hygiene.
 - **Update (2026-10-31):** `Route<T>()` was removed from `Messaging.Hosting`. Registering every published class didn't scale to hundreds of events, and the legacy router never needed it. A server publishes like a legacy app: to its only bus, keyed by the wire name, with `PublishOptions.RoutingKey` for a per-call key. Publishing with several buses throws. Below, `Route<T>()`, `.To(...)` and `WithRoutingKey` are history.
-- **Update (2026-11-04):** events no longer belong to a bus. `[RemoteEvent("bus")]` and the bus parameter of `RemoteEventRegistry.Add` are removed: a breaking change to the legacy adapter's public API, made on purpose. The publisher picks the bus at publish time: the bus it names (`PublishRemote(payload, new PublishOptions { Bus = "Partners" })`, which replaces the old `IRabbitMQService` parameter), or else the default. `PublishOptions` also carries the routing key, so `PublishRemoteTo` and `PublishRemoteOnlyTo` are removed and mentions of them below are history. `Messaging:DefaultBus` in configuration names the default, and being one value there can be only one; with a single bus it can be left out. With several buses and no default, a publish that names no bus throws. Every registered event is received on every bus; `AddHandlers` and `AddMessages` can still limit a server's handlers to some buses. Below, mentions of `[RemoteEvent]`, `Add(assembly, bus)` and "publishing with several buses throws" are history.
+- **Update (2026-11-04):** events no longer belong to a bus. `[RemoteEvent("bus")]` and the bus parameter of `RemoteEventRegistry.Add` are removed: a breaking change to the legacy adapter's public API, made on purpose. The publisher picks the bus at publish time: the bus it names (`PublishRemote(payload, new PublishOptions { Bus = "Partners" })`, which replaces the old `IRabbitMQService` parameter), or else the default. `PublishOptions` also carries the routing key, so `PublishRemoteTo` and `PublishRemoteOnlyTo` are removed and mentions of them below are history. `Messaging:DefaultBus` in configuration names the default, and being one value there can be only one; since 2026-11-05 it is required, even with a single bus. With several buses and no default, a publish that names no bus throws. Every registered event is received on every bus; `AddHandlers` and `AddMessages` can still limit a server's handlers to some buses. Below, mentions of `[RemoteEvent]`, `Add(assembly, bus)` and "publishing with several buses throws" are history.
 
+- **Update (2026-11-05):** the real legacy library routes by **application name**, not event name (legacy facts F5 to F7): it publishes every event with its own (= exchange) name as the routing key and binds each exchange once, with the owner's name. The new code now does the same. Subscribing only decides which received messages are dispatched; it never changes bindings, so the 2026-11-04 update below no longer holds for bindings. Section 2's per-type default and section 3's wire-name default are replaced as marked. Reason: one binding per event multiplies the broker's bindings by the number of events, and a load test crashed a broker at 300,000.
 - **Update (2026-11-04):** on the modern side, a queue binds only what the application listens for. `IMessageSubscriber.Subscribe<T>` and `MessageEvent<T>.Subscribe` start receiving the type on every bus, so `AddMessages` is only needed for a custom `IMessageSink`. It keeps a client's bindings down when many clients are connected. On the legacy side `RemotePubSubEvent<T>` does the same with no registration, and `PubSubEvent<T>` is local by default. That reverses this ADR's "no base class" in section 4 for events that move: an event assembly now references `Common.RabbitMQ` and each event changes its base class, in exchange for far fewer bindings. `RemoteEventRegistry.Add` stays for assemblies not yet moved, and binds all their events at startup because the library can't see a plain event's `Subscribe`. When the last subscriber goes, on either side, a per-instance queue's binding is removed; a collected weak subscriber is noticed at the next message. A durable shared queue keeps the binding, because it belongs to every instance of the service. Explicit `Unsubscribe` and `UnregisterQueue` still unbind.
 
 ## Context
@@ -37,7 +38,7 @@ What ADR 0001 got right still holds. The core and the server already identify a 
 |---|---|
 | **Wire name** | What a message *is*. Sent in the `event-type` header on every message. Legacy events use their full type name; plain classes use `[Message("…")]`. Unchanged from ADR 0001. |
 | **Owner** | The **application** that publishes a message. Each application owns exactly one exchange. Modules inside an application share it and tell their messages apart by routing key. |
-| **Routing key** | *Where* a message goes. Chosen by the owner, with the wire name as the default. Never used for identity. |
+| **Routing key** | *Where* a message goes. Chosen by the owner, with the owner's exchange name as the default (the wire name until 2026-11-05). Never used for identity. |
 | **Subscription** | A binding from an app's queue to an exchange, with a routing-key pattern or header match. |
 | **Connection** | One broker, one virtual host (default `/`). An app normally has exactly one. |
 
@@ -54,13 +55,13 @@ What ADR 0001 got right still holds. The core and the server already identify a 
   - `fanout`: no key
   - `headers`: `x-match` all or any, plus header values
 - **One queue can bind to many exchanges.** An app still has one queue per mode, bound to every exchange it subscribes to. Queue modes are unchanged from ADR 0001: per-instance for clients, shared (quorum, retries, dead-letter queue) for servers.
-- **Subscriptions without keys or a header match** bind one key per handled message type (its wire name), as legacy applications do (A9). This is the default, so a plain `{ Exchange = "AppA" }` behaves like a legacy subscription.
-- **Pattern and header subscriptions bring in types a service doesn't handle.** On a shared queue those are acknowledged and skipped, not dead-lettered. Otherwise a wide pattern would flood the dead-letter queue. With only per-type bindings, an unknown message is still dead-lettered, because it signals a mistake.
+- **Subscriptions without keys or a header match** bind once, with the exchange's name as the key, as legacy applications do (F7). This is the default, so a plain `{ Exchange = "AppA" }` behaves like a legacy subscription. The own exchange is bound the same way (F6).
+- **Every subscription brings in types a service doesn't handle.** Those are acknowledged and skipped, never dead-lettered, on both queue modes. (Until 2026-11-05 per-type bindings dead-lettered unknown messages on shared queues.)
 - **One virtual host, `/`, by default.** A queue can only bind to exchanges in its own virtual host, so apps that talk to each other must share one. It stays configurable for isolation, but nothing needs to set it.
 
 ### 3. Routing keys
 
-- **The routing key belongs to the publishing module.** The default is the wire name, which is today's behaviour. A module can override it at three levels:
+- **The routing key belongs to the publishing module.** The default is the publisher's exchange name, which is what legacy applications do (F5). A module can override it at three levels:
 
   ```csharp
   // Modern / server: a module sets its convention once, statically or from the message
@@ -81,8 +82,8 @@ What ADR 0001 got right still holds. The core and the server already identify a 
   ```
 
 - **Why a new method name.** An overload `PublishRemote(payload, string routingKey)` next to the existing `PublishRemote(payload, IRabbitMQService service = null)` would make existing calls written as `PublishRemote(x, null)` ambiguous, which is a compile break. `PublishRemoteTo(routingKey, payload)` avoids that.
-- **`event-type` is mandatory on every message** the core sends. Receivers identify messages by the header, so any routing key is safe for every receiver build. The routing-key fallback stays only for senders outside our code.
-- **Custom keys don't reach legacy subscribers.** Legacy subscribers bind one key per event full name (assumption A9), so a message published with a custom key reaches only subscribers that bind that key. Use custom keys for new subscribers, and keep the default key for anything legacy applications receive. Pinned by `CoreTopologyTests.CustomRoutingKey_ReachesSubscribersThatBindIt_NotLegacyPerEventSubscribers`.
+- **`event-type` is mandatory on every message** the core sends. Receivers identify messages by the header, so any routing key is safe for every receiver build. The routing-key fallback stays only for senders outside our code that put the wire name in the key.
+- **Custom keys don't reach legacy subscribers.** Legacy subscribers bind the owner's name (fact F7), so a message published with a custom key reaches only subscribers that bind that key. Use custom keys for new subscribers, and keep the default key for anything legacy applications receive. Pinned by `CoreTopologyTests.CustomRoutingKey_ReachesSubscribersThatBindIt_NotLegacySubscribers`.
 - **A routing-key convention is a contract with subscribers.** Receivers can't break on a key change, but they stop *getting* messages whose key no longer matches their binding. Changing a convention needs the same coordination as changing a public API.
 
 ### 4. Discovering events in the legacy adapter
@@ -114,7 +115,7 @@ What ADR 0001 got right still holds. The core and the server already identify a 
 
   Handlers say *which message types* they handle. Subscriptions say *which exchanges and keys* feed the queue.
 - **Common netstandard2.0 events.** Legacy apps keep the Prism version. Modern apps get a plain-class twin with the **same wire name** and stop referencing the Prism project. The Prism version is deleted when legacy is retired. This is the pattern ADR 0001 already uses for the server (`Common.Events.EmployeeUpdated` next to `Employees.Contracts.EmployeeUpdated`).
-- **Telemetry becomes opt-in** (`.AddTelemetry()`) so modern clients don't get server observability imposed on them, as ADR 0001 section 5 intended.
+- **Telemetry becomes opt-in** (`.AddTelemetry()`; removed altogether on 2026-11-05, see ADR 0001) so modern clients don't get server observability imposed on them, as ADR 0001 section 5 intended.
 - **Desktop apps don't need Prism either.** A view model can't be a scoped handler class, so `Messaging.Hosting` also offers `IMessageSubscriber`: `Subscribe<T>(action, synchronizationContext)` returns an `IDisposable`. It is an `IMessageSink`, so it runs after the handlers, for the exact message type, in subscription order. Passing the UI thread's context posts the call there, like Prism's `ThreadOption.UIThread`. A posted call can't fail the message, because it runs later: its exceptions go to the dispatcher. Without a context, or with the async overload, an exception fails the message like a handler's. Subscriptions are strong references, not Prism's weak ones, so a short-lived subscriber must dispose them.
 
 ### 6. The server as publisher (long term)
@@ -133,7 +134,7 @@ Still frozen:
 No longer frozen, but **configured to match the real system**:
 
 - exchange names and types;
-- the routing key, which defaults to the wire name;
+- the routing key, which defaults to the exchange name;
 - bindings.
 
 ### 8. Test baseline
@@ -171,7 +172,7 @@ These follow ADR 0001's steps 0–3b, which are done. Each can be released on it
    *As built (2026-09-26):*
    - **Routes:** `Route<T>()` with no `.To(...)` means the application's only bus. `.WithRoutingKey(key or o => ...)` sets the key, and `PublishOptions.RoutingKey` overrides it per call.
    - **Receiving and subscriptions:** `AddMessages(assembly)` receives every `[Message]` type without a handler. `Subscribe(exchange, keys...)` adds a subscription in code. `IMessageSink` receives every message after its handlers.
-   - **Telemetry:** now opt-in with `AddTelemetry()`, which the API calls.
+   - **Telemetry:** now opt-in with `AddTelemetry()`, which the API calls. (Removed altogether on 2026-11-05, see ADR 0001.)
    - **`MessagingClient`:** runs messaging without a .NET host, for Prism/DryIoc apps.
    - **`Messaging.Prism`:** `UseEventAggregator(aggregator)` raises each message as `MessageEvent<T>`, with `PublishRemote` and `PublishRemoteTo` on it. This keeps the `IEventAggregator` style for plain classes.
    - **The net8 WPF app is the reference:** its Legacy bus stays on Prism events through the adapter, and its Modern bus uses plain `Employees.Contracts` classes through the bridge, both on one aggregator.

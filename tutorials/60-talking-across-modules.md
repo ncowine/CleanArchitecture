@@ -671,8 +671,8 @@ distinction matters: only genuine bugs should ever reach this path.)
 restarting would park perfectly good messages. So a dispatcher can throw
 `OutboxDeliveryDeferredException` for a failure that isn't the message's fault. The processor gives
 the attempt back, records the error, stops the batch there (so later messages don't overtake it) and
-tries again on the next poll. The RabbitMQ relay (`BuildingBlocks.Outbox.Messaging`) throws it when
-the broker is unreachable; see [docs/messaging/adr/0003](../docs/messaging/adr/0003-server-publishes-through-the-outbox.md).
+tries again on the next poll. Use it in a dispatcher that calls something which can be down for a
+while, such as another service.
 
 Operators inspect and replay:
 

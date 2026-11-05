@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using BuildingBlocks.Messaging;
-using BuildingBlocks.Outbox;
 using BuildingBlocks.RealTime;
 using Equipment.Application.Inventory;
 using Equipment.Domain;
@@ -13,19 +11,17 @@ using Messaging.Hosting;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Data;
 using SharedKernel.DataService;
 using Xunit;
-using MessagingCorrelation = Messaging.Hosting.CorrelationContext;
 
 namespace CleanArch.Api.IntegrationTests;
 
 /// <summary>
-/// One Equipment feature, both channels (docs/messaging/adr/0003): the real module, mediator pipeline, SQLite
-/// database and outbox processor, with the two transports replaced by recorders — SignalR by an
-/// <see cref="IRealtimeNotifier"/>, RabbitMQ by an <see cref="IConfirmedMessagePublisher"/>.
+/// One Equipment feature, both channels: the real module, mediator pipeline and SQLite database, with the two
+/// transports replaced by recorders — SignalR by an <see cref="IRealtimeNotifier"/>, RabbitMQ by an
+/// <see cref="IMessagePublisher"/>.
 /// </summary>
 public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
 {
@@ -33,7 +29,6 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
     private readonly string _referenceDbPath = Path.Combine(Path.GetTempPath(), $"reference-events-{Guid.NewGuid():N}.db");
     private readonly RecordingRealtimeNotifier _signalR = new();
     private readonly RecordingPublisher _rabbitMq = new();
-    private static readonly ActivitySource Request = new("Tests.Request");
     private ServiceProvider _withBroker = null!;
     private ServiceProvider _withoutBroker = null!;
 
@@ -55,65 +50,49 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Creating_equipment_notifies_SignalR_at_commit_and_RabbitMQ_through_the_outbox()
+    public async Task Creating_equipment_notifies_SignalR_and_RabbitMQ_after_the_commit()
     {
-        // Stands in for the OpenTelemetry SDK: records the request's span and the outbox's delivery spans.
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name is "Tests.Request" or OutboxDiagnostics.ActivitySourceName,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-        };
-        ActivitySource.AddActivityListener(listener);
-
         Guid id;
-        string? requestCorrelationId;
-        string requestTraceParent;
-        using (var request = Request.StartActivity("POST /api/equipment", ActivityKind.Server)!)
         using (var scope = _withBroker.CreateScope())
         {
-            requestTraceParent = request.Id!;
-            requestCorrelationId = scope.ServiceProvider.GetRequiredService<BuildingBlocks.Correlation.ICorrelationContext>().CorrelationId;
             id = await scope.ServiceProvider.GetRequiredService<ISender>().Send(
                 new CreateEquipment.Command("ThinkPad X1", EquipmentCategory.Laptop, "LAP-001"), default);
         }
 
-        // SignalR: pushed as soon as the request's transaction committed.
         var (group, pushed) = Assert.Single(_signalR.Sent);
         Assert.Equal("equipment", group);
         Assert.Equal(nameof(EquipmentCreated), pushed.Type);
-        Assert.Equal(id, Assert.IsType<EquipmentCreated>(pushed.Payload).Id);
 
-        // RabbitMQ: nothing sent yet — the event is a committed row in the module's own database.
-        Assert.Empty(_rabbitMq.Published);
-        var row = await SingleOutboxRowAsync();
-        Assert.Equal(nameof(EquipmentCreated), row.Type);
-        Assert.Null(row.ProcessedOnUtc);
-        Assert.Equal(requestCorrelationId, row.CorrelationId);
-        Assert.Equal(requestTraceParent, row.TraceParent);
-
-        // The outbox processor (polling every 2 s) relays it with a confirmed publish.
-        await RunOutboxProcessorUntilAsync(() => _rabbitMq.Published.Count == 1);
-
-        var (message, messageId, correlationId, publishedUnder) = Assert.Single(_rabbitMq.Published);
-        var created = Assert.IsType<EquipmentCreated>(message);
+        var created = Assert.IsType<EquipmentCreated>(Assert.Single(_rabbitMq.Published));
         Assert.Equal(id, created.Id);
         Assert.Equal("ThinkPad X1", created.Name);
         Assert.Equal("Laptop", created.Category);
         Assert.Equal("LAP-001", created.AssetTag);
         Assert.Equal("Available", created.Status);
-        Assert.Equal(row.Id.ToString("N"), messageId);
-        Assert.Equal(requestCorrelationId, correlationId);
-
-        // The publish ran under the outbox's delivery span, in the request's trace: one trace, end to end.
-        Assert.NotNull(publishedUnder);
-        Assert.Equal(OutboxDiagnostics.ActivitySourceName, publishedUnder.Source.Name);
-        Assert.Equal(ActivityContext.Parse(requestTraceParent, null).TraceId, publishedUnder.TraceId);
-        Assert.Equal(ActivityContext.Parse(requestTraceParent, null).SpanId, publishedUnder.ParentSpanId);
-        Assert.NotNull((await SingleOutboxRowAsync()).ProcessedOnUtc);
     }
 
     [Fact]
-    public async Task Without_a_broker_SignalR_still_works_and_no_outbox_rows_are_written()
+    public async Task A_failed_commit_publishes_nothing()
+    {
+        using (var scope = _withBroker.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateEquipment.Command("ThinkPad X1", EquipmentCategory.Laptop, "LAP-DUP"), default);
+        }
+
+        // The handler queues its event, then the commit fails on the duplicate asset tag.
+        using (var scope = _withBroker.CreateScope())
+        {
+            await Assert.ThrowsAnyAsync<Exception>(() => scope.ServiceProvider.GetRequiredService<ISender>().Send(
+                new CreateEquipment.Command("ThinkPad X1", EquipmentCategory.Laptop, "LAP-DUP"), default));
+        }
+
+        Assert.Single(_rabbitMq.Published);
+        Assert.Single(_signalR.Sent);
+    }
+
+    [Fact]
+    public async Task Without_a_broker_SignalR_still_works_and_the_events_are_dropped()
     {
         using (var scope = _withoutBroker.CreateScope())
         {
@@ -122,9 +101,7 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
         }
 
         Assert.Equal(nameof(EquipmentCreated), Assert.Single(_signalR.Sent).Event.Type);
-
-        using var check = _withoutBroker.CreateScope();
-        Assert.Empty(await check.ServiceProvider.GetRequiredService<EquipmentDbContext>().Set<OutboxMessage>().ToListAsync());
+        Assert.Empty(_rabbitMq.Published);
     }
 
     [Fact]
@@ -144,7 +121,7 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
             var handler = new EquipmentDisposedHandler(
                 scope.ServiceProvider.GetRequiredService<ISender>(), NullLogger<EquipmentDisposedHandler>.Instance);
             await handler.Handle(disposed, new MessageContext(
-                "Poc.Legacy.Events.EquipmentDisposed", "Main", $"m{delivery}", null, delivery > 0,
+                "Poc.Legacy.Events.EquipmentDisposed", "Main", $"m{delivery}", delivery > 0,
                 new Dictionary<string, string>(), "Poc.Net472", "Poc.Legacy.Events.EquipmentDisposed"), default);
         }
 
@@ -173,10 +150,8 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
 
         if (withBroker)
         {
-            // What the host does when "Messaging" is configured — minus AddMessaging itself, whose confirmed
-            // publisher is replaced by the recorder.
-            services.AddSingleton<IConfirmedMessagePublisher>(_rabbitMq);
-            services.AddEquipmentIntegrationEvents();
+            // What AddMessaging provides, as a recorder.
+            services.AddSingleton<IMessagePublisher>(_rabbitMq);
         }
 
         var provider = services.BuildServiceProvider();
@@ -184,44 +159,6 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
         await scope.ServiceProvider.GetRequiredService<ReferenceDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<EquipmentDbContext>().Database.MigrateAsync();
         return provider;
-    }
-
-    private async Task<OutboxMessage> SingleOutboxRowAsync()
-    {
-        using var scope = _withBroker.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<EquipmentDbContext>()
-            .Set<OutboxMessage>().AsNoTracking().SingleAsync();
-    }
-
-    /// <summary>Runs only the outbox processor (not the cache pre-warmers) until the condition holds.</summary>
-    private async Task RunOutboxProcessorUntilAsync(Func<bool> condition)
-    {
-        var processors = _withBroker.GetServices<IHostedService>()
-            .Where(service => service.GetType().Name.StartsWith("OutboxProcessor", StringComparison.Ordinal))
-            .ToList();
-        Assert.Single(processors);
-
-        foreach (var processor in processors)
-        {
-            await processor.StartAsync(CancellationToken.None);
-        }
-
-        try
-        {
-            var deadline = DateTime.UtcNow.AddSeconds(15);
-            while (!condition())
-            {
-                Assert.True(DateTime.UtcNow < deadline, "The outbox processor didn't publish within 15 s.");
-                await Task.Delay(100);
-            }
-        }
-        finally
-        {
-            foreach (var processor in processors)
-            {
-                await processor.StopAsync(CancellationToken.None);
-            }
-        }
     }
 
     private sealed class RecordingRealtimeNotifier : IRealtimeNotifier
@@ -239,23 +176,12 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
         }
     }
 
-    private sealed class RecordingPublisher : IConfirmedMessagePublisher
+    private sealed class RecordingPublisher : IMessagePublisher
     {
-        public List<(object Message, string? MessageId, string? CorrelationId, Activity? Activity)> Published { get; } = [];
+        public List<object> Published { get; } = [];
 
-        public Task PublishConfirmedAsync(object message, string? messageId, CancellationToken cancellationToken = default)
-        {
-            lock (Published)
-            {
-                Published.Add((message, messageId, MessagingCorrelation.Current, Activity.Current));
-            }
+        public void Publish<TMessage>(TMessage message) => Published.Add(message!);
 
-            return Task.CompletedTask;
-        }
-
-        public Task PublishConfirmedAsync(object message, string? messageId, PublishOptions options, CancellationToken cancellationToken = default)
-        {
-            return PublishConfirmedAsync(message, messageId, cancellationToken);
-        }
+        public void Publish<TMessage>(TMessage message, PublishOptions options) => Published.Add(message!);
     }
 }

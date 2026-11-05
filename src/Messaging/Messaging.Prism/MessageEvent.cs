@@ -10,7 +10,7 @@ namespace Messaging.Prism
     /// eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().Subscribe(OnSaved, ThreadOption.UIThread);
     /// eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemote(saved);
     /// ]]></code>
-    /// Subscribing starts receiving the message, so nothing else has to be registered, and the binding is removed when the
+    /// Subscribing starts receiving the message, so nothing else has to be registered, and it is dropped again when the
     /// last subscriber goes. A subscriber held weakly gives no signal when it is collected, so that one is noticed at the
     /// next message.
     /// </summary>

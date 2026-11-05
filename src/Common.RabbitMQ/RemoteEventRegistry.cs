@@ -50,8 +50,8 @@ namespace Common.RabbitMQ
 
         /// <summary>
         /// Registers every concrete <see cref="PubSubEvent{TPayload}"/> in <paramref name="assembly"/> as able to travel between
-        /// applications, found by its full type name, and binds it at startup: events that are only raised locally get a
-        /// binding too. An event already registered keeps its registration.
+        /// applications, found by its full type name, and receives it from startup, subscribed or not. An event already
+        /// registered keeps its registration.
         /// </summary>
         public RemoteEventRegistry Add(Assembly assembly)
         {

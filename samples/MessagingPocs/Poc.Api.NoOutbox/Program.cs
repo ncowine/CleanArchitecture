@@ -1,14 +1,13 @@
 using Equipment.Messages;
 using Messaging;
 using Messaging.Hosting;
-using Messaging.RabbitMQ;
 using Poc.Api.NoOutbox;
+using Poc.Shapes;
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // An API that publishes without an outbox and subscribes to events, using the messaging library as it is.
 //
 //   Sending:
-//   POST /equipment/confirmed   IConfirmedMessagePublisher: waits for the broker's confirm, so the caller knows.
 //   POST /equipment/buffered    IMessagePublisher: buffers in memory and returns, as the legacy apps do.
 //
 //   Receiving:
@@ -16,13 +15,12 @@ using Poc.Api.NoOutbox;
 //                               appsettings.json). Use one for real work: it gets a new DI scope per message.
 //   Subscribe, below            The same without a class, for EquipmentFlagged: a legacy event whose payload is a tuple.
 //                               For small jobs that need no scoped services.
+//   LogShape, below             The ten POC shape events (Poc.Shapes) from the legacy apps, logged as they arrive.
 //   Receiving works the same with or without an outbox.
 //
-// WHAT YOU GIVE UP WITHOUT THE OUTBOX
-//   A change and its event can't be saved together. If this were saving to a database:
-//   - confirmed: the save can succeed and the publish fail. The event is gone unless the caller retries.
-//   - buffered:  the same, and a crash or restart also loses whatever is still in memory.
-//   Use this for events that are fine to lose now and then. Use the outbox for events other apps rely on (ADR 0003).
+// WHAT YOU GIVE UP WITHOUT AN OUTBOX
+//   A change and its event can't be saved together. The save can succeed and the publish be lost: a crash or restart
+//   loses whatever is still in memory. The API makes the same trade-off.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -39,31 +37,24 @@ WebApplication app = builder.Build();
 //    lost, with no log, and that includes messages waiting in the durable queue from while the API was stopped.
 // ❌ DON'T use scoped services directly here: there's no scope. Create one with app.Services.CreateAsyncScope().
 // An exception fails the message, as in a handler class: it's retried, then dead-lettered.
-app.Services.GetRequiredService<IMessageSubscriber>().Subscribe<EquipmentFlagged>((message, context, cancellationToken) =>
+IMessageSubscriber subscriber = app.Services.GetRequiredService<IMessageSubscriber>();
+subscriber.Subscribe<EquipmentFlagged>((message, context, cancellationToken) =>
 {
     app.Logger.LogInformation("Equipment {Name} ({EquipmentId}) flagged", message.Name, message.Id);
 
     return Task.CompletedTask;
 });
 
-app.MapPost("/equipment/confirmed", async (CreateEquipmentRequest request, IConfirmedMessagePublisher publisher, CancellationToken cancellationToken) =>
-{
-    EquipmentCreated created = ToEvent(request);
-
-    // A real API saves its change here, before publishing.
-    try
-    {
-        // Null message ID: the bus generates one.
-        await publisher.PublishConfirmedAsync(created, null, cancellationToken);
-    }
-    catch (BrokerUnavailableException ex)
-    {
-        // Tell the caller. Nothing is kept here, so nobody else will send this event later.
-        return Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-
-    return Results.Created($"/equipment/{created.Id}", created);
-});
+LogShape<StatusChanged>(subscriber, app.Logger);
+LogShape<MaintenanceScheduled>(subscriber, app.Logger);
+LogShape<CostRecorded>(subscriber, app.Logger);
+LogShape<WarrantyChecked>(subscriber, app.Logger);
+LogShape<TagsChanged>(subscriber, app.Logger);
+LogShape<LocationMoved>(subscriber, app.Logger);
+LogShape<AttributesChanged>(subscriber, app.Logger);
+LogShape<UsageReported>(subscriber, app.Logger);
+LogShape<BatchCounted>(subscriber, app.Logger);
+LogShape<AuditRequested>(subscriber, app.Logger);
 
 app.MapPost("/equipment/buffered", (CreateEquipmentRequest request, IMessagePublisher publisher) =>
 {
@@ -76,6 +67,15 @@ app.MapPost("/equipment/buffered", (CreateEquipmentRequest request, IMessagePubl
 });
 
 app.Run();
+
+static void LogShape<TMessage>(IMessageSubscriber subscriber, ILogger logger)
+{
+    subscriber.Subscribe<TMessage>((message, context, cancellationToken) =>
+    {
+        logger.LogInformation("{Event} from {Exchange}: {Message}", typeof(TMessage).Name, context.Exchange, message);
+        return Task.CompletedTask;
+    });
+}
 
 static EquipmentCreated ToEvent(CreateEquipmentRequest request) => new()
 {
