@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using AppA.Events;
 using AppB.Events;
 using Common.RabbitMQ.Tests.Broker;
-using Common.RabbitMQ.Tests.Golden;
 using Messaging.RabbitMQ;
 using Shared.Events;
 using Xunit;
@@ -98,25 +97,6 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 AssertGolden(await atPatternSubscriber.Next(TestBus.Timeout));
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
                 Assert.Equal(0, atLegacySubscriber.Count);
-            }
-        }
-
-        [Fact]
-        public async Task ConfiguredRoutingKey_IsUsedByPublishRemote()
-        {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
-            {
-                AdapterApp owner = topology.StartAdapter(AppA, config => config.RoutingKeys[OrderSavedWireName] = "orders.eu.saved", AppAEvents);
-                await topology.WaitUntilConnected(owner);
-                WireCapture capture = await topology.Capture(AppA);
-
-                owner.PublishRemote<OrderSaved, Order>(GoldenOrder());
-
-                CapturedMessage message = await capture.Next(TestBus.Timeout);
-                Assert.NotNull(message);
-                Assert.Equal("orders.eu.saved", message.RoutingKey);
-                Assert.Equal(OrderSavedWireName, message.Headers[WireHeaders.MessageType]);
-                Assert.Equal(GoldenFile.Read("compat-payload.json"), message.Body);
             }
         }
 

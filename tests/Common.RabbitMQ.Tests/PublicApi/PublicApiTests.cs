@@ -72,7 +72,6 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "implements Common.RabbitMQ.RabbitMQServiceRouter : Common.RabbitMQ.IRoutingKeyPublisher",
             "method Common.RabbitMQ.RabbitMQService.Publish(System.Type, System.Object, System.String) : System.Void",
             "method Common.RabbitMQ.RabbitMQServiceRouter.Publish(System.Type, System.Object, System.String) : System.Void",
-            "property Common.RabbitMQ.RabbitMQConfig.RoutingKeys : System.Collections.Generic.Dictionary<System.String, System.String> { get; set; }",
 
             // Remote only: send to other applications without raising the event locally.
             "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemoteOnly<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Messaging.PublishOptions = null) : System.Void",

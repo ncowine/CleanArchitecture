@@ -575,7 +575,7 @@ public API; a test fails if anything is removed or changed, and each addition ha
 listed with a reason.
 
 What the adapter *added* — events found by assembly instead of an attribute on each one,
-`PublishOptions`, `SubscribeOptions`, `Subscriptions` and `RoutingKeys` in appsettings.json — is opt-in, and none of it
+`PublishOptions`, `SubscribeOptions` and `Subscriptions` in appsettings.json — is opt-in, and none of it
 is needed for an app to keep working.
 
 ### How the API reaches a legacy app

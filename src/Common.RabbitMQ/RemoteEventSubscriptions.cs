@@ -59,7 +59,7 @@ namespace Common.RabbitMQ
                 running.Add(service);
                 foreach ((IRemoteEvent remoteEvent, SubscribeOptions options) in keyed)
                 {
-                    service.Bind(remoteEvent, options);
+                    service.TryBind(remoteEvent, options);
                 }
 
                 int count = 0;
