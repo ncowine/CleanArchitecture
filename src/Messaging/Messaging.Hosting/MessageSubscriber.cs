@@ -12,7 +12,7 @@ namespace Messaging.Hosting
     /// <summary>
     /// <see cref="IMessageSubscriber"/>, delivered as an <see cref="IMessageSink"/>: it sees every received message after its
     /// handlers and calls the subscriptions for that exact type, in the order they were made. Subscribing to a type also
-    /// starts receiving it, so a queue is only bound to what the application listens for.
+    /// starts receiving it, and a subscription's routing key is bound on the default bus while it lasts.
     /// </summary>
     internal sealed class MessageSubscriber : IMessageSubscriber, IMessageSink
     {
@@ -30,22 +30,24 @@ namespace Messaging.Hosting
             this.registry = registry;
         }
 
-        public void Receive(Type messageType)
+        public void Receive(Type messageType, SubscribeOptions options = null)
         {
             if (messageType == null)
             {
                 throw new ArgumentNullException(nameof(messageType));
             }
 
+            RequireRoutingKey(options);
             lock (gate)
             {
                 StartReceiving(messageType);
                 requested.TryGetValue(messageType, out int count);
                 requested[messageType] = count + 1;
+                Bind(options);
             }
         }
 
-        public void StopReceiving(Type messageType)
+        public void StopReceiving(Type messageType, SubscribeOptions options = null)
         {
             if (messageType == null)
             {
@@ -59,6 +61,7 @@ namespace Messaging.Hosting
                     return;
                 }
 
+                Unbind(options);
                 if (count > 1)
                 {
                     requested[messageType] = count - 1;
@@ -70,7 +73,7 @@ namespace Messaging.Hosting
             }
         }
 
-        public IDisposable Subscribe<TMessage>(Action<TMessage> handler, SynchronizationContext synchronizationContext = null)
+        public IDisposable Subscribe<TMessage>(Action<TMessage> handler, SynchronizationContext synchronizationContext = null, SubscribeOptions options = null)
         {
             if (handler == null)
             {
@@ -79,28 +82,28 @@ namespace Messaging.Hosting
 
             if (synchronizationContext == null)
             {
-                return Add(new MessageSubscription(typeof(TMessage), (message, context, token) =>
+                return Add(new MessageSubscription(typeof(TMessage), options, (message, context, token) =>
                 {
                     handler((TMessage)message);
                     return Task.CompletedTask;
                 }));
             }
 
-            return Add(new MessageSubscription(typeof(TMessage), (message, context, token) =>
+            return Add(new MessageSubscription(typeof(TMessage), options, (message, context, token) =>
             {
                 synchronizationContext.Post(state => handler((TMessage)state), message);
                 return Task.CompletedTask;
             }));
         }
 
-        public IDisposable Subscribe<TMessage>(Func<TMessage, MessageContext, CancellationToken, Task> handler)
+        public IDisposable Subscribe<TMessage>(Func<TMessage, MessageContext, CancellationToken, Task> handler, SubscribeOptions options = null)
         {
             if (handler == null)
             {
                 throw new ArgumentNullException(nameof(handler));
             }
 
-            return Add(new MessageSubscription(typeof(TMessage), (message, context, token) => handler((TMessage)message, context, token)));
+            return Add(new MessageSubscription(typeof(TMessage), options, (message, context, token) => handler((TMessage)message, context, token)));
         }
 
         public async Task Deliver(object message, MessageContext context, CancellationToken cancellationToken)
@@ -166,9 +169,11 @@ namespace Messaging.Hosting
         /// <summary>Copy-on-write, so delivery never takes the lock.</summary>
         private IDisposable Add(MessageSubscription subscription)
         {
+            RequireRoutingKey(subscription.Options);
             lock (gate)
             {
                 StartReceiving(subscription.MessageType);
+                Bind(subscription.Options);
 
                 Dictionary<Type, MessageSubscription[]> next = new Dictionary<Type, MessageSubscription[]>(subscriptions);
                 next[subscription.MessageType] = next.TryGetValue(subscription.MessageType, out MessageSubscription[] existing)
@@ -201,8 +206,40 @@ namespace Messaging.Hosting
                 }
 
                 Volatile.Write(ref subscriptions, next);
+                Unbind(subscription.Options);
                 StopIfUnused(subscription.MessageType);
             }
+        }
+
+        private static void RequireRoutingKey(SubscribeOptions options)
+        {
+            if (options != null && string.IsNullOrWhiteSpace(options.RoutingKey))
+            {
+                throw new ArgumentException("SubscribeOptions needs a RoutingKey.", nameof(options));
+            }
+        }
+
+        private void Bind(SubscribeOptions options)
+        {
+            if (options != null)
+            {
+                DefaultBus().Bind(options.Exchange, options.RoutingKey);
+            }
+        }
+
+        private void Unbind(SubscribeOptions options)
+        {
+            if (options != null)
+            {
+                DefaultBus().Unbind(options.Exchange, options.RoutingKey);
+            }
+        }
+
+        private RabbitMQBus DefaultBus()
+        {
+            string busName = registry.GetDefaultBus()
+                ?? throw new InvalidOperationException("A routing key is bound on the default bus, and there is none. Call UseDefaultBus.");
+            return provider.GetRequiredKeyedService<RabbitMQBus>(busName);
         }
     }
 }

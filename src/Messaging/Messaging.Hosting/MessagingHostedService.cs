@@ -28,6 +28,16 @@ namespace Messaging.Hosting
         {
             registry.Validate();
 
+            // Handlers live as long as the application, so their routing keys are bound for good: on their buses, or on the
+            // default bus when they receive from every bus.
+            foreach ((RoutingKeyAttribute key, IReadOnlyCollection<string> buses) in registry.GetHandlerRoutingKeys())
+            {
+                foreach (string busName in buses.Count > 0 ? buses : new[] { registry.GetDefaultBus() })
+                {
+                    provider.GetRequiredKeyedService<RabbitMQBus>(busName).Bind(key.Exchange, key.RoutingKey);
+                }
+            }
+
             foreach (string busName in registry.BusNames)
             {
                 RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>(busName);

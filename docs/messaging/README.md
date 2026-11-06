@@ -272,6 +272,21 @@ flowchart LR
   region. The wire name still travels in the `event-type` header, so every receiver still knows what the message is.
 - **The catch:** subscribers only receive messages whose key matches their bindings. Legacy apps bind the exchange
   name, so **custom keys don't reach legacy apps**. Keep the default key for anything legacy apps must receive.
+- **Receiving a custom key:** subscribe with it. `SubscribeOptions { Exchange, RoutingKey }` binds the key when you
+  subscribe, and the last subscription with that key and exchange removes the binding, on a shared queue too, so for
+  every instance of that service. Several event types can share a key and so one binding. Without `Exchange`, the key
+  is bound on the app's own exchange and every exchange in its `Subscriptions`. The exchange-name binding always stays,
+  so messages sent without a key keep arriving. Keys are bound on the default bus.
+
+  ```csharp
+  SubscribeOptions equipment = new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment" };
+  eventAggregator.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, equipment, ThreadOption.UIThread);   // Prism, legacy or MessageEvent<T>
+  subscriber.Subscribe<EquipmentDisposed>(OnDisposed, options: equipment);                                // IMessageSubscriber
+  [RoutingKey("equipment", Exchange = "Poc.Net472")]                                                      // on a handler class: bound at startup
+  ```
+
+  A key on an exchange that doesn't exist yet is skipped with a warning and tried again at the next connect. A shared
+  queue keeps a binding when the service stops; one left behind by an instance that crashed stays until removed by hand.
 
 ### Two kinds of queue
 
@@ -349,7 +364,7 @@ Framework 4.7.2). `RemoteEventRegistry` and `router.AddBus` are still there for 
         "ClientName": "AppB",
         "Subscriptions": [
           { "Exchange": "AppA" },
-          { "Exchange": "AppC", "RoutingKeys": [ "orders.*.saved" ] }
+          { "Exchange": "AppC" }
         ],
         "RoutingKeys": { "AppB.Events.CustomerChanged": "customers.eu.changed" }
       }
@@ -358,8 +373,9 @@ Framework 4.7.2). `RemoteEventRegistry` and `router.AddBus` are still there for 
 }
 ```
 
-`Subscriptions` without `RoutingKeys` means every event of that exchange this app knows. `RoutingKeys` (optional) is
-a default routing key per event, used by `PublishRemote`.
+Each entry in `Subscriptions` is bound with the exchange's name, the key its owner publishes with by default. Other
+keys are bound by subscribing with them (see [Routing keys](#routing-keys)). `RoutingKeys` (optional) is a default
+routing key per event, used by `PublishRemote`.
 
 **3. Publish and subscribe, exactly as before:**
 
@@ -368,6 +384,7 @@ eventAggregator.GetEvent<OrderSaved>().PublishRemote(order);                   /
 eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnly(order);               // other apps only, not local subscribers
 eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions { RoutingKey = "orders.eu.saved" }); // custom routing key
 eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, ThreadOption.UIThread);
+eventAggregator.GetEvent<OrderSaved>().Subscribe(OnOrderSaved, new SubscribeOptions { Exchange = "AppC", RoutingKey = "orders.*.saved" }, ThreadOption.UIThread); // binds the key until unsubscribed
 ```
 
 Events don't belong to a bus. `Messaging:DefaultBus` in configuration names the bus they go to, and it is required,
@@ -380,7 +397,8 @@ eventAggregator.GetEvent<OrderSaved>().PublishRemote(order, new PublishOptions {
 
 `RemotePubSubEvent<T>` is for events that travel, and `PubSubEvent<T>` for events that stay inside the app. A
 `RemotePubSubEvent<T>` needs no registration: subscribing to it is what stops it being dropped on arrival, on every bus,
-and when the last subscriber goes it is dropped again. Bindings never change: the queue is bound once per exchange. A
+and when the last subscriber goes it is dropped again. The queue is bound once per exchange; a subscription with a
+routing key adds that key's binding while it lasts. A
 subscriber held weakly gives no signal when it is collected, so that one is noticed at the next message. A message that
 arrives while nothing is subscribed is missed.
 An assembly of plain events not yet moved over can still travel with `RemoteEventRegistry.Add`, but all its events are
@@ -534,7 +552,7 @@ publisher.Publish(order, new PublishOptions { Bus = "Partners" });
 **More options:**
 
 ```csharp
-messaging.Subscribe("AppA", "AppA.Events.#");                                    // another app's exchange
+messaging.Subscribe("AppA");                                                     // another app's exchange
 messaging.AddMessages(typeof(OrderSaved).Assembly);                              // bind everything, for a custom sink
 services.AddSingleton<IMessageSink, MySink>();                                   // see every message
 ```
@@ -585,7 +603,7 @@ The step-by-step version is in
 | `ExchangeType` | `topic` | `topic`, `direct`, `fanout` or `headers`. Keep `topic` while legacy apps subscribe to it. |
 | `ExchangeDurable` | `true` | Whether the exchange survives a broker restart. |
 | `BindOwnExchange` | `true` | Also receive this app's own message types from its own exchange (the legacy behaviour). |
-| `Subscriptions` | *(none)* | Other apps' exchanges: `Exchange`, `RoutingKeys`, `HeaderMatch`, `MatchAllHeaders`. |
+| `Subscriptions` | *(none)* | Other apps' exchanges: `Exchange`, `HeaderMatch`, `MatchAllHeaders`. Each is bound with the exchange name; other keys are bound by subscribing with `SubscribeOptions`. |
 | `ClientName` | the app's name | Shown in the management UI, sent as app-id, used in queue names. |
 | `QueueMode` | `PerInstance` | `PerInstance` (desktop) or `Shared` (servers). |
 | `SharedQueueName` | `clientname.busname` | Shared queues only. |
@@ -623,7 +641,7 @@ Example (`src/WebApi/appsettings.json`):
 
 The same section as above. The section key is the bus name; `Messaging:DefaultBus`, next to `Buses`, names the default
 and is required. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`,
-`ExchangeName`, `ExchangeType`, `ClientName`, `PrefetchCount` and `Subscriptions` (`Exchange`, `RoutingKeys`) mean
+`ExchangeName`, `ExchangeType`, `ClientName`, `PrefetchCount` and `Subscriptions` (`Exchange`) mean
 the same and have the same defaults. The differences:
 
 | Key | Default | Meaning |

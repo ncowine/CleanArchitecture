@@ -104,22 +104,21 @@ namespace Messaging.Hosting
         }
 
         /// <summary>
-        /// Receives from another application's exchange on the application's only bus (ADR 0002, section 2). The exchange
-        /// is checked, never declared. No routing keys means one binding keyed by the exchange name, as its owner publishes.
+        /// Receives from another application's exchange on every bus (ADR 0002, section 2), bound with the exchange's name, as
+        /// its owner publishes. The exchange is checked, never declared. Other routing keys are bound by subscribing with
+        /// <see cref="SubscribeOptions"/>.
         /// </summary>
-        public MessagingBuilder Subscribe(string exchange, params string[] routingKeys)
+        public MessagingBuilder Subscribe(string exchange)
         {
             if (string.IsNullOrWhiteSpace(exchange))
             {
                 throw new ArgumentException("An exchange is required.", nameof(exchange));
             }
 
-            SubscriptionOptions subscription = new SubscriptionOptions { Exchange = exchange };
-            subscription.RoutingKeys.AddRange(routingKeys ?? new string[0]);
-            return Subscribe(subscription);
+            return Subscribe(new SubscriptionOptions { Exchange = exchange });
         }
 
-        /// <param name="busName">Null for the application's only bus.</param>
+        /// <param name="busName">Null for every bus.</param>
         public MessagingBuilder Subscribe(SubscriptionOptions subscription, string busName = null)
         {
             if (subscription == null || string.IsNullOrWhiteSpace(subscription.Exchange))

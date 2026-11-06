@@ -38,6 +38,14 @@ namespace Messaging.RabbitMQ
         private readonly SemaphoreSlim consumerLock = new SemaphoreSlim(1, 1);
         private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
 
+        // Routing keys subscriptions asked for, counted per (exchange, key). Guarded by bindingGate.
+        private readonly Dictionary<(string Exchange, string RoutingKey), int> requestedBindings =
+            new Dictionary<(string Exchange, string RoutingKey), int>();
+        private readonly object bindingGate = new object();
+
+        // The requested bindings made on the current consumer connection. Only touched while holding consumerLock.
+        private readonly HashSet<(string Exchange, string RoutingKey)> appliedBindings = new HashSet<(string Exchange, string RoutingKey)>();
+
         private IConnection consumerConnection;
         private IChannel consumerChannel;
         private string consumerQueueName;
@@ -189,6 +197,72 @@ namespace Messaging.RabbitMQ
             }
         }
 
+        /// <summary>
+        /// Binds the queue to <paramref name="exchange"/> with <paramref name="routingKey"/>, so messages published with that
+        /// key arrive. Calls are counted per exchange and key: the first binds, and <see cref="Unbind"/> removes the binding
+        /// when the count reaches zero. Done in the background; while disconnected it is done on the next connect.
+        /// </summary>
+        /// <param name="exchange">Null for the own exchange and every configured subscription.</param>
+        public void Bind(string exchange, string routingKey)
+        {
+            EnsureNotDisposed();
+
+            bool changed = false;
+            lock (bindingGate)
+            {
+                foreach ((string Exchange, string RoutingKey) pair in BindingPairs(exchange, routingKey))
+                {
+                    requestedBindings.TryGetValue(pair, out int count);
+                    requestedBindings[pair] = count + 1;
+                    changed |= count == 0;
+                }
+            }
+
+            if (changed)
+            {
+                ApplyBindingsInBackground();
+            }
+        }
+
+        /// <summary>
+        /// Undoes one <see cref="Bind"/>. The last one removes the binding, on a shared queue too: every instance reads that
+        /// queue, so it stops receiving the key for all of them. The configured bindings are never removed.
+        /// </summary>
+        public void Unbind(string exchange, string routingKey)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            bool changed = false;
+            lock (bindingGate)
+            {
+                foreach ((string Exchange, string RoutingKey) pair in BindingPairs(exchange, routingKey))
+                {
+                    if (!requestedBindings.TryGetValue(pair, out int count))
+                    {
+                        continue;
+                    }
+
+                    if (count > 1)
+                    {
+                        requestedBindings[pair] = count - 1;
+                    }
+                    else
+                    {
+                        requestedBindings.Remove(pair);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (changed)
+            {
+                ApplyBindingsInBackground();
+            }
+        }
+
         public void Dispose()
         {
             if (disposed)
@@ -316,6 +390,9 @@ namespace Messaging.RabbitMQ
                 {
                     await channel.QueueBindAsync(queue.QueueName, binding.Exchange, binding.RoutingKey, binding.Arguments, cancellationToken: token).ConfigureAwait(false);
                 }
+
+                appliedBindings.Clear();
+                await ApplyBindings(connection, queue.QueueName, token).ConfigureAwait(false);
 
                 AsyncEventingBasicConsumer consumer = new AsyncEventingBasicConsumer(channel);
                 consumer.ReceivedAsync += OnMessageReceived;
@@ -752,9 +829,10 @@ namespace Messaging.RabbitMQ
         }
 
         /// <summary>
-        /// One binding per exchange, keyed by the exchange's name, which is the routing key every legacy application
-        /// publishes with: the own exchange (unless <see cref="RabbitMQBusOptions.BindOwnExchange"/> is off) and each
-        /// subscribed exchange. A subscription's own routing keys or header match replace its default binding.
+        /// The configured bindings: one per exchange, keyed by the exchange's name, which is the routing key every legacy
+        /// application publishes with: the own exchange (unless <see cref="RabbitMQBusOptions.BindOwnExchange"/> is off)
+        /// and each subscribed exchange. A subscription's header match replaces its default binding. Routing keys are added
+        /// by subscribing (<see cref="Bind"/>).
         /// </summary>
         private IEnumerable<QueueBinding> Bindings()
         {
@@ -778,17 +856,133 @@ namespace Messaging.RabbitMQ
 
                     yield return new QueueBinding(subscription.Exchange, "", arguments);
                 }
-                else if (subscription.RoutingKeys.Count > 0)
-                {
-                    foreach (string routingKey in subscription.RoutingKeys)
-                    {
-                        yield return new QueueBinding(subscription.Exchange, routingKey, null);
-                    }
-                }
                 else
                 {
                     yield return new QueueBinding(subscription.Exchange, subscription.Exchange, null);
                 }
+            }
+        }
+
+        private List<(string Exchange, string RoutingKey)> BindingPairs(string exchange, string routingKey)
+        {
+            if (string.IsNullOrWhiteSpace(routingKey))
+            {
+                throw new ArgumentException("A routing key is required.", nameof(routingKey));
+            }
+
+            IEnumerable<string> exchanges = !string.IsNullOrWhiteSpace(exchange)
+                ? new[] { exchange }
+                : (options.BindOwnExchange ? new[] { options.ExchangeName } : Array.Empty<string>()).Concat(SubscribedExchanges());
+
+            return exchanges.Select(e => (e, routingKey)).ToList();
+        }
+
+        private void ApplyBindingsInBackground()
+        {
+            if (!started || disposed)
+            {
+                return;
+            }
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    CancellationToken token = cancellation.Token;
+                    await consumerLock.WaitAsync(token).ConfigureAwait(false);
+                    try
+                    {
+                        if (IsOpen(consumerConnection, consumerChannel))
+                        {
+                            await ApplyBindings(consumerConnection, consumerQueueName, token).ConfigureAwait(false);
+                        }
+                    }
+                    finally
+                    {
+                        consumerLock.Release();
+                    }
+                }
+                catch (Exception ex) when (ex is OperationCanceledException || ex is ObjectDisposedException)
+                {
+                    // Shutting down.
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "[{Bus}] Could not change the routing-key bindings: {Error}", options.BusName, ex.Message);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Makes the queue's routing-key bindings match what is requested: binds the new ones and removes those no longer
+        /// wanted. Configured bindings are left alone. Call it holding <see cref="consumerLock"/>.
+        /// </summary>
+        private async Task ApplyBindings(IConnection connection, string queue, CancellationToken token)
+        {
+            HashSet<(string Exchange, string RoutingKey)> wanted;
+            lock (bindingGate)
+            {
+                wanted = new HashSet<(string Exchange, string RoutingKey)>(requestedBindings.Keys);
+            }
+
+            HashSet<(string Exchange, string RoutingKey)> configured = new HashSet<(string Exchange, string RoutingKey)>(
+                Bindings().Where(b => b.Arguments == null).Select(b => (b.Exchange, b.RoutingKey)));
+
+            foreach ((string Exchange, string RoutingKey) pair in wanted.Where(p => !configured.Contains(p) && !appliedBindings.Contains(p)).ToList())
+            {
+                if (await ChangeBinding(connection, queue, pair, bind: true, token).ConfigureAwait(false))
+                {
+                    appliedBindings.Add(pair);
+                }
+            }
+
+            foreach ((string Exchange, string RoutingKey) pair in appliedBindings.Where(p => !wanted.Contains(p)).ToList())
+            {
+                if (await ChangeBinding(connection, queue, pair, bind: false, token).ConfigureAwait(false))
+                {
+                    appliedBindings.Remove(pair);
+                }
+            }
+        }
+
+        /// <summary>
+        /// On a channel of its own: a missing exchange closes the channel it was named on, and that must not be the
+        /// consumer's. A failure is logged and tried again at the next change or connect.
+        /// </summary>
+        private async Task<bool> ChangeBinding(IConnection connection, string queue, (string Exchange, string RoutingKey) pair, bool bind, CancellationToken token)
+        {
+            IChannel channel = null;
+            try
+            {
+                channel = await connection.CreateChannelAsync(cancellationToken: token).ConfigureAwait(false);
+                if (bind)
+                {
+                    await channel.QueueBindAsync(queue, pair.Exchange, pair.RoutingKey, null, cancellationToken: token).ConfigureAwait(false);
+                }
+                else
+                {
+                    await channel.QueueUnbindAsync(queue, pair.Exchange, pair.RoutingKey, null, token).ConfigureAwait(false);
+                }
+
+                logger.LogInformation("[{Bus}] {Change} routing key '{RoutingKey}' on exchange '{Exchange}'.",
+                    options.BusName, bind ? "Bound" : "Unbound", pair.RoutingKey, pair.Exchange);
+                return true;
+            }
+            catch (OperationInterruptedException ex) when (ex.ShutdownReason?.ReplyCode == 404)
+            {
+                logger.LogWarning("[{Bus}] Exchange '{Exchange}' does not exist yet, so routing key '{RoutingKey}' is not bound. It is tried again at the next connect.",
+                    options.BusName, pair.Exchange, pair.RoutingKey);
+                return false;
+            }
+            catch (Exception ex) when (!(ex is OperationCanceledException))
+            {
+                logger.LogWarning(ex, "[{Bus}] Could not {Change} routing key '{RoutingKey}' on exchange '{Exchange}': {Error}",
+                    options.BusName, bind ? "bind" : "unbind", pair.RoutingKey, pair.Exchange, ex.Message);
+                return false;
+            }
+            finally
+            {
+                await CloseQuietly(channel, null).ConfigureAwait(false);
             }
         }
 

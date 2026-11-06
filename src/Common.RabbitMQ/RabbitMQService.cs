@@ -1,9 +1,10 @@
-using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System;
 using Messaging.RabbitMQ;
+using Messaging;
 using Microsoft.Extensions.Logging;
 using Prism.Events;
 
@@ -41,6 +42,12 @@ namespace Common.RabbitMQ
         public ILogger Logger { get; set; }
 
         public string BusName => config?.BusName;
+
+        /// <summary>
+        /// Whether subscriptions' routing keys are bound here. True for a service on its own; the router sets it for its
+        /// default bus only.
+        /// </summary>
+        internal bool IsDefaultBus { get; set; } = true;
 
         public string InstanceId => instanceId;
 
@@ -170,6 +177,23 @@ namespace Common.RabbitMQ
             return true;
         }
 
+        /// <summary>Binds a subscription's routing key, if this is the default bus and the event belongs to its aggregator.</summary>
+        internal void Bind(IRemoteEvent remoteEvent, SubscribeOptions options)
+        {
+            if (IsDefaultBus && FindOwn(remoteEvent) != null)
+            {
+                bus.Bind(options.Exchange, options.RoutingKey);
+            }
+        }
+
+        internal void Unbind(IRemoteEvent remoteEvent, SubscribeOptions options)
+        {
+            if (IsDefaultBus && FindOwn(remoteEvent) != null)
+            {
+                bus.Unbind(options.Exchange, options.RoutingKey);
+            }
+        }
+
         /// <summary>Stops receiving <paramref name="remoteEvent"/> if it belongs to this service's aggregator, unless <see cref="RegisterQueue"/> asked for it.</summary>
         internal void StopReceiving(IRemoteEvent remoteEvent)
         {
@@ -206,7 +230,7 @@ namespace Common.RabbitMQ
                 ExchangeType = string.IsNullOrWhiteSpace(config.ExchangeType) ? "topic" : config.ExchangeType,
                 Subscriptions = config.Subscriptions
                     .Where(s => s != null)
-                    .Select(s => new SubscriptionOptions { Exchange = s.Exchange, RoutingKeys = new List<string>(s.RoutingKeys) })
+                    .Select(s => new SubscriptionOptions { Exchange = s.Exchange })
                     .ToList(),
             };
         }

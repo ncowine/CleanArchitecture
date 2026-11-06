@@ -1,17 +1,13 @@
-using System.Collections.Generic;
-
 namespace Common.RabbitMQ
 {
     /// <summary>Receiving from another application's exchange (ADR 0002, section 2).</summary>
     public class RabbitMQSubscription
     {
-        /// <summary>The other application's exchange. It is checked, never declared: its owner declares it.</summary>
-        public string Exchange { get; set; }
-
         /// <summary>
-        /// Routing keys or patterns to bind. Empty means one binding keyed by <see cref="Exchange"/>, the routing key its
-        /// owner publishes every event with, which is what legacy applications do.
+        /// The other application's exchange, bound with its name: the routing key its owner publishes with when it sets none.
+        /// It is checked, never declared: its owner declares it. Other keys are bound by subscribing with
+        /// <see cref="Messaging.SubscribeOptions"/>.
         /// </summary>
-        public List<string> RoutingKeys { get; set; } = new List<string>();
+        public string Exchange { get; set; }
     }
 }

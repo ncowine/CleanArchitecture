@@ -27,7 +27,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         ""ClientName"": ""AppB"",
         ""Subscriptions"": [
           { ""Exchange"": ""AppA"" },
-          { ""Exchange"": ""AppC"", ""RoutingKeys"": [ ""orders.*.saved"", ""customers.#"" ] }
+          { ""Exchange"": ""AppC"" }
         ],
         ""RoutingKeys"": { ""AppB.Events.CustomerChanged"": ""customers.eu.changed"" }
       }
@@ -55,8 +55,7 @@ namespace Common.RabbitMQ.Tests.Adapter
             RabbitMQConfig appB = LoadLegacy().Single(c => c.BusName == "AppB");
 
             Assert.Equal("direct", appB.ExchangeType);
-            Assert.Empty(appB.Subscriptions.Single(s => s.Exchange == "AppA").RoutingKeys);
-            Assert.Equal(new[] { "orders.*.saved", "customers.#" }, appB.Subscriptions.Single(s => s.Exchange == "AppC").RoutingKeys);
+            Assert.Equal(new[] { "AppA", "AppC" }, appB.Subscriptions.Select(s => s.Exchange));
             Assert.Equal("customers.eu.changed", appB.RoutingKeys["AppB.Events.CustomerChanged"]);
         }
 
@@ -74,8 +73,8 @@ namespace Common.RabbitMQ.Tests.Adapter
             Assert.Equal(legacy.ExchangeType, modern.ExchangeType);
             Assert.Equal(legacy.ClientName, modern.ClientName);
             Assert.Equal(
-                legacy.Subscriptions.Select(s => s.Exchange + ":" + string.Join(",", s.RoutingKeys)),
-                modern.Subscriptions.Select(s => s.Exchange + ":" + string.Join(",", s.RoutingKeys)));
+                legacy.Subscriptions.Select(s => s.Exchange),
+                modern.Subscriptions.Select(s => s.Exchange));
         }
 
         /// <summary>What a legacy app does at startup: one <see cref="RabbitMQConfig"/> per bus, named by its key.</summary>

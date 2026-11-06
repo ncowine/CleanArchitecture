@@ -57,6 +57,7 @@ namespace Common.RabbitMQ.Tests.PublicApi
 
             // Subscribing starts receiving the event (ADR 0002, updates 2026-11-04 and 2026-11-05).
             "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Subscribe(System.Action<TPayload>, Prism.Events.ThreadOption, System.Boolean, System.Predicate<TPayload>) : Prism.Events.SubscriptionToken",
+            "method Common.RabbitMQ.RemotePubSubEvent<TPayload>.Subscribe(System.Action<TPayload>, Messaging.SubscribeOptions, Prism.Events.ThreadOption = PublisherThread, System.Boolean = False, System.Predicate<TPayload> = null) : Prism.Events.SubscriptionToken",
 
             // The last subscriber going stops receiving it (ADR 0002, updates 2026-11-04 and 2026-11-05).
             "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Unsubscribe(Prism.Events.SubscriptionToken) : System.Void",
@@ -82,7 +83,6 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "class Common.RabbitMQ.RabbitMQSubscription",
             "ctor Common.RabbitMQ.RabbitMQSubscription()",
             "property Common.RabbitMQ.RabbitMQSubscription.Exchange : System.String { get; set; }",
-            "property Common.RabbitMQ.RabbitMQSubscription.RoutingKeys : System.Collections.Generic.List<System.String> { get; set; }",
         };
 
         [Fact]

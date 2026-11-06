@@ -21,8 +21,6 @@ namespace Common.RabbitMQ.Tests.Hosting
                     ["Messaging:Buses:Server:ExchangeType"] = "direct",
                     ["Messaging:Buses:Server:BindOwnExchange"] = "false",
                     ["Messaging:Buses:Server:Subscriptions:0:Exchange"] = "AppA",
-                    ["Messaging:Buses:Server:Subscriptions:0:RoutingKeys:0"] = "AppA.Events.#",
-                    ["Messaging:Buses:Server:Subscriptions:0:RoutingKeys:1"] = "orders.*.saved",
                     ["Messaging:Buses:Server:Subscriptions:1:Exchange"] = "Audit",
                     ["Messaging:Buses:Server:Subscriptions:1:HeaderMatch:tenant"] = "eu",
                     ["Messaging:Buses:Server:Subscriptions:1:MatchAllHeaders"] = "false",
@@ -44,15 +42,13 @@ namespace Common.RabbitMQ.Tests.Hosting
                 Assert.Equal(3, options.Subscriptions.Count);
 
                 Assert.Equal("AppA", options.Subscriptions[0].Exchange);
-                Assert.Equal(new[] { "AppA.Events.#", "orders.*.saved" }, options.Subscriptions[0].RoutingKeys);
 
                 Assert.Equal("Audit", options.Subscriptions[1].Exchange);
                 Assert.Equal("eu", options.Subscriptions[1].HeaderMatch["tenant"]);
                 Assert.False(options.Subscriptions[1].MatchAllHeaders);
 
-                // No keys and no header match: one binding per handled message type, as legacy applications do.
+                // No header match: one binding keyed by the exchange name, as legacy applications do.
                 Assert.Equal("AppB", options.Subscriptions[2].Exchange);
-                Assert.Empty(options.Subscriptions[2].RoutingKeys);
                 Assert.Empty(options.Subscriptions[2].HeaderMatch);
 
                 // The bus accepts the configuration.

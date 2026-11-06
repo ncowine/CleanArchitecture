@@ -113,8 +113,8 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 CoreApp patternSubscriber = topology.CreateCore(AppB, options => options.Subscriptions.Add(new SubscriptionOptions
                 {
                     Exchange = topology.Exchange(AppA),
-                    RoutingKeys = { "orders.*.saved" },
                 }));
+                patternSubscriber.CreateBus().Bind(topology.Exchange(AppA), "orders.*.saved");
                 Received<Order> atPatternSubscriber = patternSubscriber.Listen<Order>(OrderSavedWireName);
                 patternSubscriber.Start();
                 LegacyApp legacySubscriber = topology.Start(AppC, new[] { AppA }, AppAEvents);
@@ -128,12 +128,14 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 AssertGolden(await atPatternSubscriber.Next(TestBus.Timeout));
                 Assert.Equal("orders.eu.saved", patternSubscriber.Contexts.Single().RoutingKey);
 
-                // The default key (the exchange name): only the legacy binding (F7) matches.
+                // The default key (the exchange name) reaches both: a bound key adds to the exchange-name binding, which
+                // every subscriber keeps, as the legacy one does (F7).
                 owner.Publish(OrderSavedWireName, GoldenOrder());
                 AssertGolden(await atLegacySubscriber.Next(TestBus.Timeout));
+                AssertGolden(await atPatternSubscriber.Next(TestBus.Timeout));
 
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
-                Assert.Equal(1, atPatternSubscriber.Count);
+                Assert.Equal(2, atPatternSubscriber.Count);
                 Assert.Equal(1, atLegacySubscriber.Count);
             }
         }
@@ -157,6 +159,12 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 Assert.Equal(200, await topology.DeclareExchange(topology.Exchange(AppA), exchangeType, durable: true));
 
                 CoreApp subscriber = topology.CreateCore(AppB, options => options.Subscriptions.Add(SubscriptionFor(exchangeType, topology.Exchange(AppA))));
+                if (exchangeType == "topic")
+                {
+                    // A pattern on top of the exchange-name binding: it lets AppA's other keys through too.
+                    subscriber.CreateBus().Bind(topology.Exchange(AppA), "AppA.*");
+                }
+
                 Received<Order> atSubscriber = subscriber.Listen<Order>(OrderSavedWireName);
                 subscriber.Start();
                 await topology.WaitUntilConnected(subscriber);
@@ -222,22 +230,12 @@ namespace Common.RabbitMQ.Tests.LegacyModel
 
         private static SubscriptionOptions SubscriptionFor(string exchangeType, string exchange)
         {
+            // Topic, direct and fanout: bound with the exchange name, which the owner publishes with (fanout ignores it).
             SubscriptionOptions subscription = new SubscriptionOptions { Exchange = exchange };
-            switch (exchangeType)
+            if (exchangeType == "headers")
             {
-                case "topic":
-                    subscription.RoutingKeys.Add("AppA.*");
-                    break;
-                case "direct":
-                    subscription.RoutingKeys.Add(exchange);
-                    break;
-                case "fanout":
-                    subscription.RoutingKeys.Add("ignored-by-fanout");
-                    break;
-                default:
-                    // Every message the core sends carries event-type, so it is a natural header to match.
-                    subscription.HeaderMatch[WireHeaders.MessageType] = OrderSavedWireName;
-                    break;
+                // Every message the core sends carries event-type, so it is a natural header to match.
+                subscription.HeaderMatch[WireHeaders.MessageType] = OrderSavedWireName;
             }
 
             return subscription;

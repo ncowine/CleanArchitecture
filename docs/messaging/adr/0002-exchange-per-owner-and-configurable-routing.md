@@ -161,6 +161,9 @@ These follow ADR 0001's steps 0–3b, which are done. Each can be released on it
      - `RemoteEventRegistry.Add(assembly, bus = null)`. An event without a bus belongs to every bus. With several buses, the router refuses to publish it and says why.
      - `PublishRemote` on `PubSubEvent<T>`, `PublishRemoteTo`, and `IRoutingKeyPublisher`, a separate interface so `IRabbitMQService` stays unchanged.
      - In `RabbitMQConfig`: `ExchangeType`, `Subscriptions` and `RoutingKeys` (a default key per event).
+     - **Update (2026-11-06):** custom keys are no longer listed in `Subscriptions`. A subscription binds its key
+       (`SubscribeOptions { Exchange, RoutingKey }`, or `[RoutingKey]` on a handler), and the last one with that key
+       unbinds it, on shared queues too. Each subscribed exchange keeps its exchange-name binding.
      - In App.config: `exchangeType`, plus `<subscriptions>` and `<routes>` inside `<bus>`.
      - The public API test now checks for "nothing removed, only listed additions, one public constructor".
    - **Deliberately left out until needed:**

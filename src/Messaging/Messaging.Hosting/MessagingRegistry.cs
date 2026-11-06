@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Messaging.RabbitMQ;
 
 namespace Messaging.Hosting
@@ -57,6 +58,15 @@ namespace Messaging.Hosting
             return subscriptions
                 .Where(s => s.BusName == null || string.Equals(s.BusName, busName, StringComparison.Ordinal))
                 .Select(s => s.Subscription);
+        }
+
+        /// <summary>The routing keys handler classes ask for with <see cref="RoutingKeyAttribute"/>, and their buses (empty: every bus).</summary>
+        public IEnumerable<(RoutingKeyAttribute Key, IReadOnlyCollection<string> Buses)> GetHandlerRoutingKeys()
+        {
+            return handlers
+                .GroupBy(h => h.HandlerType)
+                .SelectMany(g => g.Key.GetCustomAttributes<RoutingKeyAttribute>(inherit: false)
+                    .Select(a => (a, (IReadOnlyCollection<string>)g.First().Buses)));
         }
 
         public IEnumerable<HandlerRegistration> GetHandlers(Type messageType, string busName)

@@ -18,6 +18,7 @@ namespace Messaging.Prism
         private static readonly object gate = new object();
         private static readonly HashSet<IReceivedEvent> subscribed = new HashSet<IReceivedEvent>();
         private static readonly List<MessageEventReceiver> running = new List<MessageEventReceiver>();
+        private static readonly List<(IReceivedEvent Event, SubscribeOptions Options)> keyed = new List<(IReceivedEvent Event, SubscribeOptions Options)>();
 
         private readonly IMessageSubscriber subscriber;
         private readonly IEventAggregator eventAggregator;
@@ -83,6 +84,44 @@ namespace Messaging.Prism
             }
         }
 
+        /// <summary>Binds a subscription's routing key, now or when the host starts. Undone by <see cref="Unbind"/>.</summary>
+        public static void Bind(IReceivedEvent receivedEvent, SubscribeOptions options)
+        {
+            lock (gate)
+            {
+                foreach (MessageEventReceiver receiver in running)
+                {
+                    if (receivedEvent.BelongsTo(receiver.eventAggregator))
+                    {
+                        receiver.subscriber.Receive(receivedEvent.MessageType, options);
+                    }
+                }
+
+                keyed.Add((receivedEvent, options));
+            }
+        }
+
+        public static void Unbind(IReceivedEvent receivedEvent, SubscribeOptions options)
+        {
+            lock (gate)
+            {
+                int index = keyed.FindIndex(k => ReferenceEquals(k.Event, receivedEvent) && ReferenceEquals(k.Options, options));
+                if (index < 0)
+                {
+                    return;
+                }
+
+                keyed.RemoveAt(index);
+                foreach (MessageEventReceiver receiver in running)
+                {
+                    if (receivedEvent.BelongsTo(receiver.eventAggregator))
+                    {
+                        receiver.subscriber.StopReceiving(receivedEvent.MessageType, options);
+                    }
+                }
+            }
+        }
+
         public Task StartAsync(CancellationToken cancellationToken)
         {
             lock (gate)
@@ -93,6 +132,14 @@ namespace Messaging.Prism
                     if (receivedEvent.BelongsTo(eventAggregator))
                     {
                         subscriber.Receive(receivedEvent.MessageType);
+                    }
+                }
+
+                foreach ((IReceivedEvent receivedEvent, SubscribeOptions options) in keyed)
+                {
+                    if (receivedEvent.BelongsTo(eventAggregator))
+                    {
+                        subscriber.Receive(receivedEvent.MessageType, options);
                     }
                 }
             }

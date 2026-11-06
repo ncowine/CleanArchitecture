@@ -82,8 +82,8 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 CoreApp patternSubscriber = topology.CreateCore(AppB, options => options.Subscriptions.Add(new SubscriptionOptions
                 {
                     Exchange = topology.Exchange(AppA),
-                    RoutingKeys = { "orders.*.saved" },
                 }));
+                patternSubscriber.CreateBus().Bind(topology.Exchange(AppA), "orders.*.saved");
                 Received<Order> atPatternSubscriber = patternSubscriber.Listen<Order>(OrderSavedWireName);
                 patternSubscriber.Start();
                 LegacyApp legacySubscriber = topology.Start(AppC, new[] { AppA }, AppAEvents);

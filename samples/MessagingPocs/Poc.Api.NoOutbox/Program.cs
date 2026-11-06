@@ -38,12 +38,13 @@ WebApplication app = builder.Build();
 // ❌ DON'T use scoped services directly here: there's no scope. Create one with app.Services.CreateAsyncScope().
 // An exception fails the message, as in a handler class: it's retried, then dead-lettered.
 IMessageSubscriber subscriber = app.Services.GetRequiredService<IMessageSubscriber>();
+// The net472 app sends flags with the "equipment" routing key: subscribing with it binds that key on its exchange.
 subscriber.Subscribe<EquipmentFlagged>((message, context, cancellationToken) =>
 {
     app.Logger.LogInformation("Equipment {Name} ({EquipmentId}) flagged", message.Name, message.Id);
 
     return Task.CompletedTask;
-});
+}, new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment" });
 
 LogShape<StatusChanged>(subscriber, app.Logger);
 LogShape<MaintenanceScheduled>(subscriber, app.Logger);
