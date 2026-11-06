@@ -223,7 +223,7 @@ namespace Messaging.Hosting
         {
             if (options != null)
             {
-                DefaultBus().Bind(options.Exchange, options.RoutingKey);
+                BindingBus(provider, registry, options.Bus, options.Exchange).Bind(options.Exchange, options.RoutingKey);
             }
         }
 
@@ -231,15 +231,48 @@ namespace Messaging.Hosting
         {
             if (options != null)
             {
-                DefaultBus().Unbind(options.Exchange, options.RoutingKey);
+                BindingBus(provider, registry, options.Bus, options.Exchange).Unbind(options.Exchange, options.RoutingKey);
             }
         }
 
-        private RabbitMQBus DefaultBus()
+        /// <summary>
+        /// The bus a routing key is bound on: <paramref name="busName"/> when given; otherwise the one bus that uses
+        /// <paramref name="exchange"/>, or the default bus when none does. Several buses using it is ambiguous and throws.
+        /// </summary>
+        internal static RabbitMQBus BindingBus(IServiceProvider provider, MessagingRegistry registry, string busName, string exchange)
         {
-            string busName = registry.GetDefaultBus()
+            if (!string.IsNullOrWhiteSpace(busName))
+            {
+                if (!registry.BusNames.Contains(busName))
+                {
+                    throw new InvalidOperationException($"Cannot bind a routing key on bus '{busName}': it is not configured for this application.");
+                }
+
+                return provider.GetRequiredKeyedService<RabbitMQBus>(busName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(exchange))
+            {
+                List<RabbitMQBus> matches = registry.BusNames
+                    .Select(name => provider.GetRequiredKeyedService<RabbitMQBus>(name))
+                    .Where(bus => bus.UsesExchange(exchange))
+                    .ToList();
+
+                if (matches.Count == 1)
+                {
+                    return matches[0];
+                }
+
+                if (matches.Count > 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Exchange '{exchange}' is on several buses ({string.Join(", ", matches.Select(b => b.BusName))}): set SubscribeOptions.Bus to say which.");
+                }
+            }
+
+            string defaultBus = registry.GetDefaultBus()
                 ?? throw new InvalidOperationException("A routing key is bound on the default bus, and there is none. Call UseDefaultBus.");
-            return provider.GetRequiredKeyedService<RabbitMQBus>(busName);
+            return provider.GetRequiredKeyedService<RabbitMQBus>(defaultBus);
         }
     }
 }

@@ -28,8 +28,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         ""Subscriptions"": [
           { ""Exchange"": ""AppA"" },
           { ""Exchange"": ""AppC"" }
-        ],
-        ""RoutingKeys"": { ""AppB.Events.CustomerChanged"": ""customers.eu.changed"" }
+        ]
       }
     }
   }
@@ -46,7 +45,6 @@ namespace Common.RabbitMQ.Tests.Adapter
             Assert.Equal("/", legacy.VirtualHost);
             Assert.Equal("topic", legacy.ExchangeType);
             Assert.Empty(legacy.Subscriptions);
-            Assert.Empty(legacy.RoutingKeys);
         }
 
         [Fact]
@@ -56,7 +54,6 @@ namespace Common.RabbitMQ.Tests.Adapter
 
             Assert.Equal("direct", appB.ExchangeType);
             Assert.Equal(new[] { "AppA", "AppC" }, appB.Subscriptions.Select(s => s.Exchange));
-            Assert.Equal("customers.eu.changed", appB.RoutingKeys["AppB.Events.CustomerChanged"]);
         }
 
         [Fact]

@@ -7,9 +7,8 @@ namespace Common.RabbitMQ
     /// <summary>
     /// Publishing to other applications. The service comes from <see cref="RabbitMQServiceProvider"/>, and the event must be a
     /// <see cref="RemotePubSubEvent{TPayload}"/> or registered. <see cref="PublishOptions"/> chooses the bus and routing key for one call; without it
-    /// the event goes to the default bus (<see cref="RabbitMQServiceRouter.DefaultBus"/>), routed with the exchange name or
-    /// its entry in <see cref="RabbitMQConfig.RoutingKeys"/>. Legacy subscribers bind the exchange name, so they don't
-    /// receive custom keys. A bus that isn't configured throws.
+    /// the event goes to the default bus (<see cref="RabbitMQServiceRouter.DefaultBus"/>), routed with the exchange name.
+    /// Legacy subscribers bind the exchange name, so they don't receive custom keys. A bus that isn't configured throws.
     /// </summary>
     public static class RemotePubSubEventExtensions
     {

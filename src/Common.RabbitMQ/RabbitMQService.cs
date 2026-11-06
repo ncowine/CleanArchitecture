@@ -1,10 +1,10 @@
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System;
-using Messaging.RabbitMQ;
 using Messaging;
+using Messaging.RabbitMQ;
 using Microsoft.Extensions.Logging;
 using Prism.Events;
 
@@ -44,10 +44,10 @@ namespace Common.RabbitMQ
         public string BusName => config?.BusName;
 
         /// <summary>
-        /// Whether subscriptions' routing keys are bound here. True for a service on its own; the router sets it for its
-        /// default bus only.
+        /// Says which bus a subscription's routing key is bound on, or throws when that can't be decided. A service on its
+        /// own takes every key not meant for another bus; <see cref="RabbitMQServiceRouter"/> sets it to choose among its buses.
         /// </summary>
-        internal bool IsDefaultBus { get; set; } = true;
+        internal Func<SubscribeOptions, string> BindingBus { get; set; }
 
         public string InstanceId => instanceId;
 
@@ -98,16 +98,15 @@ namespace Common.RabbitMQ
         }
 
         /// <summary>
-        /// Queues <paramref name="payload"/> as <paramref name="eventType"/>, routed with the exchange name or with the event's
-        /// entry in <see cref="RabbitMQConfig.RoutingKeys"/>.
+        /// Queues <paramref name="payload"/> as <paramref name="eventType"/>, routed with the exchange name. A key of its own
+        /// is chosen when publishing, with <see cref="Publish(Type, object, string)"/>.
         /// </summary>
         public void Publish(Type eventType, object payload)
         {
             EnsureInitialized();
 
             RemoteEventDescriptor descriptor = GetDescriptor(eventType);
-            config.RoutingKeys.TryGetValue(descriptor.EventName, out string routingKey);
-            bus.Enqueue(descriptor.EventName, payload, routingKey);
+            bus.Enqueue(descriptor.EventName, payload);
         }
 
         /// <summary>
@@ -180,18 +179,62 @@ namespace Common.RabbitMQ
         /// <summary>Binds a subscription's routing key, if this is the default bus and the event belongs to its aggregator.</summary>
         internal void Bind(IRemoteEvent remoteEvent, SubscribeOptions options)
         {
-            if (IsDefaultBus && FindOwn(remoteEvent) != null)
+            if (FindOwn(remoteEvent) != null && IsBindingBus(options))
             {
                 bus.Bind(options.Exchange, options.RoutingKey);
             }
         }
 
+        /// <summary>As <see cref="Bind"/>, but a key that can't be placed is logged instead of thrown: for subscriptions made before Init.</summary>
+        internal void TryBind(IRemoteEvent remoteEvent, SubscribeOptions options)
+        {
+            try
+            {
+                Bind(remoteEvent, options);
+            }
+            catch (InvalidOperationException ex)
+            {
+                (Logger ?? TraceLogger.Instance).LogError(ex, "[{Bus}] Routing key '{RoutingKey}' is not bound: {Error}", config.BusName, options.RoutingKey, ex.Message);
+            }
+        }
+
         internal void Unbind(IRemoteEvent remoteEvent, SubscribeOptions options)
         {
-            if (IsDefaultBus && FindOwn(remoteEvent) != null)
+            if (FindOwn(remoteEvent) == null)
+            {
+                return;
+            }
+
+            bool mine;
+            try
+            {
+                mine = IsBindingBus(options);
+            }
+            catch (InvalidOperationException)
+            {
+                // Never bound, for the same reason.
+                return;
+            }
+
+            if (mine)
             {
                 bus.Unbind(options.Exchange, options.RoutingKey);
             }
+        }
+
+        private bool IsBindingBus(SubscribeOptions options)
+        {
+            if (BindingBus != null)
+            {
+                return BindingBus(options) == config.BusName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.Bus) && options.Bus != config.BusName)
+            {
+                throw new InvalidOperationException($"Cannot bind a routing key on bus '{options.Bus}': it is not configured for this application.");
+            }
+
+            return true;
         }
 
         /// <summary>Stops receiving <paramref name="remoteEvent"/> if it belongs to this service's aggregator, unless <see cref="RegisterQueue"/> asked for it.</summary>

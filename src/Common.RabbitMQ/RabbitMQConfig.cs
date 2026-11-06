@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 
 namespace Common.RabbitMQ
@@ -44,11 +43,5 @@ namespace Common.RabbitMQ
 
         /// <summary>Other applications' exchanges to receive from (ADR 0002). They are checked, never declared.</summary>
         public List<RabbitMQSubscription> Subscriptions { get; set; } = new List<RabbitMQSubscription>();
-
-        /// <summary>
-        /// Default routing key per event full name, used by <c>PublishRemote</c> instead of the full name (ADR 0002,
-        /// section 3). Events not listed use their full name.
-        /// </summary>
-        public Dictionary<string, string> RoutingKeys { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
     }
 }

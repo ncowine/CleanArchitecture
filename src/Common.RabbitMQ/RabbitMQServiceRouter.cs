@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Prism.Events;
@@ -139,9 +140,45 @@ namespace Common.RabbitMQ
             foreach (KeyValuePair<string, RabbitMQService> pair in buses)
             {
                 pair.Value.Logger = Logger;
-                pair.Value.IsDefaultBus = pair.Key == DefaultBus;
+                pair.Value.BindingBus = BusForBinding;
                 pair.Value.Init(configs[pair.Key]);
             }
+        }
+
+        /// <summary>
+        /// The bus a subscription's routing key is bound on: <see cref="SubscribeOptions.Bus"/> when set; otherwise the one bus
+        /// that has <see cref="SubscribeOptions.Exchange"/> as its own exchange or in its subscriptions, or the default bus when
+        /// none has. Several buses having it is ambiguous and throws.
+        /// </summary>
+        internal string BusForBinding(SubscribeOptions options)
+        {
+            if (!string.IsNullOrWhiteSpace(options.Bus))
+            {
+                return buses.ContainsKey(options.Bus)
+                    ? options.Bus
+                    : throw new InvalidOperationException($"Cannot bind a routing key on bus '{options.Bus}': it is not configured for this application.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.Exchange))
+            {
+                List<string> matches = configs
+                    .Where(c => c.Value.ExchangeName == options.Exchange || c.Value.Subscriptions.Any(s => s != null && s.Exchange == options.Exchange))
+                    .Select(c => c.Key)
+                    .ToList();
+
+                if (matches.Count == 1)
+                {
+                    return matches[0];
+                }
+
+                if (matches.Count > 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Exchange '{options.Exchange}' is on several buses ({string.Join(", ", matches)}): set SubscribeOptions.Bus to say which.");
+                }
+            }
+
+            return DefaultBus;
         }
 
         public void Publish(Type eventType, object payload)

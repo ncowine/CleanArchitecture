@@ -276,7 +276,12 @@ flowchart LR
   subscribe, and the last subscription with that key and exchange removes the binding, on a shared queue too, so for
   every instance of that service. Several event types can share a key and so one binding. Without `Exchange`, the key
   is bound on the app's own exchange and every exchange in its `Subscriptions`. The exchange-name binding always stays,
-  so messages sent without a key keep arriving. Keys are bound on the default bus.
+  so messages sent without a key keep arriving.
+
+  **Which bus**, when an app has several: `SubscribeOptions.Bus` if set. Otherwise the one bus that has `Exchange` as
+  its own exchange or in its `Subscriptions`, or the default bus when none has. The same exchange name on two buses
+  (for example the same app in two vhosts) is ambiguous: subscribing throws and asks for `Bus`. A handler's
+  `[RoutingKey]` goes on the buses it receives from (`AddHandlers(assembly, "Legacy")`), or is placed the same way.
 
   ```csharp
   SubscribeOptions equipment = new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment" };
@@ -365,8 +370,7 @@ Framework 4.7.2). `RemoteEventRegistry` and `router.AddBus` are still there for 
         "Subscriptions": [
           { "Exchange": "AppA" },
           { "Exchange": "AppC" }
-        ],
-        "RoutingKeys": { "AppB.Events.CustomerChanged": "customers.eu.changed" }
+        ]
       }
     }
   }
@@ -374,8 +378,8 @@ Framework 4.7.2). `RemoteEventRegistry` and `router.AddBus` are still there for 
 ```
 
 Each entry in `Subscriptions` is bound with the exchange's name, the key its owner publishes with by default. Other
-keys are bound by subscribing with them (see [Routing keys](#routing-keys)). `RoutingKeys` (optional) is a default
-routing key per event, used by `PublishRemote`.
+keys are bound by subscribing with them (see [Routing keys](#routing-keys)). Events are published with the exchange
+name; a key of its own is chosen in code, with `PublishOptions.RoutingKey`.
 
 **3. Publish and subscribe, exactly as before:**
 
@@ -648,7 +652,6 @@ the same and have the same defaults. The differences:
 |---|---|---|
 | `ClientName` | the process name | Set it: the process name includes `.exe`. |
 | `ReconnectDelaySeconds`, `OutstandingPollIntervalMilliseconds`, `HeartbeatSeconds` | `5`, `100`, `30` | Whole numbers, where the server uses `ReconnectDelay`, `OutstandingPollInterval` and `Heartbeat` (time spans). |
-| `RoutingKeys` | *(none)* | `{ "Full.Event.Name": "routing.key" }`: a default routing key per event, used by `PublishRemote`. |
 
 Server-only keys (`QueueMode`, retries, `HeaderMatch`, `ExchangeDurable`, `BindOwnExchange`) are ignored here.
 

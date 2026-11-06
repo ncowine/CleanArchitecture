@@ -106,6 +106,13 @@ namespace Messaging.RabbitMQ
 
         public string DeadLetterQueueName => options.QueueMode == QueueMode.Shared ? queueName + ".dead-letter" : null;
 
+        /// <summary>Whether <paramref name="exchange"/> is this bus's own exchange or one of its configured subscriptions.</summary>
+        public bool UsesExchange(string exchange)
+        {
+            return string.Equals(exchange, options.ExchangeName, StringComparison.Ordinal)
+                || options.Subscriptions.Any(s => string.Equals(s.Exchange, exchange, StringComparison.Ordinal));
+        }
+
         public void Start(IEnumerable<MessageRegistration> registrations)
         {
             EnsureNotDisposed();

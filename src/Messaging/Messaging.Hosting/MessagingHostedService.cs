@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Messaging.RabbitMQ;
@@ -28,13 +29,17 @@ namespace Messaging.Hosting
         {
             registry.Validate();
 
-            // Handlers live as long as the application, so their routing keys are bound for good: on their buses, or on the
-            // default bus when they receive from every bus.
+            // Handlers live as long as the application, so their routing keys are bound for good: on the buses they receive
+            // from, or, when they receive from every bus, on the bus found as for a subscription (SubscribeOptions).
             foreach ((RoutingKeyAttribute key, IReadOnlyCollection<string> buses) in registry.GetHandlerRoutingKeys())
             {
-                foreach (string busName in buses.Count > 0 ? buses : new[] { registry.GetDefaultBus() })
+                IEnumerable<RabbitMQBus> targets = buses.Count > 0
+                    ? buses.Select(name => provider.GetRequiredKeyedService<RabbitMQBus>(name))
+                    : new[] { MessageSubscriber.BindingBus(provider, registry, null, key.Exchange) };
+
+                foreach (RabbitMQBus bus in targets)
                 {
-                    provider.GetRequiredKeyedService<RabbitMQBus>(busName).Bind(key.Exchange, key.RoutingKey);
+                    bus.Bind(key.Exchange, key.RoutingKey);
                 }
             }
 
