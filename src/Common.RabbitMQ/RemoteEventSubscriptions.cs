@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Messaging;
 
 namespace Common.RabbitMQ
 {
@@ -12,6 +13,7 @@ namespace Common.RabbitMQ
         private static readonly object gate = new object();
         private static readonly HashSet<IRemoteEvent> subscribed = new HashSet<IRemoteEvent>();
         private static readonly List<RabbitMQService> running = new List<RabbitMQService>();
+        private static readonly List<(IRemoteEvent Event, SubscribeOptions Options)> keyed = new List<(IRemoteEvent Event, SubscribeOptions Options)>();
 
         /// <summary>Asks every time, not just the first, so subscribing resumes an event stopped with <see cref="RabbitMQService.UnregisterQueue"/>.</summary>
         public static void Subscribed(IRemoteEvent remoteEvent)
@@ -55,6 +57,10 @@ namespace Common.RabbitMQ
             lock (gate)
             {
                 running.Add(service);
+                foreach ((IRemoteEvent remoteEvent, SubscribeOptions options) in keyed)
+                {
+                    service.Bind(remoteEvent, options);
+                }
 
                 int count = 0;
                 foreach (IRemoteEvent remoteEvent in subscribed)
@@ -66,6 +72,38 @@ namespace Common.RabbitMQ
                 }
 
                 return count;
+            }
+        }
+
+        /// <summary>Binds a subscription's routing key, now or when the service starts. Undone by <see cref="Unbind"/>.</summary>
+        public static void Bind(IRemoteEvent remoteEvent, SubscribeOptions options)
+        {
+            lock (gate)
+            {
+                foreach (RabbitMQService service in running)
+                {
+                    service.Bind(remoteEvent, options);
+                }
+
+                keyed.Add((remoteEvent, options));
+            }
+        }
+
+        public static void Unbind(IRemoteEvent remoteEvent, SubscribeOptions options)
+        {
+            lock (gate)
+            {
+                int index = keyed.FindIndex(k => ReferenceEquals(k.Event, remoteEvent) && ReferenceEquals(k.Options, options));
+                if (index < 0)
+                {
+                    return;
+                }
+
+                keyed.RemoveAt(index);
+                foreach (RabbitMQService service in running)
+                {
+                    service.Unbind(remoteEvent, options);
+                }
             }
         }
 

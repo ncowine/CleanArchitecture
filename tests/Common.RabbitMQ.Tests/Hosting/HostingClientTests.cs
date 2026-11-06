@@ -226,7 +226,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("Only", Unreachable)
-                .Subscribe("AppA", "AppA.Events.#", "orders.*.saved"))))
+                .Subscribe("AppA"))))
             {
                 RabbitMQBus bus = client.Services.GetRequiredKeyedService<RabbitMQBus>("Only");
                 RabbitMQBusOptions options = client.Services.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get("Only");
@@ -234,11 +234,10 @@ namespace Common.RabbitMQ.Tests.Hosting
                 Assert.NotNull(bus);
                 SubscriptionOptions subscription = Assert.Single(options.Subscriptions);
                 Assert.Equal("AppA", subscription.Exchange);
-                Assert.Equal(new[] { "AppA.Events.#", "orders.*.saved" }, subscription.RoutingKeys);
             }
         }
 
-        private static void Configure(RabbitMQBusOptions options, TestBus bus)
+        internal static void Configure(RabbitMQBusOptions options, TestBus bus)
         {
             options.HostName = bus.Broker.HostName;
             options.Port = bus.Broker.Port;

@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Threading;
 using Common.RabbitMQ;
+using Messaging;
 using Poc.Legacy.Events;
 using Poc.Legacy.Events.Shapes;
 using Poc.Net472.Events;
@@ -149,14 +150,18 @@ public sealed class MainWindowViewModel : BindableBase
             EquipmentId = Selected!.Id,
             AssetTag = Selected.AssetTag,
             DisposedBy = me,
-        });
+        }, EquipmentKey);
     }
 
     private void FlagSelected()
     {
         // A tuple payload. Poc.Api.NoOutbox receives this; the real API doesn't handle it.
-        events.GetEvent<EquipmentFlagged>().PublishRemote((Selected!.Id, Selected.Name));
+        events.GetEvent<EquipmentFlagged>().PublishRemote((Selected!.Id, Selected.Name), EquipmentKey);
     }
+
+    // Disposals and flags share one routing key, so a subscriber binds "equipment" once for both. Notes keep the
+    // default key (this app's name, "Poc.Net472"). Subscribers bind the key when they subscribe (SubscribeOptions).
+    private static readonly PublishOptions EquipmentKey = new PublishOptions { RoutingKey = "equipment" };
 
     private void OnNote(EquipmentNote note)
     {

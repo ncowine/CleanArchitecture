@@ -127,7 +127,13 @@ namespace Common.RabbitMQ.Tests.Broker
         }
 
         /// <summary>Publishes as another application would, without either build: routed with the exchange name.</summary>
-        public async Task PublishRaw(IDictionary<string, object> headers, byte[] body)
+        public Task PublishRaw(IDictionary<string, object> headers, byte[] body)
+        {
+            return PublishRaw(headers, body, ExchangeName);
+        }
+
+        /// <summary>As <see cref="PublishRaw(IDictionary{string, object}, byte[])"/>, routed with <paramref name="routingKey"/>.</summary>
+        public async Task PublishRaw(IDictionary<string, object> headers, byte[] body, string routingKey)
         {
             BasicProperties properties = new BasicProperties
             {
@@ -136,7 +142,42 @@ namespace Common.RabbitMQ.Tests.Broker
                 Headers = headers,
             };
 
-            await channel.BasicPublishAsync(ExchangeName, ExchangeName, mandatory: false, basicProperties: properties, body: body).ConfigureAwait(false);
+            await channel.BasicPublishAsync(ExchangeName, routingKey, mandatory: false, basicProperties: properties, body: body).ConfigureAwait(false);
+        }
+
+        /// <summary>Whether a message sent to the test exchange with <paramref name="routingKey"/> reaches any queue.</summary>
+        public async Task<bool> IsRoutable(string routingKey)
+        {
+            CreateChannelOptions options = new CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true);
+            using (IChannel probe = await connection.CreateChannelAsync(options).ConfigureAwait(false))
+            {
+                try
+                {
+                    await probe.BasicPublishAsync(ExchangeName, routingKey, mandatory: true, basicProperties: new BasicProperties(), body: new byte[0]).ConfigureAwait(false);
+                    return true;
+                }
+                catch (PublishException ex) when (ex.IsReturn)
+                {
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>Waits until <see cref="IsRoutable"/> says <paramref name="expected"/>: bindings change in the background.</summary>
+        public async Task<bool> WaitUntilRoutable(string routingKey, bool expected)
+        {
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            while (stopwatch.Elapsed < Timeout)
+            {
+                if (await IsRoutable(routingKey).ConfigureAwait(false) == expected)
+                {
+                    return true;
+                }
+
+                await Task.Delay(50).ConfigureAwait(false);
+            }
+
+            return false;
         }
 
         /// <summary>Takes one message off <paramref name="queueName"/>, or null when it is empty.</summary>

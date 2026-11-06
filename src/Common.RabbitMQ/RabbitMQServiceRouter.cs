@@ -139,6 +139,7 @@ namespace Common.RabbitMQ
             foreach (KeyValuePair<string, RabbitMQService> pair in buses)
             {
                 pair.Value.Logger = Logger;
+                pair.Value.IsDefaultBus = pair.Key == DefaultBus;
                 pair.Value.Init(configs[pair.Key]);
             }
         }

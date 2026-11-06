@@ -10,19 +10,13 @@ namespace Messaging.RabbitMQ
     /// </summary>
     public sealed class SubscriptionOptions
     {
+        /// <summary>
+        /// The other application's exchange. It is bound with its name, the routing key its owner publishes with when it
+        /// sets none. Other keys are bound by subscribing with <see cref="Messaging.SubscribeOptions"/>.
+        /// </summary>
         public string Exchange { get; set; }
 
-        /// <summary>
-        /// Routing keys to bind: patterns for a topic exchange (<c>orders.*.saved</c>, <c>AppA.Events.#</c>), exact keys for a
-        /// direct exchange, anything for a fanout exchange. Empty means one binding keyed by <see cref="Exchange"/>, the routing
-        /// key its owner publishes every message with, as legacy applications do.
-        /// </summary>
-        public List<string> RoutingKeys { get; set; } = new List<string>();
-
-        /// <summary>
-        /// For a headers exchange: bind on these header values instead of routing keys. When set, <see cref="RoutingKeys"/>
-        /// is ignored.
-        /// </summary>
+        /// <summary>For a headers exchange: bind on these header values instead of the exchange's name.</summary>
         public Dictionary<string, string> HeaderMatch { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
         /// <summary>Headers exchange only: true when every header in <see cref="HeaderMatch"/> must match (x-match all), false for any.</summary>

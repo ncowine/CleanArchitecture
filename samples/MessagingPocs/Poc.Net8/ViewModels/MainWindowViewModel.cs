@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Threading;
 using Common.RabbitMQ;
+using Messaging;
 using Poc.Legacy.Events;
 using Poc.Legacy.Events.Shapes;
 using Poc.Net8.Events;
@@ -26,6 +27,9 @@ public sealed class MainWindowViewModel : BindableBase
     private readonly DispatcherTimer connectionWatch;
     private readonly ShapeEventsLog shapes;
     private readonly string me = $"net8 (pid {Environment.ProcessId})";
+
+    // What the net472 app sends its disposals and flags with: its exchange, the "equipment" key.
+    private static readonly SubscribeOptions EquipmentKey = new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment" };
     private bool wasConnected;
     private string connection = "Connecting…";
     private string noteText = "Battery swollen, keep it off the shelf";
@@ -50,8 +54,10 @@ public sealed class MainWindowViewModel : BindableBase
         // From the legacy apps: other net8 windows, the net472 app, and this window itself (PublishRemote also raises
         // the event locally; RabbitMQ never echoes it back).
         events.GetEvent<EquipmentNoteSent>().Subscribe(OnNote, ThreadOption.UIThread);
-        events.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, ThreadOption.UIThread);
-        events.GetEvent<EquipmentFlagged>().Subscribe(OnFlagged, ThreadOption.UIThread);
+        // The net472 app sends these two with the "equipment" routing key: subscribing with it binds the key, and the
+        // last of the two to unsubscribe removes the binding.
+        events.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, EquipmentKey, ThreadOption.UIThread);
+        events.GetEvent<EquipmentFlagged>().Subscribe(OnFlagged, EquipmentKey, ThreadOption.UIThread);
 
         // The ten shape events, from any legacy window (this one included). Kept in a field: Prism holds them weakly.
         shapes = new ShapeEventsLog(events, AddLog);
