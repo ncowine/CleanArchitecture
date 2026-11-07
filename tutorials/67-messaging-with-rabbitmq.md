@@ -284,11 +284,11 @@ included), and Equipment's events are dropped.
 **`src/Api/CleanArch.Api/Program.cs`** — the bus every event goes to:
 
 ```csharp
-var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
-if (messagingBus.Exists())
+if (builder.Configuration.GetSection("Messaging:Buses").Exists())
 {
-    builder.Services.AddMessaging(messaging => messaging
-        .AddBus("Main", messagingBus));
+    // One bus per Messaging:Buses entry, the default from Messaging:DefaultBus. Buses can't be added in code.
+    builder.Services.AddMessaging(builder.Configuration, messaging => messaging
+        .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));
 }
 ```
 
@@ -540,8 +540,7 @@ recipe C in the [messaging guide](../docs/messaging/README.md#c-a-modern-wpf-app
 
 ```csharp
 // App.xaml.cs
-builder.Services.AddMessaging(messaging => messaging
-    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main")));
+builder.Services.AddMessaging(builder.Configuration);   // Messaging:Buses and Messaging:DefaultBus
 
 // A view model
 public MainWindowViewModel(IMessageSubscriber subscriber)
@@ -752,9 +751,8 @@ When connecting a new event:
 ### The API, sending
 
 ```csharp
-// Program.cs — only when "Messaging:Buses:Main" is configured
-builder.Services.AddMessaging(m => m
-    .AddBus("Main", messagingBus));            // every event goes here, keyed by the exchange name
+// Program.cs — only when "Messaging:Buses" is configured
+builder.Services.AddMessaging(builder.Configuration);   // every event goes to Messaging:DefaultBus, keyed by the exchange name
 
 // Handler (inside the unit of work): the same event, both channels, both sent after the commit
 _events.Publish(created);                                                            // RabbitMQ
@@ -764,8 +762,7 @@ _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(Equipment
 ### A modern WPF app, receiving
 
 ```csharp
-services.AddMessaging(m => m
-    .AddBus("Main", configuration.GetSection("Messaging:Buses:Main")));
+services.AddMessaging(configuration);
 
 IDisposable sub = subscriber.Subscribe<EquipmentCreated>(OnCreated, SynchronizationContext.Current);
 ```
@@ -820,8 +817,8 @@ src/Messaging/
 ├── Directory.Build.props / Directory.Packages.props   build isolation and legacy package versions
 ├── Messaging.Abstractions/MessageAttribute.cs          [Message("wire name")]
 ├── Messaging.RabbitMQ/RabbitMQBus.cs                   the engine: Enqueue (buffered)
-├── Messaging.Hosting/MessagingServiceCollectionExtensions.cs   AddMessaging
-├── Messaging.Hosting/MessagingBuilder.cs               AddBus, Handle, Subscribe, AddMessages
+├── Messaging.Hosting/MessagingServiceCollectionExtensions.cs   AddMessaging(configuration): buses from Messaging:Buses
+├── Messaging.Hosting/MessagingBuilder.cs               AddHandlers, Subscribe, AddMessages
 ├── Messaging.Hosting/MessagePublisher.cs               IMessagePublisher
 └── Messaging.Hosting/IMessageSubscriber.cs             for desktop apps
 

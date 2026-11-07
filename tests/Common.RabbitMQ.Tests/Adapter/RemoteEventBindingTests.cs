@@ -78,19 +78,5 @@ namespace Common.RabbitMQ.Tests.Adapter
             }
         }
 
-        [Fact]
-        public void PublishRemote_OnAPlainEvent_IsRefused_UnlessItsAssemblyIsAdded()
-        {
-            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), new RemoteEventRegistry()))
-            {
-                service.Init(new RabbitMQConfig { BusName = "Main", ExchangeName = "binding-tests", ClientName = "binding-tests", HostName = "127.0.0.1", Port = 1 });
-                RabbitMQServiceProvider.Current = service;
-
-                ArgumentException error = Assert.Throws<ArgumentException>(() => new EventAggregator().GetEvent<OrderSaved>().PublishRemote(new Order { Id = 1 }));
-
-                Assert.Contains("local", error.Message);
-                Assert.Equal(0, service.OutstandingCount);
-            }
-        }
     }
 }

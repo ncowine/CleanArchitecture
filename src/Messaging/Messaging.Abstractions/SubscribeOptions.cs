@@ -1,3 +1,7 @@
+// Annotated for nullable-enabled callers: string? is optional, string is required. The project itself builds
+// with nullable disabled, as legacy apps share it.
+#nullable enable
+
 namespace Messaging
 {
     /// <summary>
@@ -18,15 +22,15 @@ namespace Messaging
     public sealed class SubscribeOptions
     {
         /// <summary>The bus to bind the key on. Null to find it from <see cref="Exchange"/>, as described above.</summary>
-        public string Bus { get; set; }
+        public string? Bus { get; set; }
 
         /// <summary>
         /// The exchange to bind the key on: usually another application's, which its owner declares. Null binds it on the
         /// bus's own exchange and on every exchange in its configured subscriptions.
         /// </summary>
-        public string Exchange { get; set; }
+        public string? Exchange { get; set; }
 
         /// <summary>The key, or a topic pattern such as <c>equipment.*</c>. Required.</summary>
-        public string RoutingKey { get; set; }
+        public string RoutingKey { get; set; } = null!;
     }
 }

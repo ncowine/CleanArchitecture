@@ -328,11 +328,19 @@ So the engine counts attempts itself. The broker's delivery limit stays on only 
 
 ### A. A legacy WPF app (.NET Framework 4.7.2, Prism events)
 
-Your events stay exactly as they are: plain Prism events, no attributes, no special base class.
+An event that travels derives from `RemotePubSubEvent<T>`; a plain `PubSubEvent<T>` stays inside the app. Apps don't
+share event assemblies: each declares its own class, and `[Message]` gives it the wire name the other side uses. Apps
+still on the old library change nothing: the wire name is their event's full type name.
 
 ```csharp
-public class OrderSaved : PubSubEvent<Order> { }
+[Message("AppA.Events.OrderSaved")]              // the old app's event: AppA.Events.OrderSaved : PubSubEvent<Order>
+public class OrderSaved : RemotePubSubEvent<Order> { }
+
+public class OrderSelected : PubSubEvent<Order> { }   // local only
 ```
+
+Without `[Message]` the wire name is the class's full name. Two events with one wire name in an app throw when the
+second is first used. The payload class only has to serialize to the same JSON.
 
 **1. Build the router, once, where the app starts:**
 
@@ -345,9 +353,7 @@ IConfiguration configuration = new ConfigurationBuilder()
 
 RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(
     eventAggregator,
-    configuration,                               // Messaging:Buses and Messaging:DefaultBus
-    typeof(OrderSaved).Assembly,                 // your app's events
-    typeof(UserChanged).Assembly);               // shared events (netstandard2.0)
+    configuration);                              // Messaging:Buses and Messaging:DefaultBus; events need no registration
 
 containerRegistry.RegisterInstance(router);
 containerRegistry.RegisterInstance<IRabbitMQService>(router);
@@ -355,7 +361,9 @@ router.Init();                                   // connects in the background
 ```
 
 To read `appsettings.json` the app needs the `Microsoft.Extensions.Configuration.Json` package (it supports .NET
-Framework 4.7.2). `RemoteEventRegistry` and `router.AddBus` are still there for an app that builds its buses in code.
+Framework 4.7.2). `FromConfiguration` is the only way to build the router: there is no public constructor or
+`AddBus`, so the buses and the default always come from `Messaging:Buses` and `Messaging:DefaultBus`. Register it with
+`RegisterInstance`, as above; the container can't construct it.
 
 **2. Configure appsettings.json**, the same `Messaging:Buses` section every app uses:
 
@@ -405,18 +413,18 @@ and when the last subscriber goes it is dropped again. The queue is bound once p
 routing key adds that key's binding while it lasts. A
 subscriber held weakly gives no signal when it is collected, so that one is noticed at the next message. A message that
 arrives while nothing is subscribed is missed.
-An assembly of plain events not yet moved over can still travel with `RemoteEventRegistry.Add`, but all its events are
-bound at startup, used or not. `[RemoteEvent("bus")]` is gone, so remove it when you take this version.
+`PublishRemote` and `PublishRemoteOnly` exist only on `RemotePubSubEvent<T>`, so calling them on a local event doesn't
+compile. `RemoteEventRegistry.Add` is gone. `[RemoteEvent("bus")]` is gone too, so remove it when you take this version.
 
 **Logging.** Set `Logger` on the router, or on a `RabbitMQService`, before `Init`. Any `ILogger` works:
 
 ```csharp
-router = new RabbitMQServiceRouter(eventAggregator, registry) { Logger = logger };
+router = RabbitMQServiceRouter.FromConfiguration(eventAggregator, configuration);
+router.Logger = logger;
 ```
 
 With no logger, messages go to Trace output. There's no `Log` event any more: an app that subscribed to it sets
-`Logger` instead. A property rather than a constructor argument, because DryIoc rejects types with several public
-constructors.
+`Logger` instead.
 
 ### B. A modern WPF app (.NET 8, plain classes, Prism style)
 
@@ -434,13 +442,7 @@ public class EmployeeSaved
 **2. Start messaging and connect it to Prism** (see `src/WpfApp.Net8/App.xaml.cs`):
 
 ```csharp
-MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
-    .AddBus("Modern", options =>
-    {
-        options.HostName = "localhost";
-        options.ExchangeName = "MyApp";
-        options.ClientName = "MyApp";
-    })
+MessagingClient client = MessagingClient.Create(services => services.AddMessaging(configuration, messaging => messaging
     .UseEventAggregator(eventAggregator)));        // raise received messages as MessageEvent<T>
 
 containerRegistry.RegisterInstance(client);
@@ -477,8 +479,7 @@ protected override async void OnStartup(StartupEventArgs e)
         ContentRootPath = AppContext.BaseDirectory,       // find appsettings.json next to the exe
     });
 
-    builder.Services.AddMessaging(messaging => messaging
-        .AddBus("Modern", builder.Configuration.GetSection("Messaging:Buses:Modern")));
+    builder.Services.AddMessaging(builder.Configuration);   // Messaging:Buses and Messaging:DefaultBus
     builder.Services.AddSingleton<MainWindowViewModel>();
     builder.Services.AddSingleton<MainWindow>();
 
@@ -538,14 +539,13 @@ public class EmployeeSavedHandler : IMessageHandler<EmployeeSaved>
 **2. Wire it up in `Program.cs`** (see `src/WebApi/Program.cs`):
 
 ```csharp
-builder.Services.AddMessaging(messaging => messaging
-    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
+builder.Services.AddMessaging(builder.Configuration, messaging => messaging   // Messaging:Buses and Messaging:DefaultBus
     .AddHandlers(typeof(EmployeeSavedHandler).Assembly));           // every IMessageHandler<T> in it
 ```
 
 **3. Publish from anywhere.** Nothing to register: a message goes to the default bus, keyed by the exchange name. The
-default is required, even with one bus: call `messaging.UseDefaultBus(configuration["Messaging:DefaultBus"])`, or the
-buses don't start. To send one message elsewhere, name the bus.
+default is required, even with one bus: set `Messaging:DefaultBus`, or `AddMessaging` throws. Buses come only from
+configuration; there is no way to add one in code. To send one message elsewhere, name the bus.
 
 ```csharp
 publisher.Publish(new EmployeeCacheRefreshed { ... });

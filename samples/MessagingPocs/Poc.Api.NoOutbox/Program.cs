@@ -26,9 +26,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // The queue is bound once per message type received: every IMessageHandler<T> AddHandlers finds, and every type passed to
 // Subscribe below.
-builder.Services.AddMessaging(messaging => messaging
-    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main"))
-    .UseDefaultBus(builder.Configuration["Messaging:DefaultBus"])
+builder.Services.AddMessaging(builder.Configuration, messaging => messaging   // Messaging:Buses and Messaging:DefaultBus
     .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));
 
 WebApplication app = builder.Build();

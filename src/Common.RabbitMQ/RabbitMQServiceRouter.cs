@@ -12,6 +12,7 @@ namespace Common.RabbitMQ
     /// <summary>
     /// The application's <see cref="IRabbitMQService"/>. Holds one <see cref="RabbitMQService"/> per configured bus and
     /// sends every event to the default bus. To send one elsewhere, name the bus: <c>PublishRemote(payload, new PublishOptions { Bus = "Partners" })</c>.
+    /// Built only by <see cref="FromConfiguration"/>, so the buses and the default always come from the <c>Messaging</c> section.
     /// </summary>
     public class RabbitMQServiceRouter : IRabbitMQService, IRoutingKeyPublisher
     {
@@ -21,7 +22,7 @@ namespace Common.RabbitMQ
         private readonly Dictionary<string, RabbitMQConfig> configs = new Dictionary<string, RabbitMQConfig>(StringComparer.OrdinalIgnoreCase);
         private bool initialized;
 
-        public RabbitMQServiceRouter(IEventAggregator eventAggregator, RemoteEventRegistry registry)
+        internal RabbitMQServiceRouter(IEventAggregator eventAggregator, RemoteEventRegistry registry)
         {
             this.eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
@@ -29,23 +30,17 @@ namespace Common.RabbitMQ
 
         /// <summary>
         /// Builds a router from the <c>Messaging</c> section of <paramref name="configuration"/>: one bus per entry in
-        /// <c>Buses</c> and the default from <c>DefaultBus</c>. <see cref="RemotePubSubEvent{TPayload}"/> events need nothing
-        /// more; <paramref name="eventAssemblies"/> are for plain events not yet moved to it (see <see cref="RemoteEventRegistry.Add"/>).
+        /// <c>Buses</c> and the default from <c>DefaultBus</c>. Events need no registration: every
+        /// <see cref="RemotePubSubEvent{TPayload}"/> can travel.
         /// </summary>
-        public static RabbitMQServiceRouter FromConfiguration(IEventAggregator eventAggregator, IConfiguration configuration, params Assembly[] eventAssemblies)
+        public static RabbitMQServiceRouter FromConfiguration(IEventAggregator eventAggregator, IConfiguration configuration)
         {
             if (configuration == null)
             {
                 throw new ArgumentNullException(nameof(configuration));
             }
 
-            RemoteEventRegistry registry = new RemoteEventRegistry();
-            foreach (Assembly assembly in eventAssemblies)
-            {
-                registry.Add(assembly);
-            }
-
-            RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, registry)
+            RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, new RemoteEventRegistry())
             {
                 DefaultBus = configuration["Messaging:DefaultBus"],
             };
@@ -69,15 +64,15 @@ namespace Common.RabbitMQ
         public ILogger Logger { get; set; }
 
         /// <summary>
-        /// The bus events go to when the publisher names none, usually <c>Messaging:DefaultBus</c> from configuration. Required,
-        /// even with one bus: set it before <see cref="Init"/>, which throws without it.
+        /// The bus events go to when the publisher names none: <c>Messaging:DefaultBus</c> from configuration. Required,
+        /// even with one bus: <see cref="Init"/> throws without it.
         /// </summary>
-        public string DefaultBus { get; set; }
+        public string DefaultBus { get; internal set; }
 
         public IReadOnlyCollection<RabbitMQService> Buses => buses.Values;
 
         /// <summary>Adds a bus. It connects when <see cref="Init"/> is called.</summary>
-        public RabbitMQService AddBus(RabbitMQConfig config)
+        internal RabbitMQService AddBus(RabbitMQConfig config)
         {
             if (config == null)
             {

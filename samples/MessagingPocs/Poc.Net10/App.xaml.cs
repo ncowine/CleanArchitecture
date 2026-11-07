@@ -68,10 +68,9 @@ public partial class App : Application
             // The bus logs through ILogger like everything else here; this provider also shows it in the window.
             builder.Logging.AddProvider(busLog);
 
-            builder.Services.AddMessaging(messaging => messaging
-                // Subscribing in the view model is all it takes: what nothing subscribes to is dropped on arrival.
-                .AddBus(BusName, builder.Configuration.GetSection($"Messaging:Buses:{BusName}"))
-                .UseDefaultBus(builder.Configuration["Messaging:DefaultBus"]));
+            // Messaging:Buses and Messaging:DefaultBus. Subscribing in the view model is all it takes: what nothing
+            // subscribes to is dropped on arrival.
+            builder.Services.AddMessaging(builder.Configuration);
         }
 
         builder.Services.AddSingleton<MainWindowViewModel>();

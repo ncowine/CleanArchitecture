@@ -18,15 +18,15 @@ namespace Common.RabbitMQ.Tests.Adapter
     }";
 
         [Fact]
-        public void AddsEveryBus_AndSendsTheAssemblysEventsToTheDefault()
+        public void AddsEveryBus_AndSendsEventsToTheDefault()
         {
             IConfiguration configuration = Load(@"""DefaultBus"": ""Second""," + Buses);
 
-            using (RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), configuration, typeof(OrderSaved).Assembly))
+            using (RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), configuration))
             {
                 router.Init();
 
-                router.Publish(typeof(OrderSaved), new Order { Id = 1 });
+                router.Publish(typeof(OrderPlaced), new Order { Id = 1 });
 
                 Assert.Equal(0, router.GetRequiredBus("First").OutstandingCount);
                 Assert.Equal(1, router.GetRequiredBus("Second").OutstandingCount);
@@ -36,7 +36,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void WithoutADefault_InitIsRefused()
         {
-            using (RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), Load(Buses), typeof(OrderSaved).Assembly))
+            using (RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), Load(Buses)))
             {
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => router.Init());
                 Assert.Contains("Messaging:DefaultBus", error.Message);

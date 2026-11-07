@@ -74,11 +74,11 @@ namespace Common.RabbitMQ.Tests.LegacyModel
 
         /// <summary>
         /// Starts an application on the current <c>Common.RabbitMQ</c> adapter with its own exchange named after
-        /// <paramref name="app"/> and its events registered by assembly.
+        /// <paramref name="app"/>. Its events are its own remote events, needing no registration.
         /// </summary>
-        public AdapterApp StartAdapter(string app, Action<global::Common.RabbitMQ.RabbitMQConfig> configure, params Assembly[] eventAssemblies)
+        public AdapterApp StartAdapter(string app, Action<global::Common.RabbitMQ.RabbitMQConfig> configure)
         {
-            AdapterApp instance = new AdapterApp(Broker, Exchange(app), app, configure, eventAssemblies);
+            AdapterApp instance = new AdapterApp(Broker, Exchange(app), app, configure);
             adapterApps.Add(instance);
             return instance;
         }

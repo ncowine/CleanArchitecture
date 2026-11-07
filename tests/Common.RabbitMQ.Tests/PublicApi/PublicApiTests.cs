@@ -34,6 +34,10 @@ namespace Common.RabbitMQ.Tests.PublicApi
 
             // PublishRemote takes PublishOptions instead of a service; PubSubEvent<T> covers RemotePubSubEvent<T> (ADR 0002, update 2026-11-04).
             "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Common.RabbitMQ.RemotePubSubEvent<TPayload>, TPayload, Common.RabbitMQ.IRabbitMQService = null) : System.Void",
+
+            // The router is built only by FromConfiguration: buses and the default come from the Messaging section (2026-11-07).
+            "ctor Common.RabbitMQ.RabbitMQServiceRouter(Prism.Events.IEventAggregator, Common.RabbitMQ.RemoteEventRegistry)",
+            "method Common.RabbitMQ.RabbitMQServiceRouter.AddBus(Common.RabbitMQ.RabbitMQConfig) : Common.RabbitMQ.RabbitMQService",
         };
 
         /// <summary>Public API added after the baseline, each for a reason recorded in ADR 0002.</summary>
@@ -45,15 +49,14 @@ namespace Common.RabbitMQ.Tests.PublicApi
 
             // The publisher picks the bus: a default from configuration, or a named one (ADR 0002, update 2026-11-04).
             "ctor Common.RabbitMQ.RemoteEventDescriptor(System.Type, System.Type)",
-            "property Common.RabbitMQ.RabbitMQServiceRouter.DefaultBus : System.String { get; set; }",
+            "property Common.RabbitMQ.RabbitMQServiceRouter.DefaultBus : System.String { get; }",
             "method Common.RabbitMQ.RabbitMQServiceRouter.GetRequiredBus(System.String) : Common.RabbitMQ.RabbitMQService",
 
             // Application startup in one call instead of a registry, a router and a loop over the configuration.
-            "method static Common.RabbitMQ.RabbitMQServiceRouter.FromConfiguration(Prism.Events.IEventAggregator, Microsoft.Extensions.Configuration.IConfiguration, System.Reflection.Assembly[]) : Common.RabbitMQ.RabbitMQServiceRouter",
+            "method static Common.RabbitMQ.RabbitMQServiceRouter.FromConfiguration(Prism.Events.IEventAggregator, Microsoft.Extensions.Configuration.IConfiguration) : Common.RabbitMQ.RabbitMQServiceRouter",
 
-            // Section 4: events found by assembly, plain PubSubEvent<T>.
-            "method Common.RabbitMQ.RemoteEventRegistry.Add(System.Reflection.Assembly) : Common.RabbitMQ.RemoteEventRegistry",
-            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Messaging.PublishOptions = null) : System.Void",
+            // Only RemotePubSubEvent<T> travels; [Message] sets its wire name, so apps share no event assemblies (2026-11-07).
+            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemote<TPayload>(Common.RabbitMQ.RemotePubSubEvent<TPayload>, TPayload, Messaging.PublishOptions = null) : System.Void",
 
             // Subscribing starts receiving the event (ADR 0002, updates 2026-11-04 and 2026-11-05).
             "method virtual Common.RabbitMQ.RemotePubSubEvent<TPayload>.Subscribe(System.Action<TPayload>, Prism.Events.ThreadOption, System.Boolean, System.Predicate<TPayload>) : Prism.Events.SubscriptionToken",
@@ -74,7 +77,7 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "method Common.RabbitMQ.RabbitMQServiceRouter.Publish(System.Type, System.Object, System.String) : System.Void",
 
             // Remote only: send to other applications without raising the event locally.
-            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemoteOnly<TPayload>(Prism.Events.PubSubEvent<TPayload>, TPayload, Messaging.PublishOptions = null) : System.Void",
+            "method static Common.RabbitMQ.RemotePubSubEventExtensions.PublishRemoteOnly<TPayload>(Common.RabbitMQ.RemotePubSubEvent<TPayload>, TPayload, Messaging.PublishOptions = null) : System.Void",
 
             // Section 2: exchange type and subscriptions.
             "property Common.RabbitMQ.RabbitMQConfig.ExchangeType : System.String { get; set; }",
@@ -109,13 +112,20 @@ namespace Common.RabbitMQ.Tests.PublicApi
                 "Unapproved additions:\n  " + string.Join("\n  ", unapproved) + "\nApproved but not found:\n  " + string.Join("\n  ", missing));
         }
 
-        [Theory]
-        [InlineData(typeof(RabbitMQService))]
-        [InlineData(typeof(RabbitMQServiceRouter))]
-        public void ExactlyOnePublicConstructor(System.Type type)
+        [Fact]
+        public void ServiceHasExactlyOnePublicConstructor()
         {
             // DryIoc rejects types with several public constructors, so adding one breaks resolution at runtime (ADR 0001).
-            Assert.Single(type.GetConstructors(BindingFlags.Public | BindingFlags.Instance));
+            Assert.Single(typeof(RabbitMQService).GetConstructors(BindingFlags.Public | BindingFlags.Instance));
+        }
+
+        [Fact]
+        public void RouterIsBuiltOnlyFromConfiguration()
+        {
+            // No constructor and no AddBus: an app can't assemble buses by hand and get them subtly wrong.
+            Assert.Empty(typeof(RabbitMQServiceRouter).GetConstructors(BindingFlags.Public | BindingFlags.Instance));
+            Assert.Null(typeof(RabbitMQServiceRouter).GetMethod(nameof(RabbitMQServiceRouter.AddBus), BindingFlags.Public | BindingFlags.Instance));
+            Assert.Null(typeof(RabbitMQServiceRouter).GetProperty(nameof(RabbitMQServiceRouter.DefaultBus)).GetSetMethod());
         }
 
         [Fact]

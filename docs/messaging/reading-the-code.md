@@ -28,7 +28,7 @@ calls on it, and back.
 
 ```
 services.AddMessaging(...)                 MessagingServiceCollectionExtensions.AddMessaging
-  └─ messaging.AddBus("Main", section)     MessagingBuilder.AddBus
+  └─ one bus per Messaging:Buses entry     MessagingBuilder.AddBus (internal)
        ├─ named options for the bus        AddOptions<RabbitMQBusOptions>("Main").Bind(section)
        └─ the bus itself, created lazily   AddKeyedSingleton("Main", ... CreateBus)
 host starts
@@ -40,7 +40,7 @@ host starts
 A desktop app without the .NET Generic Host uses `MessagingClient.Create(...)`, which builds the same services and
 calls the hosted service's `StartAsync` itself.
 
-**Legacy apps** (`Common.RabbitMQ`): `RabbitMQServiceRouter.AddBus(config)` makes one `RabbitMQService` per bus.
+**Legacy apps** (`Common.RabbitMQ`): `RabbitMQServiceRouter.FromConfiguration` makes one `RabbitMQService` per `Messaging:Buses` entry (its only way in).
 `RabbitMQService.Init` turns the `RabbitMQConfig` into `RabbitMQBusOptions` (`CreateOptions`), creates the
 `RabbitMQBus` and starts it.
 
