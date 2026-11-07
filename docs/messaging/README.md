@@ -353,7 +353,8 @@ IConfiguration configuration = new ConfigurationBuilder()
 
 RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(
     eventAggregator,
-    configuration);                              // Messaging:Buses and Messaging:DefaultBus; events need no registration
+    configuration,                               // Messaging:Buses and Messaging:DefaultBus; events need no registration
+    logger);                                     // any ILogger; NullLogger.Instance for none
 
 containerRegistry.RegisterInstance(router);
 containerRegistry.RegisterInstance<IRabbitMQService>(router);
@@ -416,15 +417,15 @@ arrives while nothing is subscribed is missed.
 `PublishRemote` and `PublishRemoteOnly` exist only on `RemotePubSubEvent<T>`, so calling them on a local event doesn't
 compile. `RemoteEventRegistry.Add` is gone. `[RemoteEvent("bus")]` is gone too, so remove it when you take this version.
 
-**Logging.** Set `Logger` on the router, or on a `RabbitMQService`, before `Init`. Any `ILogger` works:
+**Logging.** The logger is passed in, and it's required. Any `ILogger` works:
 
 ```csharp
-router = RabbitMQServiceRouter.FromConfiguration(eventAggregator, configuration);
-router.Logger = logger;
+router = RabbitMQServiceRouter.FromConfiguration(eventAggregator, configuration, logger);
+router = RabbitMQServiceRouter.FromConfiguration(eventAggregator, configuration, NullLogger.Instance);  // no logging
 ```
 
-With no logger, messages go to Trace output. There's no `Log` event any more: an app that subscribed to it sets
-`Logger` instead.
+A `RabbitMQService` built on its own takes it as its third constructor argument. Nothing is written to Trace any more,
+and there's no `Log` event: an app that used either passes a logger instead.
 
 ### B. A modern WPF app (.NET 8, plain classes, Prism style)
 

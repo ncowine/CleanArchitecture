@@ -22,6 +22,7 @@ namespace Common.RabbitMQ
     {
         private readonly IEventAggregator eventAggregator;
         private readonly RemoteEventRegistry registry;
+        private readonly ILogger logger;
         private readonly string instanceId = Guid.NewGuid().ToString("N");
         private readonly ConcurrentDictionary<string, bool> registeredQueues = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
 
@@ -29,17 +30,13 @@ namespace Common.RabbitMQ
         private RabbitMQBus bus;
         private bool disposed;
 
-        public RabbitMQService(IEventAggregator eventAggregator, RemoteEventRegistry registry)
+        /// <param name="logger">Receives connection and error messages. Required: pass <c>NullLogger.Instance</c> for none.</param>
+        public RabbitMQService(IEventAggregator eventAggregator, RemoteEventRegistry registry, ILogger logger)
         {
             this.eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
+            this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
-
-        /// <summary>
-        /// Receives connection and error messages. Set it before <see cref="Init"/>. Null writes them to Trace. A property,
-        /// not a constructor argument: DryIoc rejects types with several public constructors (ADR 0001).
-        /// </summary>
-        public ILogger Logger { get; set; }
 
         public string BusName => config?.BusName;
 
@@ -80,8 +77,6 @@ namespace Common.RabbitMQ
             }
 
             this.config = config;
-
-            ILogger logger = Logger ?? TraceLogger.Instance;
 
             bus = new RabbitMQBus(CreateOptions(config), NewtonsoftMessageSerializer.Instance, new PrismDispatcher(eventAggregator, registry), logger);
 
@@ -191,7 +186,7 @@ namespace Common.RabbitMQ
             }
             catch (InvalidOperationException ex)
             {
-                (Logger ?? TraceLogger.Instance).LogError(ex, "[{Bus}] Routing key '{RoutingKey}' is not bound: {Error}", config.BusName, options.RoutingKey, ex.Message);
+                logger.LogError(ex, "[{Bus}] Routing key '{RoutingKey}' is not bound: {Error}", config.BusName, options.RoutingKey, ex.Message);
             }
         }
 

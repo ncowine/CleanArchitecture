@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.Reflection;
 using Messaging;
@@ -75,7 +76,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         /// <summary>First (default) owns "first"; Second owns "second" and subscribes to "second-app"; both subscribe to "OldApp".</summary>
         private static RabbitMQServiceRouter Router(EventAggregator events = null)
         {
-            RabbitMQServiceRouter router = new RabbitMQServiceRouter(events ?? new EventAggregator(), new RemoteEventRegistry()) { DefaultBus = "First" };
+            RabbitMQServiceRouter router = new RabbitMQServiceRouter(events ?? new EventAggregator(), new RemoteEventRegistry(), NullLogger.Instance) { DefaultBus = "First" };
             RabbitMQConfig first = Config("First");
             first.Subscriptions.Add(new RabbitMQSubscription { Exchange = "OldApp" });
             RabbitMQConfig second = Config("Second");

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using AppA.Events;
 using Common.Events;
@@ -32,7 +33,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void APlainEvent_StaysLocal()
         {
-            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), new RemoteEventRegistry()))
+            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), new RemoteEventRegistry(), NullLogger.Instance))
             {
                 service.Init(UnreachableConfig("Main"));
 
@@ -44,7 +45,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void TwoEventsWithOneWireName_AreRefused()
         {
-            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), new RemoteEventRegistry()))
+            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), new RemoteEventRegistry(), NullLogger.Instance))
             {
                 service.Init(UnreachableConfig("Main"));
                 service.Publish(typeof(OrderPlaced), new Order());
@@ -68,7 +69,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         public void Router_WithoutADefault_IsRefusedAtInit_EvenWithOneBus()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry();
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry))
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry, NullLogger.Instance))
             {
                 RabbitMQService only = router.AddBus(UnreachableConfig("Only"));
 
@@ -83,7 +84,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         public void Router_SendsToTheDefaultBus()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry();
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry) { DefaultBus = "Second" })
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry, NullLogger.Instance) { DefaultBus = "Second" })
             {
                 RabbitMQService first = router.AddBus(UnreachableConfig("First"));
                 RabbitMQService second = router.AddBus(UnreachableConfig("Second"));
@@ -101,7 +102,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         public void PublishRemote_ToANamedBus_OverridesTheDefault()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry();
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry) { DefaultBus = "Second" })
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry, NullLogger.Instance) { DefaultBus = "Second" })
             {
                 RabbitMQService first = router.AddBus(UnreachableConfig("First"));
                 RabbitMQService second = router.AddBus(UnreachableConfig("Second"));
@@ -121,7 +122,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         public void PublishRemote_ToAnUnknownBus_ThrowsBeforeRaisingLocally()
         {
             RemoteEventRegistry registry = new RemoteEventRegistry();
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry) { DefaultBus = "Only" })
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), registry, NullLogger.Instance) { DefaultBus = "Only" })
             {
                 RabbitMQService only = router.AddBus(UnreachableConfig("Only"));
                 router.Init();
@@ -151,7 +152,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void Router_GetRequiredBus_UnknownName_Throws()
         {
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry()))
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry(), NullLogger.Instance))
             {
                 router.AddBus(UnreachableConfig("Only"));
 
@@ -163,7 +164,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void Router_UnknownDefaultBus_FailsAtInit()
         {
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry()) { DefaultBus = "Mistyped" })
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry(), NullLogger.Instance) { DefaultBus = "Mistyped" })
             {
                 router.AddBus(UnreachableConfig("Only"));
 

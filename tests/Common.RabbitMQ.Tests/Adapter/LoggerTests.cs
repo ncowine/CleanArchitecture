@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Prism.Events;
 using Xunit;
@@ -12,11 +13,11 @@ namespace Common.RabbitMQ.Tests.Adapter
     public class LoggerTests
     {
         [Fact]
-        public async Task RouterLogger_GetsTheAdaptersAndTheBusesMessages_AtTheirLevels()
+        public async Task TheRoutersLogger_GetsTheAdaptersAndTheBusesMessages_AtTheirLevels()
         {
             RecordingLogger logger = new RecordingLogger();
 
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry()) { Logger = logger, DefaultBus = "Main" })
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry(), logger) { DefaultBus = "Main" })
             {
                 router.AddBus(new RabbitMQConfig { BusName = "Main", ExchangeName = "logger-test", ClientName = "logger-test", Port = 1 });
                 router.Init();
@@ -38,15 +39,11 @@ namespace Common.RabbitMQ.Tests.Adapter
         }
 
         [Fact]
-        public void ServiceWithoutALogger_StillInitializes()
+        public void ALogger_IsRequired()
         {
-            // Messages go to Trace, so an app that sets no logger needs no change.
-            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), new RemoteEventRegistry()))
-            {
-                service.Init(new RabbitMQConfig { BusName = "Main", ExchangeName = "logger-test", ClientName = "logger-test", Port = 1 });
-
-                Assert.Null(service.Logger);
-            }
+            // No silent fallback: an app that wants no logging says so with NullLogger.Instance.
+            Assert.Throws<ArgumentNullException>(() => new RabbitMQService(new EventAggregator(), new RemoteEventRegistry(), null));
+            Assert.Throws<ArgumentNullException>(() => RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), new ConfigurationBuilder().Build(), null));
         }
     }
 }

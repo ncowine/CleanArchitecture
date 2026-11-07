@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using Common.RabbitMQ.Tests.Broker;
 using Prism.Events;
@@ -31,7 +32,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             };
             configure?.Invoke(config);
 
-            service = new RabbitMQService(eventAggregator, new RemoteEventRegistry());
+            service = new RabbitMQService(eventAggregator, new RemoteEventRegistry(), NullLogger.Instance);
             service.Init(config);
             ExchangeName = exchangeName;
         }
