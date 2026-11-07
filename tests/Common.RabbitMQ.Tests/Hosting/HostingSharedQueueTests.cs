@@ -29,12 +29,13 @@ namespace Common.RabbitMQ.Tests.Hosting
                     ["Messaging:Buses:Legacy:MaxAttempts"] = "4",
                     ["Messaging:Buses:Legacy:RetryDelay"] = "00:00:02",
                     ["Messaging:Buses:Legacy:DeliveryLimit"] = "7",
+                    ["Messaging:DefaultBus"] = "Legacy",
                 })
                 .Build();
 
             ServiceCollection services = new ServiceCollection();
             services.AddLogging();
-            services.AddMessaging(messaging => messaging.AddBus("Legacy", configuration.GetSection("Messaging:Buses:Legacy")).UseDefaultBus("Legacy"));
+            services.AddMessaging(configuration);
 
             using (ServiceProvider provider = services.BuildServiceProvider())
             {

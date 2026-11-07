@@ -59,12 +59,10 @@ builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 // "Messaging" section none of this runs, Equipment's events are dropped, and everything else — SignalR included —
 // works exactly as before. Every event published goes to this one bus under its
 // wire name; command handlers never see a transport.
-var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
-if (messagingBus.Exists())
+if (builder.Configuration.GetSection("Messaging:Buses").Exists())
 {
-    builder.Services.AddMessaging(messaging => messaging
-        .AddBus("Main", messagingBus)
-        .UseDefaultBus(builder.Configuration["Messaging:DefaultBus"])
+    // Messaging:Buses and Messaging:DefaultBus.
+    builder.Services.AddMessaging(builder.Configuration, messaging => messaging
         // Every IMessageHandler<T> in Equipment, e.g. EquipmentDisposed from a legacy desktop app's exchange
         // (Subscriptions in appsettings), on the API's shared, retried queue.
         .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));

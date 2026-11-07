@@ -131,18 +131,18 @@ other projects translate between your code and that engine. It lives in `src/Mes
 
 ### Bus, handler, subscriber
 
-Three words cover the configuration. All of it happens in one `AddMessaging` call:
+Three words cover the configuration. All of it happens in one `AddMessaging` call, which adds the buses from
+`Messaging:Buses` and the default from `Messaging:DefaultBus`. There is no way to add a bus in code:
 
 ```csharp
-services.AddMessaging(messaging => messaging
-    .AddBus("Main", config.GetSection("Messaging:Buses:Main"))  // a connection + this app's exchange
+services.AddMessaging(config, messaging => messaging           // one bus per Messaging:Buses entry
     .AddHandlers(typeof(OrderSavedHandler).Assembly)            // every IMessageHandler<T> in it, on every bus
     .Subscribe("OtherApp", "OtherApp.Events.#"));               // also receive from another app's exchange
 ```
 
 - **Bus**: one connection to a broker plus this app's own exchange. An app can have several; the API has one, `Main`.
 - **Publishing** needs no registration: a message goes to the default bus, with the exchange name as the routing key and its wire name in the `event-type` header.
-  `UseDefaultBus` picks it from `Messaging:DefaultBus`, which is required even with one bus.
+  `Messaging:DefaultBus` names it, and is required even with one bus.
   `PublishOptions.Bus` and `PublishOptions.RoutingKey` override them for one call. The API always uses the default.
 - **Handler**: an `IMessageHandler<T>` class, resolved in its own DI scope for every received message. For servers.
 - **Subscriber**: `IMessageSubscriber.Subscribe<T>(callback)` at runtime, for view models and other code that isn't a
@@ -235,11 +235,10 @@ The host wires it up in `Program.cs`. This is the one place that decides *where*
 the one event the API receives is left out here; see the MessagingPocs README):
 
 ```csharp
-var messagingBus = builder.Configuration.GetSection("Messaging:Buses:Main");
-if (messagingBus.Exists())
+if (builder.Configuration.GetSection("Messaging:Buses").Exists())
 {
-    builder.Services.AddMessaging(messaging => messaging
-        .AddBus("Main", messagingBus));
+    builder.Services.AddMessaging(builder.Configuration, messaging => messaging
+        .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));
 }
 ```
 
@@ -307,8 +306,7 @@ The Generic Host runs messaging as a hosted service, and view models subscribe w
 
 ```csharp
 // App startup
-builder.Services.AddMessaging(messaging => messaging
-    .AddBus("Main", builder.Configuration.GetSection("Messaging:Buses:Main")));
+builder.Services.AddMessaging(builder.Configuration);   // Messaging:Buses and Messaging:DefaultBus
 
 // View model, created on the UI thread
 _ui = SynchronizationContext.Current;
@@ -323,8 +321,7 @@ foreach (var s in _subscriptions) s.Dispose();   // strong references: always un
 `MessagingClient` hosts messaging inside a Prism app, and `UseEventAggregator` raises each message as a Prism event:
 
 ```csharp
-var client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
-    .AddBus("Main", configuration.GetSection("Messaging:Buses:Main"))
+var client = MessagingClient.Create(services => services.AddMessaging(configuration, messaging => messaging
     .UseEventAggregator(eventAggregator)));
 
 eventAggregator.GetEvent<MessageEvent<EquipmentCreated>>()

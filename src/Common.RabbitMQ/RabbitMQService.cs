@@ -87,14 +87,11 @@ namespace Common.RabbitMQ
 
             int subscribedEvents = RemoteEventSubscriptions.Join(this);
 
-            List<MessageRegistration> registrations = registry.BoundAtStart
-                .Select(d => new MessageRegistration(d.EventName, d.PayloadType))
-                .ToList();
-
-            bus.Start(registrations);
+            // Events are received once subscribed to: nothing is bound up front.
+            bus.Start(new List<MessageRegistration>());
 
             logger.LogInformation("[{Bus}] Initialized with {Count} event(s) on {Host}:{Port}{VirtualHost} exchange '{Exchange}'.",
-                config.BusName, registrations.Count + subscribedEvents, config.HostName, config.Port, FormatVirtualHost(config.VirtualHost), config.ExchangeName);
+                config.BusName, subscribedEvents, config.HostName, config.Port, FormatVirtualHost(config.VirtualHost), config.ExchangeName);
         }
 
         /// <summary>

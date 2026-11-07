@@ -11,10 +11,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Messaging.Hosting
 {
     /// <summary>
-    /// Configures messaging in <see cref="MessagingServiceCollectionExtensions.AddMessaging"/>:
+    /// Configures messaging in <see cref="MessagingServiceCollectionExtensions.AddMessaging(IServiceCollection, IConfiguration, Action{MessagingBuilder})"/>,
+    /// which has already added the buses and the default from configuration:
     /// <code><![CDATA[
-    /// messaging.AddBus("Legacy", configuration.GetSection("Messaging:Buses:Legacy"));
-    /// messaging.UseDefaultBus(configuration["Messaging:DefaultBus"]);   // required
     /// messaging.AddHandlers(typeof(EmployeeSavedHandler).Assembly);   // every IMessageHandler<T> in it, every bus
     /// messaging.AddHandlers(typeof(OrderSavedHandler).Assembly, "Modern");   // ...or only some buses
     /// messaging.AddMessages(typeof(OrderSaved).Assembly);      // receive every [Message] type in it, wanted or not
@@ -37,7 +36,7 @@ namespace Messaging.Hosting
         internal MessagingRegistry Registry { get; }
 
         /// <param name="serializer">Null for System.Text.Json (<see cref="SystemTextJsonMessageSerializer"/>).</param>
-        public MessagingBuilder AddBus(string name, IConfiguration section, IMessageSerializer serializer = null)
+        internal MessagingBuilder AddBus(string name, IConfiguration section, IMessageSerializer serializer = null)
         {
             if (section == null)
             {
@@ -50,7 +49,7 @@ namespace Messaging.Hosting
         }
 
         /// <param name="serializer">Null for System.Text.Json (<see cref="SystemTextJsonMessageSerializer"/>).</param>
-        public MessagingBuilder AddBus(string name, Action<RabbitMQBusOptions> configure, IMessageSerializer serializer = null)
+        internal MessagingBuilder AddBus(string name, Action<RabbitMQBusOptions> configure, IMessageSerializer serializer = null)
         {
             if (configure == null)
             {
@@ -63,10 +62,10 @@ namespace Messaging.Hosting
         }
 
         /// <summary>
-        /// Picks the bus messages go to when the publisher names none, usually <c>Messaging:DefaultBus</c> from configuration.
+        /// Picks the bus messages go to when the publisher names none: <c>Messaging:DefaultBus</c> from configuration.
         /// Required, even with one bus: the buses don't start without it.
         /// </summary>
-        public MessagingBuilder UseDefaultBus(string name)
+        internal MessagingBuilder UseDefaultBus(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
             {

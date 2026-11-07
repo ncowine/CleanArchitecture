@@ -29,9 +29,9 @@ namespace Common.RabbitMQ.Tests.Adapter
             EventAggregator eventAggregator = new EventAggregator();
             RecordingService service = Use(new RecordingService());
             int local = 0;
-            eventAggregator.GetEvent<OrderSaved>().Subscribe(_ => local++);
+            eventAggregator.GetEvent<OrderPlaced>().Subscribe(_ => local++);
 
-            eventAggregator.GetEvent<OrderSaved>().PublishRemote(new Order());
+            eventAggregator.GetEvent<OrderPlaced>().PublishRemote(new Order());
 
             Assert.Single(service.Sent);
             Assert.Equal(1, local);
@@ -43,11 +43,11 @@ namespace Common.RabbitMQ.Tests.Adapter
             EventAggregator eventAggregator = new EventAggregator();
             RecordingService service = Use(new RecordingService());
             int local = 0;
-            eventAggregator.GetEvent<OrderSaved>().Subscribe(_ => local++);
+            eventAggregator.GetEvent<OrderPlaced>().Subscribe(_ => local++);
 
-            eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnly(new Order());
+            eventAggregator.GetEvent<OrderPlaced>().PublishRemoteOnly(new Order());
 
-            Assert.Equal(new KeyValuePair<Type, string>(typeof(OrderSaved), null), Assert.Single(service.Sent));
+            Assert.Equal(new KeyValuePair<Type, string>(typeof(OrderPlaced), null), Assert.Single(service.Sent));
             Assert.Equal(0, local);
         }
 
@@ -71,11 +71,11 @@ namespace Common.RabbitMQ.Tests.Adapter
             EventAggregator eventAggregator = new EventAggregator();
             RecordingService service = Use(new RecordingService());
             int local = 0;
-            eventAggregator.GetEvent<OrderSaved>().Subscribe(_ => local++);
+            eventAggregator.GetEvent<OrderPlaced>().Subscribe(_ => local++);
 
-            eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnly(new Order(), new PublishOptions { RoutingKey = "orders.eu.saved" });
+            eventAggregator.GetEvent<OrderPlaced>().PublishRemoteOnly(new Order(), new PublishOptions { RoutingKey = "orders.eu.saved" });
 
-            Assert.Equal(new KeyValuePair<Type, string>(typeof(OrderSaved), "orders.eu.saved"), Assert.Single(service.Sent));
+            Assert.Equal(new KeyValuePair<Type, string>(typeof(OrderPlaced), "orders.eu.saved"), Assert.Single(service.Sent));
             Assert.Equal(0, local);
         }
 
@@ -86,7 +86,7 @@ namespace Common.RabbitMQ.Tests.Adapter
             Use(new PublishOnlyService());
 
             Assert.Throws<NotSupportedException>(() =>
-                eventAggregator.GetEvent<OrderSaved>().PublishRemoteOnly(new Order(), new PublishOptions { RoutingKey = "orders.eu.saved" }));
+                eventAggregator.GetEvent<OrderPlaced>().PublishRemoteOnly(new Order(), new PublishOptions { RoutingKey = "orders.eu.saved" }));
         }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
+using Messaging;
 using Prism.Events;
 
 namespace Common.RabbitMQ
@@ -20,13 +21,17 @@ namespace Common.RabbitMQ
         {
             EventType = eventType;
             PayloadType = payloadType;
-            EventName = eventType.FullName;
+            EventName = eventType.GetCustomAttribute<MessageAttribute>(inherit: false)?.WireName ?? eventType.FullName;
 
             getEventMethod = getEventDefinition.MakeGenericMethod(eventType);
             publishMethod = eventType.GetMethod(nameof(PubSubEvent<object>.Publish), new[] { payloadType });
         }
 
-        /// <summary>The event's full type name; used as routing key and event-type header.</summary>
+        /// <summary>
+        /// The wire name, sent in the event-type header: the event's <see cref="MessageAttribute"/> name, else its full type
+        /// name. Set <c>[Message("OtherApp.Events.OrderSaved")]</c> to exchange an event with an app that declares its own
+        /// class, instead of sharing an event assembly.
+        /// </summary>
         public string EventName { get; }
 
         public Type EventType { get; }

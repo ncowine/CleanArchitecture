@@ -20,4 +20,9 @@
     <ProjectReference Include="..\Messaging.RabbitMQ\Messaging.RabbitMQ.csproj" />
   </ItemGroup>
 
+  <!-- Apps add buses only from configuration; the tests add them by hand. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Common.RabbitMQ.Tests" />
+  </ItemGroup>
+
 </Project>

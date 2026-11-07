@@ -81,7 +81,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             }, async (topology, host) =>
             {
                 PubSubEvent<CompatMessage> messageEvent = eventAggregator.GetEvent<MessageEvent<CompatMessage>>();
-                SubscriptionToken token = messageEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
+                Prism.Events.SubscriptionToken token = messageEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
                 Assert.True(await IsReceived(topology, sink));
 
                 IDisposable subscription = host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { });

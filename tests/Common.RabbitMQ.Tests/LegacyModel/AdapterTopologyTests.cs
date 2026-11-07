@@ -12,7 +12,8 @@ namespace Common.RabbitMQ.Tests.LegacyModel
 {
     /// <summary>
     /// The current <c>Common.RabbitMQ</c> adapter in the ADR 0002 topology (delivery plan step 7), against the legacy
-    /// model: plain <see cref="Prism.Events.PubSubEvent{TPayload}"/> events registered by assembly, own exchange, subscriptions, routing keys.
+    /// model: the legacy apps keep their plain <see cref="Prism.Events.PubSubEvent{TPayload}"/> events; the adapter apps declare
+    /// their own remote events with the same wire names (<see cref="RemoteOrderSaved"/>). Own exchange, subscriptions, routing keys.
     /// </summary>
     public class AdapterTopologyTests
     {
@@ -29,18 +30,18 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         private static readonly Assembly SharedEvents = typeof(UserChanged).Assembly;
 
         [Fact]
-        public async Task PlainEvents_AdapterOwner_LegacySubscriberReceives_SenderNotEchoed()
+        public async Task AdapterOwner_LegacySubscriberReceives_SenderNotEchoed()
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
-                AdapterApp owner = topology.StartAdapter(AppA, null, AppAEvents);
-                Received<Order> sent = owner.Listen<OrderSaved, Order>();
+                AdapterApp owner = topology.StartAdapter(AppA, null);
+                Received<Order> sent = owner.Listen<RemoteOrderSaved, Order>();
                 LegacyApp subscriber = topology.Start(AppB, new[] { AppA }, AppBEvents, AppAEvents);
                 Received<Order> atSubscriber = subscriber.Listen<OrderSaved, Order>();
                 await topology.WaitUntilConnected(owner);
                 await topology.WaitUntilConnected(subscriber);
 
-                owner.PublishRemote<OrderSaved, Order>(GoldenOrder());
+                owner.PublishRemote<RemoteOrderSaved, Order>(GoldenOrder());
 
                 Assert.Equal(1, sent.Count);
                 AssertGolden(await atSubscriber.Next(TestBus.Timeout));
@@ -59,10 +60,8 @@ namespace Common.RabbitMQ.Tests.LegacyModel
 
                 AdapterApp subscriber = topology.StartAdapter(
                     AppB,
-                    config => config.Subscriptions.Add(new RabbitMQSubscription { Exchange = topology.Exchange(AppA) }),
-                    AppBEvents,
-                    AppAEvents);
-                Received<Order> atSubscriber = subscriber.Listen<OrderSaved, Order>();
+                    config => config.Subscriptions.Add(new RabbitMQSubscription { Exchange = topology.Exchange(AppA) }));
+                Received<Order> atSubscriber = subscriber.Listen<RemoteOrderSaved, Order>();
                 await topology.WaitUntilConnected(subscriber);
 
                 owner.PublishRemote<OrderSaved, Order>(GoldenOrder());
@@ -76,8 +75,8 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
-                AdapterApp owner = topology.StartAdapter(AppA, null, AppAEvents);
-                Received<Order> sent = owner.Listen<OrderSaved, Order>();
+                AdapterApp owner = topology.StartAdapter(AppA, null);
+                Received<Order> sent = owner.Listen<RemoteOrderSaved, Order>();
                 CoreApp patternSubscriber = topology.CreateCore(AppB, options => options.Subscriptions.Add(new SubscriptionOptions
                 {
                     Exchange = topology.Exchange(AppA),
@@ -91,7 +90,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 await topology.WaitUntilConnected(patternSubscriber);
                 await topology.WaitUntilConnected(legacySubscriber);
 
-                owner.PublishRemoteTo<OrderSaved, Order>("orders.eu.saved", GoldenOrder());
+                owner.PublishRemoteTo<RemoteOrderSaved, Order>("orders.eu.saved", GoldenOrder());
 
                 Assert.Equal(1, sent.Count);
                 AssertGolden(await atPatternSubscriber.Next(TestBus.Timeout));
@@ -101,17 +100,17 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         }
 
         [Fact]
-        public async Task SharedNetStandardEvents_TravelBetweenAdapterAndLegacyModel()
+        public async Task SharedEvents_TravelBetweenAdapterAndLegacyModel_ByWireName()
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
-                AdapterApp sender = topology.StartAdapter(AppB, null, AppBEvents, SharedEvents);
+                AdapterApp sender = topology.StartAdapter(AppB, null);
                 LegacyApp subscriber = topology.Start(AppA, new[] { AppB }, AppAEvents, SharedEvents);
                 Received<User> atSubscriber = subscriber.Listen<UserChanged, User>();
                 await topology.WaitUntilConnected(sender);
                 await topology.WaitUntilConnected(subscriber);
 
-                sender.PublishRemote<UserChanged, User>(new User { Id = 7, Name = "shared", UpdatedAt = new DateTime(2026, 9, 26, 10, 15, 30, DateTimeKind.Utc) });
+                sender.PublishRemote<RemoteUserChanged, User>(new User { Id = 7, Name = "shared", UpdatedAt = new DateTime(2026, 9, 26, 10, 15, 30, DateTimeKind.Utc) });
 
                 Assert.Equal("shared", (await atSubscriber.Next(TestBus.Timeout))?.Name);
             }
@@ -122,7 +121,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
-                AdapterApp owner = topology.StartAdapter(AppA, config => config.ExchangeType = "direct", AppAEvents);
+                AdapterApp owner = topology.StartAdapter(AppA, config => config.ExchangeType = "direct");
                 await topology.WaitUntilConnected(owner);
 
                 Assert.Equal(200, await topology.DeclareExchange(owner.ExchangeName, "direct", durable: true));

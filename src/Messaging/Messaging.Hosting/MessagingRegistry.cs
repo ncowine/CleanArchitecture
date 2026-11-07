@@ -95,7 +95,7 @@ namespace Messaging.Hosting
 
             if (DefaultBus == null && buses.Count > 0)
             {
-                errors.Add("No default bus: call UseDefaultBus(configuration[\"Messaging:DefaultBus\"]) and set Messaging:DefaultBus.");
+                errors.Add("No default bus: set Messaging:DefaultBus in the configuration.");
             }
             else if (DefaultBus != null && !buses.ContainsKey(DefaultBus))
             {

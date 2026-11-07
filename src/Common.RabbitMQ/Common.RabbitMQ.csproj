@@ -16,4 +16,9 @@
     <ProjectReference Include="..\Messaging\Messaging.RabbitMQ\Messaging.RabbitMQ.csproj" />
   </ItemGroup>
 
+  <!-- The router is built only by FromConfiguration; the tests build it by hand. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Common.RabbitMQ.Tests" />
+  </ItemGroup>
+
 </Project>

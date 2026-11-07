@@ -1,5 +1,6 @@
 using System;
 using Messaging.RabbitMQ;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,7 +9,41 @@ namespace Messaging.Hosting
 {
     public static class MessagingServiceCollectionExtensions
     {
-        public static IServiceCollection AddMessaging(this IServiceCollection services, Action<MessagingBuilder> configure)
+        /// <summary>
+        /// Adds messaging from the <c>Messaging</c> section of <paramref name="configuration"/>: one bus per entry in
+        /// <c>Buses</c> and the default from <c>DefaultBus</c>, both required. <paramref name="configure"/> adds handlers,
+        /// message types and subscriptions:
+        /// <code><![CDATA[
+        /// services.AddMessaging(configuration, messaging => messaging
+        ///     .AddHandlers(typeof(EmployeeSavedHandler).Assembly));
+        /// ]]></code>
+        /// </summary>
+        public static IServiceCollection AddMessaging(this IServiceCollection services, IConfiguration configuration, Action<MessagingBuilder> configure = null)
+        {
+            if (configuration == null)
+            {
+                throw new ArgumentNullException(nameof(configuration));
+            }
+
+            return services.AddMessaging(messaging =>
+            {
+                foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
+                {
+                    messaging.AddBus(bus.Key, bus);
+                }
+
+                if (messaging.Registry.BusNames.Count == 0)
+                {
+                    throw new InvalidOperationException("Messaging:Buses in the configuration has no buses.");
+                }
+
+                messaging.UseDefaultBus(configuration["Messaging:DefaultBus"]);
+                configure?.Invoke(messaging);
+            });
+        }
+
+        /// <summary>Buses added by hand, for tests only: applications use the overload that reads the configuration.</summary>
+        internal static IServiceCollection AddMessaging(this IServiceCollection services, Action<MessagingBuilder> configure)
         {
             if (services == null)
             {
