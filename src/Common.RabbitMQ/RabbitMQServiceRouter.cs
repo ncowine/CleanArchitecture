@@ -18,14 +18,16 @@ namespace Common.RabbitMQ
     {
         private readonly IEventAggregator eventAggregator;
         private readonly RemoteEventRegistry registry;
+        private readonly ILogger logger;
         private readonly Dictionary<string, RabbitMQService> buses = new Dictionary<string, RabbitMQService>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, RabbitMQConfig> configs = new Dictionary<string, RabbitMQConfig>(StringComparer.OrdinalIgnoreCase);
         private bool initialized;
 
-        internal RabbitMQServiceRouter(IEventAggregator eventAggregator, RemoteEventRegistry registry)
+        internal RabbitMQServiceRouter(IEventAggregator eventAggregator, RemoteEventRegistry registry, ILogger logger)
         {
             this.eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
+            this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
@@ -33,14 +35,15 @@ namespace Common.RabbitMQ
         /// <c>Buses</c> and the default from <c>DefaultBus</c>. Events need no registration: every
         /// <see cref="RemotePubSubEvent{TPayload}"/> can travel.
         /// </summary>
-        public static RabbitMQServiceRouter FromConfiguration(IEventAggregator eventAggregator, IConfiguration configuration)
+        /// <param name="logger">Receives every bus's connection and error messages. Required: pass <c>NullLogger.Instance</c> for none.</param>
+        public static RabbitMQServiceRouter FromConfiguration(IEventAggregator eventAggregator, IConfiguration configuration, ILogger logger)
         {
             if (configuration == null)
             {
                 throw new ArgumentNullException(nameof(configuration));
             }
 
-            RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, new RemoteEventRegistry())
+            RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, new RemoteEventRegistry(), logger)
             {
                 DefaultBus = configuration["Messaging:DefaultBus"],
             };
@@ -59,9 +62,6 @@ namespace Common.RabbitMQ
 
             return router;
         }
-
-        /// <summary>Receives messages from every bus. Set it before <see cref="Init"/>. Null writes them to Trace.</summary>
-        public ILogger Logger { get; set; }
 
         /// <summary>
         /// The bus events go to when the publisher names none: <c>Messaging:DefaultBus</c> from configuration. Required,
@@ -89,7 +89,7 @@ namespace Common.RabbitMQ
                 throw new InvalidOperationException($"Bus '{config.BusName}' is already configured.");
             }
 
-            RabbitMQService service = new RabbitMQService(eventAggregator, registry);
+            RabbitMQService service = new RabbitMQService(eventAggregator, registry, logger);
 
             buses.Add(config.BusName, service);
             configs.Add(config.BusName, config);
@@ -134,7 +134,6 @@ namespace Common.RabbitMQ
 
             foreach (KeyValuePair<string, RabbitMQService> pair in buses)
             {
-                pair.Value.Logger = Logger;
                 pair.Value.BindingBus = BusForBinding;
                 pair.Value.Init(configs[pair.Key]);
             }

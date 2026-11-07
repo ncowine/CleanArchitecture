@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.IO;
 using System.Text;
@@ -22,7 +23,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         {
             IConfiguration configuration = Load(@"""DefaultBus"": ""Second""," + Buses);
 
-            using (RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), configuration))
+            using (RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), configuration, NullLogger.Instance))
             {
                 router.Init();
 
@@ -36,7 +37,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void WithoutADefault_InitIsRefused()
         {
-            using (RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), Load(Buses)))
+            using (RabbitMQServiceRouter router = RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), Load(Buses), NullLogger.Instance))
             {
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => router.Init());
                 Assert.Contains("Messaging:DefaultBus", error.Message);
@@ -47,7 +48,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         public void NoBuses_Throws()
         {
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-                RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), Load(@"""DefaultBus"": ""Main""")));
+                RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), Load(@"""DefaultBus"": ""Main"""), NullLogger.Instance));
 
             Assert.Contains("Messaging:Buses", error.Message);
         }
