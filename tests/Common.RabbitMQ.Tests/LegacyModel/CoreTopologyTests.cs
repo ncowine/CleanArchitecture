@@ -144,7 +144,6 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         [InlineData("topic")]
         [InlineData("direct")]
         [InlineData("fanout")]
-        [InlineData("headers")]
         public async Task ExchangeTypes_OwnerDeclaresItsType_SubscriberBindsAccordingly(string exchangeType)
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
@@ -158,7 +157,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 await topology.WaitUntilConnected(owner);
                 Assert.Equal(200, await topology.DeclareExchange(topology.Exchange(AppA), exchangeType, durable: true));
 
-                CoreApp subscriber = topology.CreateCore(AppB, options => options.Subscriptions.Add(SubscriptionFor(exchangeType, topology.Exchange(AppA))));
+                CoreApp subscriber = topology.CreateCore(AppB, options => options.Subscriptions.Add(SubscriptionFor(topology.Exchange(AppA))));
                 if (exchangeType == "topic")
                 {
                     // A pattern on top of the exchange-name binding: it lets AppA's other keys through too.
@@ -228,17 +227,10 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             }
         }
 
-        private static SubscriptionOptions SubscriptionFor(string exchangeType, string exchange)
+        private static SubscriptionOptions SubscriptionFor(string exchange)
         {
-            // Topic, direct and fanout: bound with the exchange name, which the owner publishes with (fanout ignores it).
-            SubscriptionOptions subscription = new SubscriptionOptions { Exchange = exchange };
-            if (exchangeType == "headers")
-            {
-                // Every message the core sends carries event-type, so it is a natural header to match.
-                subscription.HeaderMatch[WireHeaders.MessageType] = OrderSavedWireName;
-            }
-
-            return subscription;
+            // Bound with the exchange name, which the owner publishes with (fanout ignores it).
+            return new SubscriptionOptions { Exchange = exchange };
         }
 
         /// <summary>The payload whose body is Golden/compat-payload.json.</summary>

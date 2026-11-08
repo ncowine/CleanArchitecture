@@ -393,9 +393,9 @@ namespace Messaging.RabbitMQ
                     ? await DeclareSharedQueue(channel, token).ConfigureAwait(false)
                     : await DeclareInstanceQueue(channel, token).ConfigureAwait(false);
 
-                foreach (QueueBinding binding in Bindings())
+                foreach ((string Exchange, string RoutingKey) binding in Bindings())
                 {
-                    await channel.QueueBindAsync(queue.QueueName, binding.Exchange, binding.RoutingKey, binding.Arguments, cancellationToken: token).ConfigureAwait(false);
+                    await channel.QueueBindAsync(queue.QueueName, binding.Exchange, binding.RoutingKey, cancellationToken: token).ConfigureAwait(false);
                 }
 
                 appliedBindings.Clear();
@@ -838,35 +838,18 @@ namespace Messaging.RabbitMQ
         /// <summary>
         /// The configured bindings: one per exchange, keyed by the exchange's name, which is the routing key every legacy
         /// application publishes with: the own exchange (unless <see cref="RabbitMQBusOptions.BindOwnExchange"/> is off)
-        /// and each subscribed exchange. A subscription's header match replaces its default binding. Routing keys are added
-        /// by subscribing (<see cref="Bind"/>).
+        /// and each subscribed exchange. Routing keys are added by subscribing (<see cref="Bind"/>).
         /// </summary>
-        private IEnumerable<QueueBinding> Bindings()
+        private IEnumerable<(string Exchange, string RoutingKey)> Bindings()
         {
             if (options.BindOwnExchange)
             {
-                yield return new QueueBinding(options.ExchangeName, options.ExchangeName, null);
+                yield return (options.ExchangeName, options.ExchangeName);
             }
 
             foreach (SubscriptionOptions subscription in options.Subscriptions)
             {
-                if (subscription.HeaderMatch.Count > 0)
-                {
-                    Dictionary<string, object> arguments = new Dictionary<string, object>
-                    {
-                        ["x-match"] = subscription.MatchAllHeaders ? "all" : "any",
-                    };
-                    foreach (KeyValuePair<string, string> header in subscription.HeaderMatch)
-                    {
-                        arguments[header.Key] = header.Value;
-                    }
-
-                    yield return new QueueBinding(subscription.Exchange, "", arguments);
-                }
-                else
-                {
-                    yield return new QueueBinding(subscription.Exchange, subscription.Exchange, null);
-                }
+                yield return (subscription.Exchange, subscription.Exchange);
             }
         }
 
@@ -932,8 +915,7 @@ namespace Messaging.RabbitMQ
                 wanted = new HashSet<(string Exchange, string RoutingKey)>(requestedBindings.Keys);
             }
 
-            HashSet<(string Exchange, string RoutingKey)> configured = new HashSet<(string Exchange, string RoutingKey)>(
-                Bindings().Where(b => b.Arguments == null).Select(b => (b.Exchange, b.RoutingKey)));
+            HashSet<(string Exchange, string RoutingKey)> configured = new HashSet<(string Exchange, string RoutingKey)>(Bindings());
 
             foreach ((string Exchange, string RoutingKey) pair in wanted.Where(p => !configured.Contains(p) && !appliedBindings.Contains(p)).ToList())
             {

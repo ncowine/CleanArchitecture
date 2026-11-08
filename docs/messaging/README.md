@@ -258,7 +258,7 @@ flowchart LR
     with. You receive every message on that exchange and the ones nothing subscribes to are dropped. This is how
     legacy apps work, and it keeps the broker's binding count at clients × exchanges, not clients × events.
   - Patterns (topic exchanges): `orders.*.saved` (`*` = exactly one word), `AppA.Events.#` (`#` = any number of words).
-  - Exact keys (direct exchanges), nothing (fanout), or header matches (headers exchanges).
+  - Exact keys (direct exchanges) or nothing (fanout).
 - **Everyone uses the default virtual host `/`**, because apps can only bind to exchanges in their own vhost.
 
 > The **demo apps** in this repository still use an older, simpler layout: one shared exchange per "bus"
@@ -608,7 +608,7 @@ The step-by-step version is in
 | `ExchangeType` | `topic` | `topic`, `direct`, `fanout` or `headers`. Keep `topic` while legacy apps subscribe to it. |
 | `ExchangeDurable` | `true` | Whether the exchange survives a broker restart. |
 | `BindOwnExchange` | `true` | Also receive this app's own message types from its own exchange (the legacy behaviour). |
-| `Subscriptions` | *(none)* | Other apps' exchanges: `Exchange`, `HeaderMatch`, `MatchAllHeaders`. Each is bound with the exchange name; other keys are bound by subscribing with `SubscribeOptions`. |
+| `Subscriptions` | *(none)* | Other apps' exchanges, by `Exchange`. Each is bound with the exchange name; other keys are bound by subscribing with `SubscribeOptions`. |
 | `ClientName` | the app's name | Shown in the management UI, sent as app-id, used in queue names. |
 | `QueueMode` | `PerInstance` | `PerInstance` (desktop) or `Shared` (servers). |
 | `SharedQueueName` | `clientname.busname` | Shared queues only. |
@@ -654,7 +654,7 @@ the same and have the same defaults. The differences:
 | `ClientName` | the process name | Set it: the process name includes `.exe`. |
 | `ReconnectDelaySeconds`, `OutstandingPollIntervalMilliseconds`, `HeartbeatSeconds` | `5`, `100`, `30` | Whole numbers, where the server uses `ReconnectDelay`, `OutstandingPollInterval` and `Heartbeat` (time spans). |
 
-Server-only keys (`QueueMode`, retries, `HeaderMatch`, `ExchangeDurable`, `BindOwnExchange`) are ignored here.
+Server-only keys (`QueueMode`, retries, `ExchangeDurable`, `BindOwnExchange`) are ignored here.
 
 ### Headers on the wire
 
