@@ -54,7 +54,7 @@ What ADR 0001 got right still holds. The core and the server already identify a 
   - `topic`: patterns (`orders.*.saved`, `AppA.Events.#`)
   - `direct`: exact keys
   - `fanout`: no key
-  - `headers`: `x-match` all or any, plus header values
+  - `headers`: `x-match` all or any, plus header values. **Removed 2026-11-08:** nothing used it; a subscription is now just its exchange (`HeaderMatch` and `MatchAllHeaders` are gone).
 - **One queue can bind to many exchanges.** An app still has one queue per mode, bound to every exchange it subscribes to. Queue modes are unchanged from ADR 0001: per-instance for clients, shared (quorum, retries, dead-letter queue) for servers.
 - **Subscriptions without keys or a header match** bind once, with the exchange's name as the key, as legacy applications do (F7). This is the default, so a plain `{ Exchange = "AppA" }` behaves like a legacy subscription. The own exchange is bound the same way (F6).
 - **Every subscription brings in types a service doesn't handle.** Those are acknowledged and skipped, never dead-lettered, on both queue modes. (Until 2026-11-05 per-type bindings dead-lettered unknown messages on shared queues.)

@@ -2,9 +2,6 @@
 // with nullable disabled, as legacy apps share it.
 #nullable enable
 
-using System;
-using System.Collections.Generic;
-
 namespace Messaging.RabbitMQ
 {
     /// <summary>
@@ -19,11 +16,5 @@ namespace Messaging.RabbitMQ
         /// sets none. Other keys are bound by subscribing with <see cref="Messaging.SubscribeOptions"/>. Required.
         /// </summary>
         public string Exchange { get; set; } = null!;
-
-        /// <summary>For a headers exchange: bind on these header values instead of the exchange's name. Optional.</summary>
-        public Dictionary<string, string> HeaderMatch { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        /// <summary>Headers exchange only: true (the default) when every header in <see cref="HeaderMatch"/> must match (x-match all), false for any.</summary>
-        public bool MatchAllHeaders { get; set; } = true;
     }
 }
