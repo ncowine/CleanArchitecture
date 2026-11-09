@@ -15,10 +15,8 @@ namespace Messaging.RabbitMQ
 
         public string WireName { get; }
 
-        /// <summary>The wire name unless the publisher chose another key.</summary>
         public string RoutingKey { get; }
 
-        /// <summary>Sent as the message-id property.</summary>
         public string MessageId { get; }
 
         public byte[] Body { get; }

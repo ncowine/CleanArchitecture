@@ -15,7 +15,6 @@ namespace Messaging.Hosting
 
         public Type MessageType { get; }
 
-        /// <summary>Null when subscribed without a routing key.</summary>
         public SubscribeOptions Options { get; }
 
         public Func<object, MessageContext, CancellationToken, Task> Invoke { get; }

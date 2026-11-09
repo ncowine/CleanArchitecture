@@ -52,7 +52,6 @@ namespace Messaging.Hosting
                 .Select(s => s.Subscription);
         }
 
-        /// <summary>The routing keys handler classes ask for with <see cref="RoutingKeyAttribute"/>, and their buses (empty: every bus).</summary>
         public IEnumerable<(RoutingKeyAttribute Key, IReadOnlyCollection<string> Buses)> GetHandlerRoutingKeys()
         {
             return handlers
@@ -80,7 +79,6 @@ namespace Messaging.Hosting
                 .Select(t => new MessageRegistration(WireNames.Get(t), t));
         }
 
-        /// <summary>Fails fast at startup instead of on the first message.</summary>
         public void Validate()
         {
             List<string> errors = new List<string>();
@@ -118,7 +116,6 @@ namespace Messaging.Hosting
 
             foreach (string busName in buses)
             {
-                // Two types with one wire name on the same bus would make incoming messages ambiguous.
                 IEnumerable<string> duplicates = GetMessageRegistrations(busName)
                     .GroupBy(r => r.WireName)
                     .Where(g => g.Count() > 1)
@@ -132,7 +129,6 @@ namespace Messaging.Hosting
             }
         }
 
-        /// <summary>No buses means every bus.</summary>
         private static bool Receives(IReadOnlyCollection<string> buses, string busName)
         {
             return buses.Count == 0 || buses.Contains(busName, StringComparer.Ordinal);

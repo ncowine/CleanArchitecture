@@ -7,7 +7,6 @@ namespace Messaging.Prism
     {
         Type MessageType { get; }
 
-        /// <summary>False once the last subscriber has unsubscribed or been garbage collected.</summary>
         bool HasSubscribers { get; }
 
         bool BelongsTo(IEventAggregator eventAggregator);

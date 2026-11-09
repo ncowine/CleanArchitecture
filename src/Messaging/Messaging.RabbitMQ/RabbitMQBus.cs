@@ -14,16 +14,6 @@ using RabbitMQ.Client.Exceptions;
 
 namespace Messaging.RabbitMQ
 {
-    /// <summary>
-    /// One connection to one bus (virtual host + exchange).
-    /// <para>
-    /// <see cref="Start"/> starts three background loops that run until the bus is disposed: <see cref="KeepConnected"/>
-    /// once for the consumer connection (its queue and bindings) and once for the publisher connection, and
-    /// <see cref="OutstandingQueue"/>, which sends buffered messages whenever the publisher is connected.
-    /// </para>
-    /// By default every instance has its own exclusive queue, so every instance receives every message; its own messages
-    /// are dropped using the <see cref="WireHeaders.SourceId"/> header. Received messages go to the <see cref="IInboundDispatcher"/>.
-    /// </summary>
     public sealed class RabbitMQBus : IDisposable
     {
         private readonly RabbitMQBusOptions options;
@@ -37,12 +27,10 @@ namespace Messaging.RabbitMQ
         private readonly SemaphoreSlim consumerLock = new SemaphoreSlim(1, 1);
         private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
 
-        // Routing keys subscriptions asked for, counted per (exchange, key). Guarded by bindingGate.
         private readonly Dictionary<(string Exchange, string RoutingKey), int> requestedBindings =
             new Dictionary<(string Exchange, string RoutingKey), int>();
         private readonly object bindingGate = new object();
 
-        // The requested bindings made on the current consumer connection. Only touched while holding consumerLock.
         private readonly HashSet<(string Exchange, string RoutingKey)> appliedBindings = new HashSet<(string Exchange, string RoutingKey)>();
 
         private IConnection consumerConnection;
@@ -104,7 +92,6 @@ namespace Messaging.RabbitMQ
 
         public string DeadLetterQueueName => options.QueueMode == QueueMode.Shared ? queueName + ".dead-letter" : null;
 
-        /// <summary>Whether <paramref name="exchange"/> is this bus's own exchange or one of its configured subscriptions.</summary>
         public bool UsesExchange(string exchange)
         {
             return string.Equals(exchange, options.ExchangeName, StringComparison.Ordinal)
@@ -134,20 +121,11 @@ namespace Messaging.RabbitMQ
             Task.Run(() => OutstandingQueue(token));
         }
 
-        /// <summary>
-        /// Serializes <paramref name="message"/> now and buffers it for publishing as <paramref name="wireName"/>.
-        /// Returns immediately; the message is sent once a publisher connection is available.
-        /// </summary>
         public void Enqueue(string wireName, object message)
         {
             Enqueue(wireName, message, null);
         }
 
-        /// <summary>
-        /// As <see cref="Enqueue(string, object)"/>, routed with <paramref name="routingKey"/> instead of the exchange name.
-        /// The wire name still travels in the event-type header, so receivers identify the message either way.
-        /// </summary>
-        /// <param name="routingKey">Null or empty for the exchange name, as legacy applications publish.</param>
         public void Enqueue(string wireName, object message, string routingKey)
         {
             EnsureNotDisposed();
@@ -170,11 +148,6 @@ namespace Messaging.RabbitMQ
             return new PendingMessage(wireName, key, id, body);
         }
 
-        /// <summary>
-        /// Starts handing <paramref name="registration"/> to the dispatcher. Nothing changes on the broker: the queue's
-        /// bindings are per exchange, so every message on a bound exchange already arrives, and those of no subscribed type
-        /// are dropped.
-        /// </summary>
         public void Subscribe(MessageRegistration registration)
         {
             EnsureNotDisposed();
@@ -191,7 +164,6 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        /// <summary>Stops handing <paramref name="wireName"/> to the dispatcher; its messages are dropped from now on.</summary>
         public void Unsubscribe(string wireName)
         {
             EnsureNotDisposed();
@@ -202,12 +174,6 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        /// <summary>
-        /// Binds the queue to <paramref name="exchange"/> with <paramref name="routingKey"/>, so messages published with that
-        /// key arrive. Calls are counted per exchange and key: the first binds, and <see cref="Unbind"/> removes the binding
-        /// when the count reaches zero. Done in the background; while disconnected it is done on the next connect.
-        /// </summary>
-        /// <param name="exchange">Null for the own exchange and every configured subscription.</param>
         public void Bind(string exchange, string routingKey)
         {
             EnsureNotDisposed();
@@ -229,10 +195,6 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        /// <summary>
-        /// Undoes one <see cref="Bind"/>. The last one removes the binding, on a shared queue too: every instance reads that
-        /// queue, so it stops receiving the key for all of them. The configured bindings are never removed.
-        /// </summary>
         public void Unbind(string exchange, string routingKey)
         {
             if (disposed)
@@ -292,7 +254,6 @@ namespace Messaging.RabbitMQ
 
             try
             {
-                // Run on the thread pool so a UI thread calling Dispose can't deadlock.
                 Task.Run(async () =>
                 {
                     await CloseConsumer().ConfigureAwait(false);
@@ -354,7 +315,6 @@ namespace Messaging.RabbitMQ
             return OnConnectionLost(ConnectionRole.Publisher, args);
         }
 
-        /// <summary>Only reports the loss; <see cref="KeepConnected"/> notices it on its next check and reconnects.</summary>
         private Task OnConnectionLost(ConnectionRole role, ShutdownEventArgs args)
         {
             logger.LogWarning("[{Bus}] {Role} connection lost: {Reason}. Reconnecting.", options.BusName, role, args.ReplyText);
@@ -401,8 +361,6 @@ namespace Messaging.RabbitMQ
 
                 AsyncEventingBasicConsumer consumer = new AsyncEventingBasicConsumer(channel);
                 consumer.ReceivedAsync += OnMessageReceived;
-                // The tag shows on the queue's consumer list: whose process is reading it. Unique per channel, which is all
-                // RabbitMQ requires, because each connect opens a new channel.
                 await channel.BasicConsumeAsync(
                     queue: queue.QueueName,
                     autoAck: false,
@@ -453,18 +411,12 @@ namespace Messaging.RabbitMQ
                     ["x-dead-letter-exchange"] = "",
                     ["x-dead-letter-routing-key"] = DeadLetterQueueName,
 
-                    // At-least-once dead-lettering requires reject-publish overflow.
                     ["x-dead-letter-strategy"] = "at-least-once",
                     ["x-overflow"] = "reject-publish",
                 },
                 token).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// A queue's arguments can't change after it's created, so a changed setting such as
-        /// <see cref="RabbitMQBusOptions.DeliveryLimit"/> makes the broker refuse the declaration (PRECONDITION_FAILED).
-        /// This says what to do about it instead of passing on the broker's bare reply.
-        /// </summary>
         private static async Task<QueueDeclareOk> DeclareDurableQueue(IChannel channel, string name, Dictionary<string, object> arguments, CancellationToken token)
         {
             try
@@ -525,7 +477,6 @@ namespace Messaging.RabbitMQ
             }
             catch (Exception ex)
             {
-                // Failed before the message was identified, e.g. on its headers.
                 logger.LogError(ex, "[{Bus}] Failed to handle message '{RoutingKey}': {Error}", options.BusName, args.RoutingKey, ex.Message);
                 settlement = FailedSettlement;
             }
@@ -548,7 +499,6 @@ namespace Messaging.RabbitMQ
                 : args.RoutingKey;
             if (!subscriptions.TryGetValue(wireName, out MessageRegistration registration))
             {
-                // Normal: a queue is bound to whole exchanges, so it gets every event on them, wanted or not.
                 logger.LogDebug("[{Bus}] Ignored event '{WireName}': nothing here subscribes to it.", options.BusName, wireName);
                 return MessageSettlement.Ack;
             }
@@ -566,8 +516,6 @@ namespace Messaging.RabbitMQ
             {
                 for (int attempt = 1; ; attempt++)
                 {
-                    // A fresh copy per attempt, so a handler that changed the message doesn't affect the retry.
-                    // A body that can't be deserialized is never retried: it fails the message straight away.
                     object message = MessageSerializer.Deserialize(args.Body.ToArray(), registration.MessageType);
 
                     try
@@ -582,7 +530,6 @@ namespace Messaging.RabbitMQ
 
                     if (!await Delay(options.RetryDelay, token).ConfigureAwait(false))
                     {
-                        // Stopping: leave it unacknowledged, so the broker gives it to another instance or the next start.
                         return MessageSettlement.None;
                     }
                 }
@@ -597,13 +544,8 @@ namespace Messaging.RabbitMQ
 
         private bool IsShared => options.QueueMode == QueueMode.Shared;
 
-        /// <summary>Shared queues dead-letter a failed message. Per-instance queues ack it anyway, so a bad message can't be redelivered forever.</summary>
         private MessageSettlement FailedSettlement => IsShared ? MessageSettlement.DeadLetter : MessageSettlement.Ack;
 
-        /// <summary>
-        /// Our own message coming back: the sender's local side has already seen it. Only on per-instance queues; on a
-        /// shared queue another instance's message looks the same as ours.
-        /// </summary>
         private bool IsOwnEcho(Dictionary<string, string> headers)
         {
             return !IsShared && headers.TryGetValue(WireHeaders.SourceId, out string sourceId) && sourceId == instanceId;
@@ -653,7 +595,6 @@ namespace Messaging.RabbitMQ
                     .ConfigureAwait(false);
                 connection.ConnectionShutdownAsync += OnPublisherConnectionShutdown;
 
-                // With confirmation tracking BasicPublishAsync only completes once the broker has the message.
                 CreateChannelOptions channelOptions = new CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true);
                 channel = await connection.CreateChannelAsync(channelOptions, token).ConfigureAwait(false);
                 await DeclareExchange(channel, token).ConfigureAwait(false);
@@ -699,7 +640,6 @@ namespace Messaging.RabbitMQ
                     {
                         await PublishMessage(channel, message, token).ConfigureAwait(false);
 
-                        // Only removed once the broker confirmed it; on failure it is retried.
                         outstandingMessages.TryDequeue(out _);
                         continue;
                     }
@@ -761,13 +701,10 @@ namespace Messaging.RabbitMQ
                 Password = options.Password,
                 RequestedHeartbeat = options.Heartbeat,
 
-                // Reconnecting is done by KeepConnected.
                 AutomaticRecoveryEnabled = false,
                 TopologyRecoveryEnabled = false,
             };
 
-            // Shown on the connection's page in the management UI. Everyone logs in with the same broker account, so this
-            // is what says whose machine a connection is; instance_id is the last part of a per-instance queue's name.
             factory.ClientProperties["app"] = options.ClientName;
             factory.ClientProperties["bus"] = options.BusName;
             factory.ClientProperties["user"] = Environment.UserName;
@@ -777,10 +714,6 @@ namespace Messaging.RabbitMQ
             return factory;
         }
 
-        /// <summary>
-        /// The name in the management UI's connection and channel lists, e.g.
-        /// <c>Poc.Net10 [Main] consumer - jsmith</c>. Machine and process are in the client properties.
-        /// </summary>
         private string ConnectionName(ConnectionRole role)
         {
             string kind = role == ConnectionRole.Consumer ? "consumer" : "publisher";
@@ -798,7 +731,6 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        /// <summary>The own exchange, as configured. Only the owner declares an exchange (ADR 0002, section 2).</summary>
         private Task DeclareExchange(IChannel channel, CancellationToken token)
         {
             return channel.ExchangeDeclareAsync(
@@ -809,10 +741,6 @@ namespace Messaging.RabbitMQ
                 cancellationToken: token);
         }
 
-        /// <summary>
-        /// Checks another application's exchange without declaring it. A missing exchange fails the connect attempt, which
-        /// is retried: the owner may simply not have started yet.
-        /// </summary>
         private static async Task CheckExchangeExists(IChannel channel, string exchange, CancellationToken token)
         {
             try
@@ -833,11 +761,6 @@ namespace Messaging.RabbitMQ
                 .Distinct(StringComparer.Ordinal);
         }
 
-        /// <summary>
-        /// The configured bindings: one per exchange, keyed by the exchange's name, which is the routing key every legacy
-        /// application publishes with: the own exchange (unless <see cref="RabbitMQBusOptions.BindOwnExchange"/> is off)
-        /// and each subscribed exchange. Routing keys are added by subscribing (<see cref="Bind"/>).
-        /// </summary>
         private IEnumerable<(string Exchange, string RoutingKey)> Bindings()
         {
             if (options.BindOwnExchange)
@@ -892,7 +815,6 @@ namespace Messaging.RabbitMQ
                 }
                 catch (Exception ex) when (ex is OperationCanceledException || ex is ObjectDisposedException)
                 {
-                    // Shutting down.
                 }
                 catch (Exception ex)
                 {
@@ -901,10 +823,6 @@ namespace Messaging.RabbitMQ
             });
         }
 
-        /// <summary>
-        /// Makes the queue's routing-key bindings match what is requested: binds the new ones and removes those no longer
-        /// wanted. Configured bindings are left alone. Call it holding <see cref="consumerLock"/>.
-        /// </summary>
         private async Task ApplyBindings(IConnection connection, string queue, CancellationToken token)
         {
             HashSet<(string Exchange, string RoutingKey)> wanted;
@@ -932,10 +850,6 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        /// <summary>
-        /// On a channel of its own: a missing exchange closes the channel it was named on, and that must not be the
-        /// consumer's. A failure is logged and tried again at the next change or connect.
-        /// </summary>
         private async Task<bool> ChangeBinding(IConnection connection, string queue, (string Exchange, string RoutingKey) pair, bool bind, CancellationToken token)
         {
             IChannel channel = null;
@@ -996,14 +910,12 @@ namespace Messaging.RabbitMQ
 
             foreach (KeyValuePair<string, object> header in headers)
             {
-                // String headers arrive as byte[] from the broker.
                 result[header.Key] = header.Value is byte[] bytes ? Encoding.UTF8.GetString(bytes) : header.Value?.ToString();
             }
 
             return result;
         }
 
-        /// <returns>False when cancelled.</returns>
         private static async Task<bool> Delay(TimeSpan delay, CancellationToken token)
         {
             try
@@ -1033,7 +945,6 @@ namespace Messaging.RabbitMQ
             }
             catch
             {
-                // Already broken; nothing to do.
             }
 
             try
@@ -1050,7 +961,6 @@ namespace Messaging.RabbitMQ
             }
             catch
             {
-                // Already broken; nothing to do.
             }
         }
 

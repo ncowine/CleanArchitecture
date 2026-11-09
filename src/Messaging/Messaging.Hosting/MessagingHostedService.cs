@@ -9,10 +9,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Messaging.Hosting
 {
-    /// <summary>
-    /// Validates the configuration, then starts every bus with its handlers' messages subscribed. Connecting happens in
-    /// the background, so startup never waits for the broker. Stopping closes the buses.
-    /// </summary>
     internal sealed class MessagingHostedService : IHostedService
     {
         private readonly IServiceProvider provider;
@@ -29,8 +25,6 @@ namespace Messaging.Hosting
         {
             registry.Validate();
 
-            // Handlers live as long as the application, so their routing keys are bound for good: on the buses they receive
-            // from, or, when they receive from every bus, on the bus found as for a subscription (SubscribeOptions).
             foreach ((RoutingKeyAttribute key, IReadOnlyCollection<string> buses) in registry.GetHandlerRoutingKeys())
             {
                 IEnumerable<RabbitMQBus> targets = buses.Count > 0

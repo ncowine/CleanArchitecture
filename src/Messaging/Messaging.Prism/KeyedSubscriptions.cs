@@ -4,10 +4,6 @@ using Prism.Events;
 
 namespace Messaging.Prism
 {
-    /// <summary>
-    /// The routing keys of one event's subscriptions, by subscription token, so a key is released when its subscription
-    /// ends: unsubscribed, or its subscriber collected.
-    /// </summary>
     internal sealed class KeyedSubscriptions
     {
         private readonly Dictionary<SubscriptionToken, SubscribeOptions> keys = new Dictionary<SubscriptionToken, SubscribeOptions>();
@@ -31,7 +27,6 @@ namespace Messaging.Prism
             }
         }
 
-        /// <summary>Forgets the keys whose subscription is no longer in <paramref name="subscriptions"/>, and returns them.</summary>
         public List<SubscribeOptions> RemoveEnded(ICollection<IEventSubscription> subscriptions)
         {
             lock (keys)

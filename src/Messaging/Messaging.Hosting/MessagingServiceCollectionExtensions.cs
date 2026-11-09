@@ -9,15 +9,6 @@ namespace Messaging.Hosting
 {
     public static class MessagingServiceCollectionExtensions
     {
-        /// <summary>
-        /// Adds messaging from the <c>Messaging</c> section of <paramref name="configuration"/>: one bus per entry in
-        /// <c>Buses</c> and the default from <c>DefaultBus</c>, both required. <paramref name="configure"/> adds handlers,
-        /// message types and subscriptions:
-        /// <code><![CDATA[
-        /// services.AddMessaging(configuration, messaging => messaging
-        ///     .AddHandlers(typeof(EmployeeSavedHandler).Assembly));
-        /// ]]></code>
-        /// </summary>
         public static IServiceCollection AddMessaging(this IServiceCollection services, IConfiguration configuration, Action<MessagingBuilder> configure = null)
         {
             if (configuration == null)
@@ -42,7 +33,6 @@ namespace Messaging.Hosting
             });
         }
 
-        /// <summary>Buses added by hand, for tests only: applications use the overload that reads the configuration.</summary>
         internal static IServiceCollection AddMessaging(this IServiceCollection services, Action<MessagingBuilder> configure)
         {
             if (services == null)
@@ -65,8 +55,6 @@ namespace Messaging.Hosting
 
             configure(new MessagingBuilder(services, registry));
 
-            // Last, so what configure adds starts first: the event aggregator bridge tells the buses what was already
-            // subscribed before they connect, or a durable queue's backlog would look unknown.
             services.AddHostedService<MessagingHostedService>();
             return services;
         }
@@ -76,7 +64,6 @@ namespace Messaging.Hosting
             MessagingRegistry registry = provider.GetRequiredService<MessagingRegistry>();
             RabbitMQBusOptions options = provider.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get(name);
 
-            // Subscriptions added in code join those from configuration. Each bus is created once.
             options.Subscriptions.AddRange(registry.GetSubscriptions(name));
 
             return new RabbitMQBus(

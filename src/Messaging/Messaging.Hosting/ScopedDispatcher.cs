@@ -5,10 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Messaging.Hosting
 {
-    /// <summary>
-    /// Runs every handler registered for the message on this bus, then every <see cref="IMessageSink"/>, in a new DI scope
-    /// per message. They run one after another; the first exception fails the message.
-    /// </summary>
     internal sealed class ScopedDispatcher : IInboundDispatcher
     {
         private readonly IServiceScopeFactory scopeFactory;
