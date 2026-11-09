@@ -27,7 +27,6 @@ namespace Messaging.RabbitMQ
     public sealed class RabbitMQBus : IDisposable
     {
         private readonly RabbitMQBusOptions options;
-        private readonly IMessageSerializer serializer;
         private readonly IInboundDispatcher dispatcher;
         private readonly string instanceId;
         private readonly string queueName;
@@ -54,7 +53,7 @@ namespace Messaging.RabbitMQ
         private bool started;
         private bool disposed;
 
-        public RabbitMQBus(RabbitMQBusOptions options, IMessageSerializer serializer, IInboundDispatcher dispatcher, ILogger logger = null)
+        public RabbitMQBus(RabbitMQBusOptions options, IInboundDispatcher dispatcher, ILogger logger = null)
         {
             if (options == null)
             {
@@ -77,7 +76,6 @@ namespace Messaging.RabbitMQ
             }
 
             this.options = options;
-            this.serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
             this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             this.logger = logger ?? NullLogger.Instance;
             instanceId = string.IsNullOrWhiteSpace(options.InstanceId) ? Guid.NewGuid().ToString("N") : options.InstanceId;
@@ -164,7 +162,7 @@ namespace Messaging.RabbitMQ
                 throw new ArgumentException("A wire name is required.", nameof(wireName));
             }
 
-            byte[] body = serializer.Serialize(message);
+            byte[] body = MessageSerializer.Serialize(message);
 
             string key = string.IsNullOrEmpty(routingKey) ? options.ExchangeName : routingKey;
             string id = Guid.NewGuid().ToString("N");
@@ -570,7 +568,7 @@ namespace Messaging.RabbitMQ
                 {
                     // A fresh copy per attempt, so a handler that changed the message doesn't affect the retry.
                     // A body that can't be deserialized is never retried: it fails the message straight away.
-                    object message = serializer.Deserialize(args.Body.ToArray(), registration.MessageType);
+                    object message = MessageSerializer.Deserialize(args.Body.ToArray(), registration.MessageType);
 
                     try
                     {
@@ -732,7 +730,7 @@ namespace Messaging.RabbitMQ
 
             BasicProperties properties = new BasicProperties
             {
-                ContentType = serializer.ContentType,
+                ContentType = MessageSerializer.ContentType,
                 MessageId = message.MessageId,
                 AppId = options.ClientName,
                 Timestamp = new AmqpTimestamp(message.CreatedUtc.ToUnixTimeSeconds()),

@@ -67,7 +67,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         /// <summary>Creates the bus without starting it, to change its subscriptions first.</summary>
         public RabbitMQBus CreateBus(Microsoft.Extensions.Logging.ILogger logger = null)
         {
-            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, logger);
+            bus = new RabbitMQBus(options, this, logger);
             return bus;
         }
 

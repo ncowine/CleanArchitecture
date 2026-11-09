@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using Messaging;
+using Messaging.RabbitMQ;
 using Prism.Events;
 
 namespace Common.RabbitMQ
@@ -19,6 +20,8 @@ namespace Common.RabbitMQ
 
         public RemoteEventDescriptor(Type eventType, Type payloadType)
         {
+            MessageSerializer.EnsureNoTuples(payloadType);
+
             EventType = eventType;
             PayloadType = payloadType;
             EventName = eventType.GetCustomAttribute<MessageAttribute>(inherit: false)?.WireName ?? eventType.FullName;

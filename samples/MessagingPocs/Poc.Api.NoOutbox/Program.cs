@@ -13,7 +13,7 @@ using Poc.Shapes;
 //   Receiving:
 //   EquipmentDisposedHandler    A handler class for EquipmentDisposed, from the net472 app's exchange (Subscriptions in
 //                               appsettings.json). Use one for real work: it gets a new DI scope per message.
-//   Subscribe, below            The same without a class, for EquipmentFlagged: a legacy event whose payload is a tuple.
+//   Subscribe, below            The same without a handler class, for EquipmentFlagged from the net472 app.
 //                               For small jobs that need no scoped services.
 //   LogShape, below             The ten POC shape events (Poc.Shapes) from the legacy apps, logged as they arrive.
 //   Receiving works the same with or without an outbox.

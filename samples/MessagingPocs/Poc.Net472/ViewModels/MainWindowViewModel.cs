@@ -155,8 +155,8 @@ public sealed class MainWindowViewModel : BindableBase
 
     private void FlagSelected()
     {
-        // A tuple payload. Poc.Api.NoOutbox receives this; the real API doesn't handle it.
-        events.GetEvent<EquipmentFlagged>().PublishRemote((Selected!.Id, Selected.Name), EquipmentKey);
+        // Poc.Api.NoOutbox receives this; the real API doesn't handle it.
+        events.GetEvent<EquipmentFlagged>().PublishRemote(new EquipmentFlag { Id = Selected!.Id, Name = Selected.Name }, EquipmentKey);
     }
 
     // Disposals and flags share one routing key, so a subscriber binds "equipment" once for both. Notes keep the
@@ -175,9 +175,9 @@ public sealed class MainWindowViewModel : BindableBase
             : $"{disposal.DisposedBy} disposed of {disposal.AssetTag}");
     }
 
-    private void OnFlagged((Guid id, string name) flagged)
+    private void OnFlagged(EquipmentFlag flagged)
     {
-        AddLog($"{flagged.name} ({flagged.id}) was flagged");
+        AddLog($"{flagged.Name} ({flagged.Id}) was flagged");
     }
 
     private async Task CheckConnectionAsync()

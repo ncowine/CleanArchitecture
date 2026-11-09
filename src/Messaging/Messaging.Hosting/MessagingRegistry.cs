@@ -8,34 +8,26 @@ namespace Messaging.Hosting
 {
     internal sealed class MessagingRegistry
     {
-        /// <summary>Bus name → its serializer; null means the System.Text.Json default.</summary>
-        private readonly Dictionary<string, IMessageSerializer> buses = new Dictionary<string, IMessageSerializer>(StringComparer.Ordinal);
+        private readonly HashSet<string> buses = new HashSet<string>(StringComparer.Ordinal);
         private readonly List<HandlerRegistration> handlers = new List<HandlerRegistration>();
         private readonly List<MessageTypeRegistration> messageTypes = new List<MessageTypeRegistration>();
         private readonly List<PendingSubscription> subscriptions = new List<PendingSubscription>();
 
-        public IReadOnlyCollection<string> BusNames => buses.Keys;
+        public IReadOnlyCollection<string> BusNames => buses;
 
         public string DefaultBus { get; set; }
 
-        public void AddBus(string name, IMessageSerializer serializer)
+        public void AddBus(string name)
         {
-            if (buses.ContainsKey(name))
+            if (!buses.Add(name))
             {
                 throw new InvalidOperationException($"Bus '{name}' is already added.");
             }
-
-            buses.Add(name, serializer);
         }
 
         public string GetDefaultBus()
         {
             return DefaultBus;
-        }
-
-        public IMessageSerializer GetSerializer(string busName)
-        {
-            return buses[busName];
         }
 
         public void AddHandler(HandlerRegistration handler)
@@ -97,7 +89,7 @@ namespace Messaging.Hosting
             {
                 errors.Add("No default bus: set Messaging:DefaultBus in the configuration.");
             }
-            else if (DefaultBus != null && !buses.ContainsKey(DefaultBus))
+            else if (DefaultBus != null && !buses.Contains(DefaultBus))
             {
                 errors.Add($"The default bus '{DefaultBus}' is not configured.");
             }
@@ -124,7 +116,7 @@ namespace Messaging.Hosting
                     .Select(b => $"The subscription to '{subscription.Subscription.Exchange}' is for unknown bus '{b}'."));
             }
 
-            foreach (string busName in buses.Keys)
+            foreach (string busName in buses)
             {
                 // Two types with one wire name on the same bus would make incoming messages ambiguous.
                 IEnumerable<string> duplicates = GetMessageRegistrations(busName)
@@ -148,7 +140,7 @@ namespace Messaging.Hosting
 
         private IEnumerable<string> UnknownBuses(IEnumerable<string> busNames)
         {
-            return busNames.Where(b => !buses.ContainsKey(b));
+            return busNames.Where(b => !buses.Contains(b));
         }
 
         private static IEnumerable<string> MissingWireName(Type messageType)

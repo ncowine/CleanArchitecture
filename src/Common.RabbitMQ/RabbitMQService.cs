@@ -15,7 +15,7 @@ namespace Common.RabbitMQ
     /// <para>
     /// A façade over <see cref="RabbitMQBus"/> (ADR 0001): <see cref="Init"/> starts the bus bound to the events the
     /// application subscribes to, <see cref="Publish"/> buffers a message for it, and received messages are raised as their
-    /// Prism event on the <see cref="IEventAggregator"/>. Bodies are Newtonsoft JSON, as the legacy apps expect.
+    /// Prism event on the <see cref="IEventAggregator"/>. Bodies are JSON exactly as Newtonsoft writes it, so apps on the old library read them.
     /// </para>
     /// </summary>
     public class RabbitMQService : IRabbitMQService, IRoutingKeyPublisher
@@ -78,7 +78,7 @@ namespace Common.RabbitMQ
 
             this.config = config;
 
-            bus = new RabbitMQBus(CreateOptions(config), NewtonsoftMessageSerializer.Instance, new PrismDispatcher(eventAggregator, registry), logger);
+            bus = new RabbitMQBus(CreateOptions(config), new PrismDispatcher(eventAggregator, registry), logger);
 
             int subscribedEvents = RemoteEventSubscriptions.Join(this);
 

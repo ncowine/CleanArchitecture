@@ -11,7 +11,12 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
-  <!-- Shared with the legacy apps. -->
+  <!-- The one serializer, on net472 and netstandard2.0 (net8 has it built in). The 8.0 line, like the other Microsoft packages. -->
+  <ItemGroup>
+    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <!-- Shared with the legacy apps. Newtonsoft.Json is now only the tests' baseline: what apps on the old library write. -->
   <ItemGroup>
     <PackageVersion Include="Newtonsoft.Json" Version="12.0.3" />
     <PackageVersion Include="Prism.Core" Version="8.1.97" />

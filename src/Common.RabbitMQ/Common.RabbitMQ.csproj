@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
-    <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Prism.Core" />
   </ItemGroup>
 
