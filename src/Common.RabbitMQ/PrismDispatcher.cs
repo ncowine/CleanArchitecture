@@ -7,7 +7,6 @@ using Prism.Events;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>Raises each received message as its Prism event, through <see cref="IEventAggregator.GetEvent{TEventType}"/>, on the consumer's thread.</summary>
     internal sealed class PrismDispatcher : IInboundDispatcher
     {
         private readonly IEventAggregator eventAggregator;
@@ -21,7 +20,6 @@ namespace Common.RabbitMQ
 
         public Task Dispatch(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
         {
-            // Wire names are the events' full names, so every subscribed wire name is in the registry.
             if (!registry.TryGet(registration.WireName, out RemoteEventDescriptor descriptor))
             {
                 throw new InvalidOperationException($"No remote event named '{registration.WireName}'.");

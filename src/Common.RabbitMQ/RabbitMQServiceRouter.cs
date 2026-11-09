@@ -9,11 +9,6 @@ using Prism.Events;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>
-    /// The application's <see cref="IRabbitMQService"/>. Holds one <see cref="RabbitMQService"/> per configured bus and
-    /// sends every event to the default bus. To send one elsewhere, name the bus: <c>PublishRemote(payload, new PublishOptions { Bus = "Partners" })</c>.
-    /// Built only by <see cref="FromConfiguration"/>, so the buses and the default always come from the <c>Messaging</c> section.
-    /// </summary>
     public class RabbitMQServiceRouter : IRabbitMQService, IRoutingKeyPublisher
     {
         private readonly IEventAggregator eventAggregator;
@@ -30,12 +25,6 @@ namespace Common.RabbitMQ
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        /// <summary>
-        /// Builds a router from the <c>Messaging</c> section of <paramref name="configuration"/>: one bus per entry in
-        /// <c>Buses</c> and the default from <c>DefaultBus</c>. Events need no registration: every
-        /// <see cref="RemotePubSubEvent{TPayload}"/> can travel.
-        /// </summary>
-        /// <param name="logger">Receives every bus's connection and error messages. Required: pass <c>NullLogger.Instance</c> for none.</param>
         public static RabbitMQServiceRouter FromConfiguration(IEventAggregator eventAggregator, IConfiguration configuration, ILogger logger)
         {
             if (configuration == null)
@@ -63,15 +52,10 @@ namespace Common.RabbitMQ
             return router;
         }
 
-        /// <summary>
-        /// The bus events go to when the publisher names none: <c>Messaging:DefaultBus</c> from configuration. Required,
-        /// even with one bus: <see cref="Init"/> throws without it.
-        /// </summary>
         public string DefaultBus { get; internal set; }
 
         public IReadOnlyCollection<RabbitMQService> Buses => buses.Values;
 
-        /// <summary>Adds a bus. It connects when <see cref="Init"/> is called.</summary>
         internal RabbitMQService AddBus(RabbitMQConfig config)
         {
             if (config == null)
@@ -101,7 +85,6 @@ namespace Common.RabbitMQ
             return buses.TryGetValue(busName, out RabbitMQService service) ? service : null;
         }
 
-        /// <summary>As <see cref="GetBus"/>, but an unknown name throws, so a mistyped bus can't fall back to the default.</summary>
         public RabbitMQService GetRequiredBus(string busName)
         {
             if (busName == null)
@@ -112,7 +95,6 @@ namespace Common.RabbitMQ
             return GetBus(busName) ?? throw new InvalidOperationException($"Bus '{busName}' is not configured for this application.");
         }
 
-        /// <summary>Initializes every bus (fire and forget - connecting happens in the background).</summary>
         public void Init()
         {
             if (initialized)
@@ -139,11 +121,6 @@ namespace Common.RabbitMQ
             }
         }
 
-        /// <summary>
-        /// The bus a subscription's routing key is bound on: <see cref="SubscribeOptions.Bus"/> when set; otherwise the one bus
-        /// that has <see cref="SubscribeOptions.Exchange"/> as its own exchange or in its subscriptions, or the default bus when
-        /// none has. Several buses having it is ambiguous and throws.
-        /// </summary>
         internal string BusForBinding(SubscribeOptions options)
         {
             if (!string.IsNullOrWhiteSpace(options.Bus))
@@ -180,7 +157,6 @@ namespace Common.RabbitMQ
             GetDefaultBus(eventType).Publish(eventType, payload);
         }
 
-        /// <summary>As <see cref="Publish(Type, object)"/>, routed with <paramref name="routingKey"/>.</summary>
         public void Publish(Type eventType, object payload, string routingKey)
         {
             GetDefaultBus(eventType).Publish(eventType, payload, routingKey);

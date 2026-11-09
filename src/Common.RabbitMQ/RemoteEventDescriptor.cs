@@ -7,9 +7,6 @@ using Prism.Events;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>
-    /// Describes one remote event and knows how to raise it on an <see cref="IEventAggregator"/> via reflection.
-    /// </summary>
     public sealed class RemoteEventDescriptor
     {
         private static readonly MethodInfo getEventDefinition =
@@ -30,20 +27,12 @@ namespace Common.RabbitMQ
             publishMethod = eventType.GetMethod(nameof(PubSubEvent<object>.Publish), new[] { payloadType });
         }
 
-        /// <summary>
-        /// The wire name, sent in the event-type header: the event's <see cref="MessageAttribute"/> name, else its full type
-        /// name. Set <c>[Message("OtherApp.Events.OrderSaved")]</c> to exchange an event with an app that declares its own
-        /// class, instead of sharing an event assembly.
-        /// </summary>
         public string EventName { get; }
 
         public Type EventType { get; }
 
         public Type PayloadType { get; }
 
-        /// <summary>
-        /// Same as getting the <see cref="EventType"/> event from <see cref="IEventAggregator.GetEvent{TEventType}"/> and publishing <paramref name="payload"/> on it.
-        /// </summary>
         public void PublishLocal(IEventAggregator eventAggregator, object payload)
         {
             try

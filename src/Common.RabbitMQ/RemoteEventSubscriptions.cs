@@ -3,11 +3,6 @@ using Messaging;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>
-    /// Connects <see cref="RemotePubSubEvent{TPayload}"/> subscriptions to the services that receive them. Static because Prism
-    /// creates the events and gives them no link back to the application; a view model can also subscribe before
-    /// <see cref="RabbitMQService.Init"/>, so subscribed events are remembered until it runs.
-    /// </summary>
     internal static class RemoteEventSubscriptions
     {
         private static readonly object gate = new object();
@@ -15,7 +10,6 @@ namespace Common.RabbitMQ
         private static readonly List<RabbitMQService> running = new List<RabbitMQService>();
         private static readonly List<(IRemoteEvent Event, SubscribeOptions Options)> keyed = new List<(IRemoteEvent Event, SubscribeOptions Options)>();
 
-        /// <summary>Asks every time, not just the first, so subscribing resumes an event stopped with <see cref="RabbitMQService.UnregisterQueue"/>.</summary>
         public static void Subscribed(IRemoteEvent remoteEvent)
         {
             lock (gate)
@@ -29,7 +23,6 @@ namespace Common.RabbitMQ
             }
         }
 
-        /// <summary>Checked under the lock, so a subscribe at the same moment either keeps the event received or starts it again.</summary>
         public static void StopIfUnused(IRemoteEvent remoteEvent)
         {
             lock (gate)
@@ -48,10 +41,6 @@ namespace Common.RabbitMQ
             }
         }
 
-        /// <summary>
-        /// Gives <paramref name="service"/> the subscriptions made so far, and from now on the later ones and unsubscribes, all
-        /// under the lock so none is missed. Returns how many were its own.
-        /// </summary>
         public static int Join(RabbitMQService service)
         {
             lock (gate)
@@ -75,7 +64,6 @@ namespace Common.RabbitMQ
             }
         }
 
-        /// <summary>Binds a subscription's routing key, now or when the service starts. Undone by <see cref="Unbind"/>.</summary>
         public static void Bind(IRemoteEvent remoteEvent, SubscribeOptions options)
         {
             lock (gate)

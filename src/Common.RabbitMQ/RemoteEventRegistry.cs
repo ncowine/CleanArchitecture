@@ -7,12 +7,6 @@ using Prism.Events;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>
-    /// Knows which Prism events can travel between applications: every <see cref="RemotePubSubEvent{TPayload}"/>, and only
-    /// those. It needs no registration: it joins when it is subscribed to or published, and is bound only when subscribed
-    /// to. Plain <see cref="PubSubEvent{TPayload}"/> events are local.
-    /// An event belongs to no bus: every bus receives it, and the publisher chooses where to send it.
-    /// </summary>
     public sealed class RemoteEventRegistry
     {
         private readonly ConcurrentDictionary<Type, RemoteEventDescriptor> eventsByType = new ConcurrentDictionary<Type, RemoteEventDescriptor>();
@@ -40,7 +34,6 @@ namespace Common.RabbitMQ
 
         public IReadOnlyCollection<RemoteEventDescriptor> Events => eventsByType.Values.ToList();
 
-        /// <summary>The event's descriptor, registering a <see cref="RemotePubSubEvent{TPayload}"/> the first time. Null for a local event.</summary>
         internal RemoteEventDescriptor Find(Type eventType)
         {
             if (eventsByType.TryGetValue(eventType, out RemoteEventDescriptor descriptor))
@@ -82,7 +75,6 @@ namespace Common.RabbitMQ
             return null;
         }
 
-        /// <summary>Two events with one wire name would make incoming messages ambiguous, so the second throws.</summary>
         private void AddName(RemoteEventDescriptor descriptor)
         {
             RemoteEventDescriptor existing = eventsByName.GetOrAdd(descriptor.EventName, descriptor);

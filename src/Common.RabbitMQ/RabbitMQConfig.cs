@@ -2,12 +2,8 @@ using System.Collections.Generic;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>
-    /// Connection settings for one bus. An application has one config per bus it takes part in.
-    /// </summary>
     public class RabbitMQConfig
     {
-        /// <summary>Logical bus name: the key of its <c>Messaging:Buses</c> section, and how a publisher names it.</summary>
         public string BusName { get; set; }
 
         public string HostName { get; set; } = "localhost";
@@ -22,26 +18,18 @@ namespace Common.RabbitMQ
 
         public string ExchangeName { get; set; }
 
-        /// <summary>Shown in the RabbitMQ management UI and used as the queue name prefix.</summary>
         public string ClientName { get; set; }
 
-        /// <summary>How often the connect loops check for a dropped connection, and the wait before reconnecting.</summary>
         public int ReconnectDelaySeconds { get; set; } = 5;
 
-        /// <summary>How long the outstanding queue waits when there is nothing to send (or no connection).</summary>
         public int OutstandingPollIntervalMilliseconds { get; set; } = 100;
 
         public int PrefetchCount { get; set; } = 50;
 
         public int HeartbeatSeconds { get; set; } = 30;
 
-        /// <summary>
-        /// The type of <see cref="ExchangeName"/>, declared on connect: <c>topic</c> (the default), <c>direct</c>,
-        /// <c>fanout</c> or <c>headers</c> (ADR 0002). Keep <c>topic</c> while legacy applications subscribe to it.
-        /// </summary>
         public string ExchangeType { get; set; } = "topic";
 
-        /// <summary>Other applications' exchanges to receive from (ADR 0002). They are checked, never declared.</summary>
         public List<RabbitMQSubscription> Subscriptions { get; set; } = new List<RabbitMQSubscription>();
     }
 }
