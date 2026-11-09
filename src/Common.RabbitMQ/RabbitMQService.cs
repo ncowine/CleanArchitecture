@@ -10,14 +10,6 @@ using Prism.Events;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>
-    /// One connection to one bus (virtual host + exchange), for Prism applications.
-    /// <para>
-    /// A façade over <see cref="RabbitMQBus"/> (ADR 0001): <see cref="Init"/> starts the bus bound to the events the
-    /// application subscribes to, <see cref="Publish"/> buffers a message for it, and received messages are raised as their
-    /// Prism event on the <see cref="IEventAggregator"/>. Bodies are JSON exactly as Newtonsoft writes it, so apps on the old library read them.
-    /// </para>
-    /// </summary>
     public class RabbitMQService : IRabbitMQService, IRoutingKeyPublisher
     {
         private readonly IEventAggregator eventAggregator;
@@ -30,7 +22,6 @@ namespace Common.RabbitMQ
         private RabbitMQBus bus;
         private bool disposed;
 
-        /// <param name="logger">Receives connection and error messages. Required: pass <c>NullLogger.Instance</c> for none.</param>
         public RabbitMQService(IEventAggregator eventAggregator, RemoteEventRegistry registry, ILogger logger)
         {
             this.eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
@@ -40,10 +31,6 @@ namespace Common.RabbitMQ
 
         public string BusName => config?.BusName;
 
-        /// <summary>
-        /// Says which bus a subscription's routing key is bound on, or throws when that can't be decided. A service on its
-        /// own takes every key not meant for another bus; <see cref="RabbitMQServiceRouter"/> sets it to choose among its buses.
-        /// </summary>
         internal Func<SubscribeOptions, string> BindingBus { get; set; }
 
         public string InstanceId => instanceId;
@@ -82,17 +69,12 @@ namespace Common.RabbitMQ
 
             int subscribedEvents = RemoteEventSubscriptions.Join(this);
 
-            // Events are received once subscribed to: nothing is bound up front.
             bus.Start(new List<MessageRegistration>());
 
             logger.LogInformation("[{Bus}] Initialized with {Count} event(s) on {Host}:{Port}{VirtualHost} exchange '{Exchange}'.",
                 config.BusName, subscribedEvents, config.HostName, config.Port, FormatVirtualHost(config.VirtualHost), config.ExchangeName);
         }
 
-        /// <summary>
-        /// Queues <paramref name="payload"/> as <paramref name="eventType"/>, routed with the exchange name. A key of its own
-        /// is chosen when publishing, with <see cref="Publish(Type, object, string)"/>.
-        /// </summary>
         public void Publish(Type eventType, object payload)
         {
             EnsureInitialized();
@@ -101,10 +83,6 @@ namespace Common.RabbitMQ
             bus.Enqueue(descriptor.EventName, payload);
         }
 
-        /// <summary>
-        /// As <see cref="Publish(Type, object)"/>, routed with <paramref name="routingKey"/>. The event-type header still
-        /// carries the full name, so every receiver identifies the event; only subscribers that bind the key receive it.
-        /// </summary>
         public void Publish(Type eventType, object payload, string routingKey)
         {
             EnsureInitialized();
@@ -118,10 +96,6 @@ namespace Common.RabbitMQ
             bus.Enqueue(descriptor.EventName, payload, routingKey);
         }
 
-        /// <summary>
-        /// Starts receiving <paramref name="eventType"/> from the bus, until <see cref="UnregisterQueue"/>, whether or not
-        /// anything is subscribed. Subscribing to the event does this for as long as it has subscribers.
-        /// </summary>
         public Task RegisterQueue(Type eventType)
         {
             EnsureInitialized();
@@ -132,7 +106,6 @@ namespace Common.RabbitMQ
             return Task.CompletedTask;
         }
 
-        /// <summary>Stops receiving <paramref name="eventType"/> from the bus. Publishing is not affected.</summary>
         public Task UnregisterQueue(Type eventType)
         {
             EnsureInitialized();
@@ -155,7 +128,6 @@ namespace Common.RabbitMQ
             bus?.Dispose();
         }
 
-        /// <summary>Starts receiving <paramref name="remoteEvent"/> if it belongs to this service's aggregator, and says whether it does.</summary>
         internal bool Receive(IRemoteEvent remoteEvent)
         {
             RemoteEventDescriptor descriptor = FindOwn(remoteEvent);
@@ -168,7 +140,6 @@ namespace Common.RabbitMQ
             return true;
         }
 
-        /// <summary>Binds a subscription's routing key, if this is the default bus and the event belongs to its aggregator.</summary>
         internal void Bind(IRemoteEvent remoteEvent, SubscribeOptions options)
         {
             if (FindOwn(remoteEvent) != null && IsBindingBus(options))
@@ -177,7 +148,6 @@ namespace Common.RabbitMQ
             }
         }
 
-        /// <summary>As <see cref="Bind"/>, but a key that can't be placed is logged instead of thrown: for subscriptions made before Init.</summary>
         internal void TryBind(IRemoteEvent remoteEvent, SubscribeOptions options)
         {
             try
@@ -204,7 +174,6 @@ namespace Common.RabbitMQ
             }
             catch (InvalidOperationException)
             {
-                // Never bound, for the same reason.
                 return;
             }
 
@@ -229,7 +198,6 @@ namespace Common.RabbitMQ
             return true;
         }
 
-        /// <summary>Stops receiving <paramref name="remoteEvent"/> if it belongs to this service's aggregator, unless <see cref="RegisterQueue"/> asked for it.</summary>
         internal void StopReceiving(IRemoteEvent remoteEvent)
         {
             RemoteEventDescriptor descriptor = FindOwn(remoteEvent);

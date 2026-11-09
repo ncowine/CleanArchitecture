@@ -3,10 +3,6 @@ using Prism.Ioc;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>
-    /// Service locator used by <see cref="RemotePubSubEventExtensions.PublishRemote{TPayload}"/>.
-    /// Uses <see cref="Current"/> when set (e.g. in the API), otherwise Prism's <see cref="ContainerLocator"/>.
-    /// </summary>
     public static class RabbitMQServiceProvider
     {
         public static IRabbitMQService Current { get; set; }
