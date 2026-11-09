@@ -9,11 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Messaging.Hosting
 {
-    /// <summary>
-    /// <see cref="IMessageSubscriber"/>, delivered as an <see cref="IMessageSink"/>: it sees every received message after its
-    /// handlers and calls the subscriptions for that exact type, in the order they were made. Subscribing to a type also
-    /// starts receiving it, and a subscription's routing key is bound on the default bus while it lasts.
-    /// </summary>
     internal sealed class MessageSubscriber : IMessageSubscriber, IMessageSink
     {
         private readonly IServiceProvider provider;
@@ -124,8 +119,6 @@ namespace Messaging.Hosting
         {
             string wireName = WireNames.Get(messageType);
 
-            // Two types with one wire name would make incoming messages ambiguous, as MessagingRegistry.Validate says at
-            // startup. The owner is never forgotten, so another type can't take the wire name later.
             Type other = wireNameOwners.TryGetValue(wireName, out Type owner)
                 ? owner
                 : registry.BusNames.SelectMany(registry.GetMessageRegistrations).FirstOrDefault(r => r.WireName == wireName)?.MessageType;
@@ -158,7 +151,6 @@ namespace Messaging.Hosting
             string wireName = WireNames.Get(messageType);
             foreach (string busName in registry.BusNames)
             {
-                // Handlers and AddMessages keep a type subscribed for the life of the application.
                 if (!registry.GetMessageRegistrations(busName).Any(r => r.WireName == wireName))
                 {
                     provider.GetRequiredKeyedService<RabbitMQBus>(busName).Unsubscribe(wireName);
@@ -166,7 +158,6 @@ namespace Messaging.Hosting
             }
         }
 
-        /// <summary>Copy-on-write, so delivery never takes the lock.</summary>
         private IDisposable Add(MessageSubscription subscription)
         {
             RequireRoutingKey(subscription.Options);
@@ -235,10 +226,6 @@ namespace Messaging.Hosting
             }
         }
 
-        /// <summary>
-        /// The bus a routing key is bound on: <paramref name="busName"/> when given; otherwise the one bus that uses
-        /// <paramref name="exchange"/>, or the default bus when none does. Several buses using it is ambiguous and throws.
-        /// </summary>
         internal static RabbitMQBus BindingBus(IServiceProvider provider, MessagingRegistry registry, string busName, string exchange)
         {
             if (!string.IsNullOrWhiteSpace(busName))

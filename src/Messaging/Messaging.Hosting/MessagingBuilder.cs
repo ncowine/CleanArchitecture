@@ -10,16 +10,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Messaging.Hosting
 {
-    /// <summary>
-    /// Configures messaging in <see cref="MessagingServiceCollectionExtensions.AddMessaging(IServiceCollection, IConfiguration, Action{MessagingBuilder})"/>,
-    /// which has already added the buses and the default from configuration:
-    /// <code><![CDATA[
-    /// messaging.AddHandlers(typeof(EmployeeSavedHandler).Assembly);   // every IMessageHandler<T> in it, every bus
-    /// messaging.AddHandlers(typeof(OrderSavedHandler).Assembly, "Modern");   // ...or only some buses
-    /// messaging.AddMessages(typeof(OrderSaved).Assembly);      // receive every [Message] type in it, wanted or not
-    /// messaging.Subscribe("AppA", "AppA.Events.#");           // another application's exchange
-    /// ]]></code>
-    /// </summary>
     public sealed class MessagingBuilder
     {
         private static readonly MethodInfo AddHandlerMethod =
@@ -59,10 +49,6 @@ namespace Messaging.Hosting
             return this;
         }
 
-        /// <summary>
-        /// Picks the bus messages go to when the publisher names none: <c>Messaging:DefaultBus</c> from configuration.
-        /// Required, even with one bus: the buses don't start without it.
-        /// </summary>
         internal MessagingBuilder UseDefaultBus(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -79,12 +65,6 @@ namespace Messaging.Hosting
             return this;
         }
 
-        /// <summary>
-        /// Receives every <see cref="MessageAttribute"/> type in <paramref name="assembly"/>, whether or not anything
-        /// listens for it, so a custom <see cref="IMessageSink"/> gets them (ADR 0002, section 5). Handlers,
-        /// <see cref="IMessageSubscriber"/> and the event aggregator bridge don't need it: each receives what it listens for.
-        /// </summary>
-        /// <param name="busNames">The buses to receive them on. None means every bus.</param>
         public MessagingBuilder AddMessages(Assembly assembly, params string[] busNames)
         {
             if (assembly == null)
@@ -100,11 +80,6 @@ namespace Messaging.Hosting
             return this;
         }
 
-        /// <summary>
-        /// Receives from another application's exchange on every bus (ADR 0002, section 2), bound with the exchange's name, as
-        /// its owner publishes. The exchange is checked, never declared. Other routing keys are bound by subscribing with
-        /// <see cref="SubscribeOptions"/>.
-        /// </summary>
         public MessagingBuilder Subscribe(string exchange)
         {
             if (string.IsNullOrWhiteSpace(exchange))
@@ -115,7 +90,6 @@ namespace Messaging.Hosting
             return Subscribe(new SubscriptionOptions { Exchange = exchange });
         }
 
-        /// <param name="busName">Null for every bus.</param>
         public MessagingBuilder Subscribe(SubscriptionOptions subscription, string busName = null)
         {
             if (subscription == null || string.IsNullOrWhiteSpace(subscription.Exchange))
@@ -127,7 +101,6 @@ namespace Messaging.Hosting
             return this;
         }
 
-        /// <param name="busNames">The buses they receive from. None means every bus.</param>
         public MessagingBuilder AddHandlers(Assembly assembly, params string[] busNames)
         {
             if (assembly == null)

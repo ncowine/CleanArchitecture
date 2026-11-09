@@ -6,24 +6,12 @@ using System.Text.Json;
 
 namespace Messaging.RabbitMQ
 {
-    /// <summary>
-    /// The one serializer, for legacy and modern apps alike: System.Text.Json set up so apps still on the old library
-    /// (Newtonsoft 12, default settings) read what it writes and it reads what they write (ADR 0001, section 4).
-    /// PascalCase names, case-insensitive reads, ISO 8601 dates, numeric enums. Golden tests prove both directions.
-    /// </summary>
-    /// <remarks>
-    /// Payloads are classes with public <c>{ get; set; }</c> properties, or primitives (int, Guid, bool, string, enums,
-    /// dates). Tuples are rejected (<see cref="EnsureNoTuples"/>): their items are fields, which System.Text.Json skips,
-    /// so they would arrive empty.
-    /// </remarks>
     public static class MessageSerializer
     {
-        /// <summary>Sent as the content-type property of every message.</summary>
         public const string ContentType = "application/json";
 
         private static readonly JsonSerializerOptions options = CreateOptions();
 
-        /// <summary>Serializes <paramref name="message"/> using its runtime type.</summary>
         public static byte[] Serialize(object message)
         {
             return message == null
@@ -36,10 +24,6 @@ namespace Messaging.RabbitMQ
             return JsonSerializer.Deserialize(body, type, options);
         }
 
-        /// <summary>
-        /// Throws when <paramref name="payloadType"/> is a tuple or holds one: in a property, a collection or a generic
-        /// argument. Called when a message type is first used, so a tuple fails at once instead of arriving empty.
-        /// </summary>
         public static void EnsureNoTuples(Type payloadType)
         {
             if (payloadType == null)
@@ -86,7 +70,6 @@ namespace Messaging.RabbitMQ
                 }
             }
 
-            // The framework's own types (string, DateTime, List<T>...) hold none of your tuples.
             if (type.Namespace != null && type.Namespace.StartsWith("System", StringComparison.Ordinal))
             {
                 return null;
@@ -119,12 +102,9 @@ namespace Messaging.RabbitMQ
         {
             JsonSerializerOptions jsonOptions = new JsonSerializerOptions
             {
-                // Newtonsoft's defaults: names as declared, enums as numbers, nulls written.
                 PropertyNamingPolicy = null,
                 PropertyNameCaseInsensitive = true,
 
-                // Newtonsoft only escapes quotes, backslashes and control characters. The relaxed encoder keeps
-                // non-ASCII text and <&> readable; "unsafe" refers to embedding in HTML, which message bodies never are.
                 Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             };
 

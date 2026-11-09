@@ -12,7 +12,6 @@ namespace Messaging.Hosting
 
         public SubscriptionOptions Subscription { get; }
 
-        /// <summary>Null means the application's only bus.</summary>
         public string BusName { get; }
     }
 }

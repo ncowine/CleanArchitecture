@@ -8,11 +8,6 @@ using Prism.Events;
 
 namespace Messaging.Prism
 {
-    /// <summary>
-    /// Starts receiving a message type when something subscribes to its <see cref="MessageEvent{TMessage}"/>, and stops when
-    /// the last subscriber goes. Static because Prism creates the events and gives them no link back to the application; a
-    /// view model can also subscribe before the host starts, so subscribed events are remembered until it does.
-    /// </summary>
     internal sealed class MessageEventReceiver : IHostedService
     {
         private static readonly object gate = new object();
@@ -29,7 +24,6 @@ namespace Messaging.Prism
             this.eventAggregator = eventAggregator;
         }
 
-        /// <summary>A class without a wire name can't travel, so its event stays local.</summary>
         public static void Subscribed(IReceivedEvent receivedEvent)
         {
             if (receivedEvent.MessageType.GetCustomAttribute<MessageAttribute>(inherit: false) == null)
@@ -62,7 +56,6 @@ namespace Messaging.Prism
             }
         }
 
-        /// <summary>Checked under the lock, so a subscribe at the same moment either keeps the message received or starts it again.</summary>
         public static void StopIfUnused(IReceivedEvent receivedEvent)
         {
             lock (gate)
@@ -84,7 +77,6 @@ namespace Messaging.Prism
             }
         }
 
-        /// <summary>Binds a subscription's routing key, now or when the host starts. Undone by <see cref="Unbind"/>.</summary>
         public static void Bind(IReceivedEvent receivedEvent, SubscribeOptions options)
         {
             lock (gate)

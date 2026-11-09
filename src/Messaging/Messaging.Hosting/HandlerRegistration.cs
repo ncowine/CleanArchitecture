@@ -19,13 +19,8 @@ namespace Messaging.Hosting
 
         public Type HandlerType { get; }
 
-        /// <summary>The buses this handler receives from. Empty means every bus.</summary>
         public IReadOnlyCollection<string> Buses { get; }
 
-        /// <summary>
-        /// (handler, message, context, token) → handler.Handle(message, context, token). Built where both types are known,
-        /// so dispatching a message needs no reflection.
-        /// </summary>
         public Func<object, object, MessageContext, CancellationToken, Task> Invoke { get; }
     }
 }

@@ -3,7 +3,6 @@ using System.Threading;
 
 namespace Messaging.Hosting
 {
-    /// <summary>Returned by <see cref="IMessageSubscriber"/>: disposing it unsubscribes. Disposing twice is harmless.</summary>
     internal sealed class SubscriptionToken : IDisposable
     {
         private Action unsubscribe;

@@ -8,11 +8,6 @@ using Prism.Events;
 
 namespace Messaging.Prism
 {
-    /// <summary>
-    /// Raises every received message as <see cref="MessageEvent{TMessage}"/> on the application's
-    /// <see cref="IEventAggregator"/>. Subscribers choose their thread as usual: <c>ThreadOption.UIThread</c> marshals to
-    /// the UI thread the aggregator was created on.
-    /// </summary>
     internal sealed class EventAggregatorSink : IMessageSink
     {
         private static readonly ConcurrentDictionary<Type, Action<IEventAggregator, object>> publishers =

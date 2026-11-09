@@ -11,16 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Messaging.Hosting
 {
-    /// <summary>
-    /// Messaging for an application without a .NET host, such as a WPF app on Prism and DryIoc (ADR 0002, section 5).
-    /// Configure it like a server, start it, and hand <see cref="Publisher"/> to the application's own container:
-    /// <code>
-    /// MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => ...));
-    /// containerRegistry.RegisterInstance(client.Publisher);
-    /// await client.StartAsync();
-    /// </code>
-    /// Logging is optional: without <c>services.AddLogging()</c> loggers do nothing.
-    /// </summary>
     public sealed class MessagingClient : IDisposable
     {
         private readonly ServiceProvider provider;
@@ -53,7 +43,6 @@ namespace Messaging.Hosting
             return new MessagingClient(services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }));
         }
 
-        /// <summary>Validates the configuration and starts the buses. Connecting happens in the background.</summary>
         public async Task StartAsync(CancellationToken cancellationToken = default)
         {
             if (disposed)
@@ -94,7 +83,6 @@ namespace Messaging.Hosting
                 return;
             }
 
-            // Run on the thread pool so a UI thread calling Dispose can't deadlock.
             Task.Run(() => StopAsync()).GetAwaiter().GetResult();
             provider.Dispose();
             disposed = true;
