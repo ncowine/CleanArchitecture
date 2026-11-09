@@ -97,19 +97,19 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task Receive_IsCounted_ReceivingStopsWithTheLastStopReceiving()
+        public async Task SubscribeByType_IsCounted_ReceivingStopsWithTheLastUnsubscribe()
         {
             RecordingSink sink = new RecordingSink();
             await WithHost(messaging => messaging.Services.AddSingleton<IMessageSink>(sink), async (topology, host) =>
             {
                 IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
-                subscriber.Receive(typeof(CompatMessage));
-                subscriber.Receive(typeof(CompatMessage));
+                subscriber.Subscribe(typeof(CompatMessage));
+                subscriber.Subscribe(typeof(CompatMessage));
 
-                subscriber.StopReceiving(typeof(CompatMessage));
+                subscriber.Unsubscribe(typeof(CompatMessage));
                 Assert.True(await IsReceived(topology, sink));
 
-                subscriber.StopReceiving(typeof(CompatMessage));
+                subscriber.Unsubscribe(typeof(CompatMessage));
                 Assert.False(await IsReceived(topology, sink));
             });
         }

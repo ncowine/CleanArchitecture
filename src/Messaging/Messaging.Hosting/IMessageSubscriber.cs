@@ -10,8 +10,8 @@ namespace Messaging.Hosting
 
         IDisposable Subscribe<TMessage>(Func<TMessage, MessageContext, CancellationToken, Task> handler, SubscribeOptions options = null);
 
-        void Receive(Type messageType, SubscribeOptions options = null);
+        void Subscribe(Type messageType, SubscribeOptions options = null);
 
-        void StopReceiving(Type messageType, SubscribeOptions options = null);
+        void Unsubscribe(Type messageType, SubscribeOptions options = null);
     }
 }

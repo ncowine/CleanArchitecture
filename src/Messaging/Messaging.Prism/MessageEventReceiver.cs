@@ -44,7 +44,7 @@ namespace Messaging.Prism
                     {
                         if (receivedEvent.BelongsTo(receiver.eventAggregator))
                         {
-                            receiver.subscriber.Receive(receivedEvent.MessageType);
+                            receiver.subscriber.Subscribe(receivedEvent.MessageType);
                         }
                     }
                 }
@@ -71,7 +71,7 @@ namespace Messaging.Prism
                 {
                     if (receivedEvent.BelongsTo(receiver.eventAggregator))
                     {
-                        receiver.subscriber.StopReceiving(receivedEvent.MessageType);
+                        receiver.subscriber.Unsubscribe(receivedEvent.MessageType);
                     }
                 }
             }
@@ -85,7 +85,7 @@ namespace Messaging.Prism
                 {
                     if (receivedEvent.BelongsTo(receiver.eventAggregator))
                     {
-                        receiver.subscriber.Receive(receivedEvent.MessageType, options);
+                        receiver.subscriber.Subscribe(receivedEvent.MessageType, options);
                     }
                 }
 
@@ -108,7 +108,7 @@ namespace Messaging.Prism
                 {
                     if (receivedEvent.BelongsTo(receiver.eventAggregator))
                     {
-                        receiver.subscriber.StopReceiving(receivedEvent.MessageType, options);
+                        receiver.subscriber.Unsubscribe(receivedEvent.MessageType, options);
                     }
                 }
             }
@@ -123,7 +123,7 @@ namespace Messaging.Prism
                 {
                     if (receivedEvent.BelongsTo(eventAggregator))
                     {
-                        subscriber.Receive(receivedEvent.MessageType);
+                        subscriber.Subscribe(receivedEvent.MessageType);
                     }
                 }
 
@@ -131,7 +131,7 @@ namespace Messaging.Prism
                 {
                     if (receivedEvent.BelongsTo(eventAggregator))
                     {
-                        subscriber.Receive(receivedEvent.MessageType, options);
+                        subscriber.Subscribe(receivedEvent.MessageType, options);
                     }
                 }
             }

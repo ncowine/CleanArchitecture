@@ -25,7 +25,7 @@ namespace Messaging.Hosting
             this.registry = registry;
         }
 
-        public void Receive(Type messageType, SubscribeOptions options = null)
+        public void Subscribe(Type messageType, SubscribeOptions options = null)
         {
             if (messageType == null)
             {
@@ -42,7 +42,7 @@ namespace Messaging.Hosting
             }
         }
 
-        public void StopReceiving(Type messageType, SubscribeOptions options = null)
+        public void Unsubscribe(Type messageType, SubscribeOptions options = null)
         {
             if (messageType == null)
             {
