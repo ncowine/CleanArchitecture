@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Reflection;
+using Messaging.RabbitMQ;
 
 namespace Messaging.Hosting
 {
@@ -16,8 +17,12 @@ namespace Messaging.Hosting
             }
 
             return cache.GetOrAdd(messageType, type =>
-                type.GetCustomAttribute<MessageAttribute>(inherit: false)?.WireName
-                ?? throw new InvalidOperationException($"{type.FullName} has no [Message(\"<wire name>\")] attribute."));
+            {
+                string wireName = type.GetCustomAttribute<MessageAttribute>(inherit: false)?.WireName
+                    ?? throw new InvalidOperationException($"{type.FullName} has no [Message(\"<wire name>\")] attribute.");
+                MessageSerializer.EnsureNoTuples(type);
+                return wireName;
+            });
         }
     }
 }

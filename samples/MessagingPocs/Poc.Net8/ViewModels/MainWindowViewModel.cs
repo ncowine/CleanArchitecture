@@ -149,9 +149,9 @@ public sealed class MainWindowViewModel : BindableBase
         AddLog($"{disposal.DisposedBy} disposed of {disposal.AssetTag}; the API will delete it");
     }
 
-    private void OnFlagged((Guid id, string name) flagged)
+    private void OnFlagged(EquipmentFlag flagged)
     {
-        AddLog($"{flagged.name} ({flagged.id}) was flagged");
+        AddLog($"{flagged.Name} ({flagged.Id}) was flagged");
     }
 
     private async Task CheckConnectionAsync()

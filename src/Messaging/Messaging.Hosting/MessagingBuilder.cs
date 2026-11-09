@@ -35,28 +35,26 @@ namespace Messaging.Hosting
 
         internal MessagingRegistry Registry { get; }
 
-        /// <param name="serializer">Null for System.Text.Json (<see cref="SystemTextJsonMessageSerializer"/>).</param>
-        internal MessagingBuilder AddBus(string name, IConfiguration section, IMessageSerializer serializer = null)
+        internal MessagingBuilder AddBus(string name, IConfiguration section)
         {
             if (section == null)
             {
                 throw new ArgumentNullException(nameof(section));
             }
 
-            AddBus(name, serializer);
+            AddBus(name);
             Services.AddOptions<RabbitMQBusOptions>(name).Bind(section);
             return this;
         }
 
-        /// <param name="serializer">Null for System.Text.Json (<see cref="SystemTextJsonMessageSerializer"/>).</param>
-        internal MessagingBuilder AddBus(string name, Action<RabbitMQBusOptions> configure, IMessageSerializer serializer = null)
+        internal MessagingBuilder AddBus(string name, Action<RabbitMQBusOptions> configure)
         {
             if (configure == null)
             {
                 throw new ArgumentNullException(nameof(configure));
             }
 
-            AddBus(name, serializer);
+            AddBus(name);
             Services.AddOptions<RabbitMQBusOptions>(name).Configure(configure);
             return this;
         }
@@ -163,14 +161,14 @@ namespace Messaging.Hosting
             return ((THandler)handler).Handle((TMessage)message, context, cancellationToken);
         }
 
-        private void AddBus(string name, IMessageSerializer serializer)
+        private void AddBus(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
             {
                 throw new ArgumentException("A bus name is required.", nameof(name));
             }
 
-            Registry.AddBus(name, serializer);
+            Registry.AddBus(name);
 
             Services.AddOptions<RabbitMQBusOptions>(name).PostConfigure(options =>
             {

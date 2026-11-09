@@ -35,7 +35,7 @@ namespace Common.RabbitMQ.Tests.Broker
             };
             configure?.Invoke(options);
 
-            bus = new RabbitMQBus(options, TestJsonSerializer.Instance, this, Log);
+            bus = new RabbitMQBus(options, this, Log);
             bus.Start(new[] { new MessageRegistration(WireName, typeof(CompatPayload)) });
         }
 
