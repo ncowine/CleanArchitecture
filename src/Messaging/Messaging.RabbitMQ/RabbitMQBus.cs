@@ -48,14 +48,9 @@ namespace Messaging.RabbitMQ
                 throw new ArgumentNullException(nameof(options));
             }
 
-            if (string.IsNullOrWhiteSpace(options.BusName) || string.IsNullOrWhiteSpace(options.ExchangeName) || string.IsNullOrWhiteSpace(options.ClientName))
+            if (new[] { options.BusName, options.ExchangeName, options.ClientName, options.ExchangeType }.Any(string.IsNullOrWhiteSpace))
             {
-                throw new ArgumentException("BusName, ExchangeName and ClientName are required.", nameof(options));
-            }
-
-            if (string.IsNullOrWhiteSpace(options.ExchangeType))
-            {
-                throw new ArgumentException("ExchangeType is required.", nameof(options));
+                throw new ArgumentException("BusName, ExchangeName, ClientName and ExchangeType are required.", nameof(options));
             }
 
             if (options.Subscriptions.Any(s => s == null || string.IsNullOrWhiteSpace(s.Exchange)))
@@ -116,36 +111,22 @@ namespace Messaging.RabbitMQ
 
             CancellationToken token = cancellation.Token;
 
-            Task.Run(() => KeepConnected(ConnectionRole.Consumer, token));
-            Task.Run(() => KeepConnected(ConnectionRole.Publisher, token));
+            Task.Run(() => KeepConnected(Consumer, () => IsConsumerConnected, CloseConsumer, OpenConsumer, token));
+            Task.Run(() => KeepConnected(Publisher, () => IsPublisherConnected, ClosePublisher, OpenPublisher, token));
             Task.Run(() => OutstandingQueue(token));
         }
 
-        public void Enqueue(string wireName, object message)
-        {
-            Enqueue(wireName, message, null);
-        }
-
-        public void Enqueue(string wireName, object message, string routingKey)
+        public void Enqueue(string wireName, object message, string routingKey = null)
         {
             EnsureNotDisposed();
 
-            outstandingMessages.Enqueue(Prepare(wireName, message, routingKey));
-        }
-
-        private PendingMessage Prepare(string wireName, object message, string routingKey)
-        {
             if (string.IsNullOrWhiteSpace(wireName))
             {
                 throw new ArgumentException("A wire name is required.", nameof(wireName));
             }
 
-            byte[] body = MessageSerializer.Serialize(message);
-
             string key = string.IsNullOrEmpty(routingKey) ? options.ExchangeName : routingKey;
-            string id = Guid.NewGuid().ToString("N");
-
-            return new PendingMessage(wireName, key, id, body);
+            outstandingMessages.Enqueue(new PendingMessage(wireName, key, Guid.NewGuid().ToString("N"), MessageSerializer.Serialize(message)));
         }
 
         public void Subscribe(MessageRegistration registration)
@@ -268,25 +249,20 @@ namespace Messaging.RabbitMQ
             cancellation.Dispose();
         }
 
-        #region Connections
+        private const string Consumer = "Consumer";
 
-        private async Task KeepConnected(ConnectionRole role, CancellationToken token)
+        private const string Publisher = "Publisher";
+
+        private async Task KeepConnected(string role, Func<bool> isConnected, Func<Task> close, Func<CancellationToken, Task> open, CancellationToken token)
         {
             while (!token.IsCancellationRequested)
             {
                 try
                 {
-                    if (role == ConnectionRole.Consumer && !IsConsumerConnected)
+                    if (!isConnected())
                     {
-                        await CloseConsumer().ConfigureAwait(false);
-                        await OpenConsumer(token).ConfigureAwait(false);
-                        logger.LogInformation("[{Bus}] Consumer connected. Queue '{Queue}'.", options.BusName, consumerQueueName);
-                    }
-                    else if (role == ConnectionRole.Publisher && !IsPublisherConnected)
-                    {
-                        await ClosePublisher().ConfigureAwait(false);
-                        await OpenPublisher(token).ConfigureAwait(false);
-                        logger.LogInformation("[{Bus}] Publisher connected.", options.BusName);
+                        await close().ConfigureAwait(false);
+                        await open(token).ConfigureAwait(false);
                     }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -305,25 +281,20 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        private Task OnConsumerConnectionShutdown(object sender, ShutdownEventArgs args)
+        private async Task<IConnection> Connect(string role, CancellationToken token)
         {
-            return OnConnectionLost(ConnectionRole.Consumer, args);
+            IConnection connection = await CreateConnectionFactory().CreateConnectionAsync(ConnectionName(role), token).ConfigureAwait(false);
+            connection.ConnectionShutdownAsync += (sender, args) =>
+            {
+                if (args.Initiator != ShutdownInitiator.Application)
+                {
+                    logger.LogWarning("[{Bus}] {Role} connection lost: {Reason}. Reconnecting.", options.BusName, role, args.ReplyText);
+                }
+
+                return Task.CompletedTask;
+            };
+            return connection;
         }
-
-        private Task OnPublisherConnectionShutdown(object sender, ShutdownEventArgs args)
-        {
-            return OnConnectionLost(ConnectionRole.Publisher, args);
-        }
-
-        private Task OnConnectionLost(ConnectionRole role, ShutdownEventArgs args)
-        {
-            logger.LogWarning("[{Bus}] {Role} connection lost: {Reason}. Reconnecting.", options.BusName, role, args.ReplyText);
-            return Task.CompletedTask;
-        }
-
-        #endregion
-
-        #region Consumer
 
         private async Task OpenConsumer(CancellationToken token)
         {
@@ -333,10 +304,7 @@ namespace Messaging.RabbitMQ
             IChannel channel = null;
             try
             {
-                connection = await CreateConnectionFactory()
-                    .CreateConnectionAsync(ConnectionName(ConnectionRole.Consumer), token)
-                    .ConfigureAwait(false);
-                connection.ConnectionShutdownAsync += OnConsumerConnectionShutdown;
+                connection = await Connect(Consumer, token).ConfigureAwait(false);
 
                 channel = await connection.CreateChannelAsync(cancellationToken: token).ConfigureAwait(false);
                 await DeclareExchange(channel, token).ConfigureAwait(false);
@@ -364,13 +332,14 @@ namespace Messaging.RabbitMQ
                 await channel.BasicConsumeAsync(
                     queue: queue.QueueName,
                     autoAck: false,
-                    consumerTag: ConnectionName(ConnectionRole.Consumer),
+                    consumerTag: ConnectionName(Consumer),
                     consumer: consumer,
                     cancellationToken: token).ConfigureAwait(false);
 
                 consumerConnection = connection;
                 consumerChannel = channel;
                 consumerQueueName = queue.QueueName;
+                logger.LogInformation("[{Bus}] Consumer connected. Queue '{Queue}'.", options.BusName, queue.QueueName);
             }
             catch
             {
@@ -456,11 +425,6 @@ namespace Messaging.RabbitMQ
             finally
             {
                 consumerLock.Release();
-            }
-
-            if (connection != null)
-            {
-                connection.ConnectionShutdownAsync -= OnConsumerConnectionShutdown;
             }
 
             await CloseQuietly(channel, connection).ConfigureAwait(false);
@@ -580,20 +544,13 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        #endregion
-
-        #region Publisher
-
         private async Task OpenPublisher(CancellationToken token)
         {
             IConnection connection = null;
             IChannel channel = null;
             try
             {
-                connection = await CreateConnectionFactory()
-                    .CreateConnectionAsync(ConnectionName(ConnectionRole.Publisher), token)
-                    .ConfigureAwait(false);
-                connection.ConnectionShutdownAsync += OnPublisherConnectionShutdown;
+                connection = await Connect(Publisher, token).ConfigureAwait(false);
 
                 CreateChannelOptions channelOptions = new CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true);
                 channel = await connection.CreateChannelAsync(channelOptions, token).ConfigureAwait(false);
@@ -601,6 +558,7 @@ namespace Messaging.RabbitMQ
 
                 publisherConnection = connection;
                 publisherChannel = channel;
+                logger.LogInformation("[{Bus}] Publisher connected.", options.BusName);
             }
             catch
             {
@@ -616,17 +574,8 @@ namespace Messaging.RabbitMQ
             publisherConnection = null;
             publisherChannel = null;
 
-            if (connection != null)
-            {
-                connection.ConnectionShutdownAsync -= OnPublisherConnectionShutdown;
-            }
-
             await CloseQuietly(channel, connection).ConfigureAwait(false);
         }
-
-        #endregion
-
-        #region Outstanding queue
 
         private async Task OutstandingQueue(CancellationToken token)
         {
@@ -686,10 +635,6 @@ namespace Messaging.RabbitMQ
                 cancellationToken: token).ConfigureAwait(false);
         }
 
-        #endregion
-
-        #region Helpers
-
         private ConnectionFactory CreateConnectionFactory()
         {
             ConnectionFactory factory = new ConnectionFactory
@@ -714,10 +659,9 @@ namespace Messaging.RabbitMQ
             return factory;
         }
 
-        private string ConnectionName(ConnectionRole role)
+        private string ConnectionName(string role)
         {
-            string kind = role == ConnectionRole.Consumer ? "consumer" : "publisher";
-            return $"{options.ClientName} [{options.BusName}] {kind} - {Environment.UserName}";
+            return $"{options.ClientName} [{options.BusName}] {role.ToLowerInvariant()} - {Environment.UserName}";
         }
 
         private static int ProcessId
@@ -961,6 +905,5 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        #endregion
     }
 }
