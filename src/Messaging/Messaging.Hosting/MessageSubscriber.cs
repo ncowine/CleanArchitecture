@@ -122,7 +122,22 @@ namespace Messaging.Hosting
             lock (gate)
             {
                 StartReceiving(subscription.MessageType);
-                bindingBus?.Bind(options.Exchange, options.RoutingKey);
+                try
+                {
+                    bindingBus?.Bind(options.Exchange, options.RoutingKey);
+                }
+                catch
+                {
+                    try
+                    {
+                        StopIfUnused(subscription.MessageType);
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                    }
+
+                    throw;
+                }
 
                 Dictionary<Type, MessageSubscription[]> next = new Dictionary<Type, MessageSubscription[]>(subscriptions);
                 next[subscription.MessageType] = next.TryGetValue(subscription.MessageType, out MessageSubscription[] existing)
@@ -178,48 +193,13 @@ namespace Messaging.Hosting
 
         internal static RabbitMQBus BindingBus(IServiceProvider provider, MessagingRegistry registry, string busName, string exchange)
         {
-            if (!string.IsNullOrWhiteSpace(busName))
-            {
-                if (!registry.BusNames.Contains(busName))
-                {
-                    throw new InvalidOperationException($"Cannot bind a routing key on bus '{busName}': it is not configured for this application.");
-                }
-
-                RabbitMQBus named = provider.GetRequiredKeyedService<RabbitMQBus>(busName);
-                if (!string.IsNullOrWhiteSpace(exchange) && !named.UsesExchange(exchange))
-                {
-                    throw new InvalidOperationException(
-                        $"Cannot bind a routing key on exchange '{exchange}': bus '{busName}' doesn't use it. Add it to Messaging:Buses:{busName}:Subscriptions, or check the name.");
-                }
-
-                return named;
-            }
-
-            if (!string.IsNullOrWhiteSpace(exchange))
-            {
-                List<RabbitMQBus> matches = registry.BusNames
-                    .Select(name => provider.GetRequiredKeyedService<RabbitMQBus>(name))
-                    .Where(bus => bus.UsesExchange(exchange))
-                    .ToList();
-
-                if (matches.Count == 1)
-                {
-                    return matches[0];
-                }
-
-                if (matches.Count > 1)
-                {
-                    throw new InvalidOperationException(
-                        $"Exchange '{exchange}' is on several buses ({string.Join(", ", matches.Select(b => b.BusName))}): set SubscribeOptions.Bus to say which.");
-                }
-
-                throw new InvalidOperationException(
-                    $"Cannot bind a routing key on exchange '{exchange}': no bus uses it. Add it to a bus's Subscriptions in Messaging:Buses, or check the name.");
-            }
-
-            string defaultBus = registry.GetDefaultBus()
-                ?? throw new InvalidOperationException("A routing key is bound on the default bus, and there is none. Call UseDefaultBus.");
-            return provider.GetRequiredKeyedService<RabbitMQBus>(defaultBus);
+            string selected = BusSelection.ForBinding(
+                registry.BusNames,
+                (name, ex) => provider.GetRequiredKeyedService<RabbitMQBus>(name).UsesExchange(ex),
+                registry.GetDefaultBus(),
+                busName,
+                exchange);
+            return provider.GetRequiredKeyedService<RabbitMQBus>(selected);
         }
     }
 }

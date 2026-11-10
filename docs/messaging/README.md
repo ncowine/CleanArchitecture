@@ -278,8 +278,9 @@ flowchart LR
   **Which bus**, when an app has several: `SubscribeOptions.Bus` if set. Otherwise the one bus that has `Exchange` as
   its own exchange or in its `Subscriptions`, or the default bus when there's no `Exchange`. The same exchange name on
   two buses (for example the same app in two vhosts) is ambiguous: subscribing throws and asks for `Bus`. A handler's
-  `[RoutingKey]` goes on those of the buses it receives from (`AddHandlers(assembly, "Legacy")`) that use its exchange,
-  or is placed the same way.
+  `[RoutingKey]` goes on those of the buses it receives from (`AddHandlers(assembly, "Legacy")`, every call for that
+  handler combined) that use its exchange, or is placed the same way. A listed bus that doesn't use the exchange is
+  skipped with an Information log at startup.
 
   **Guards (2026-11-10):** a bus or exchange that doesn't match the configuration throws, instead of binding
   somewhere unexpected. Subscribing throws `InvalidOperationException` for a `Bus` that isn't in `Messaging:Buses`, an

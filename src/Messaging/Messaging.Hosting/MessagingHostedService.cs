@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Messaging.Hosting
 {
@@ -14,11 +16,13 @@ namespace Messaging.Hosting
         private readonly IServiceProvider provider;
         private readonly MessagingRegistry registry;
         private readonly List<RabbitMQBus> started = new List<RabbitMQBus>();
+        private readonly ILogger logger;
 
         public MessagingHostedService(IServiceProvider provider, MessagingRegistry registry)
         {
             this.provider = provider;
             this.registry = registry;
+            logger = provider.GetService<ILogger<MessagingHostedService>>() ?? (ILogger)NullLogger.Instance;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
@@ -28,16 +32,24 @@ namespace Messaging.Hosting
             foreach ((RoutingKeyAttribute key, IReadOnlyCollection<string> buses) in registry.GetHandlerRoutingKeys())
             {
                 List<RabbitMQBus> targets = buses.Count > 0
-                    ? buses.Select(name => provider.GetRequiredKeyedService<RabbitMQBus>(name))
-                        .Where(bus => string.IsNullOrWhiteSpace(key.Exchange) || bus.UsesExchange(key.Exchange))
-                        .ToList()
+                    ? buses.Select(name => provider.GetRequiredKeyedService<RabbitMQBus>(name)).ToList()
                     : new List<RabbitMQBus> { MessageSubscriber.BindingBus(provider, registry, null, key.Exchange) };
 
-                if (targets.Count == 0)
+                if (!string.IsNullOrWhiteSpace(key.Exchange))
                 {
-                    throw new InvalidOperationException(
-                        $"[RoutingKey(\"{key.RoutingKey}\")] binds exchange '{key.Exchange}', which none of its buses ({string.Join(", ", buses)}) uses. " +
-                        "Add it to a bus's Subscriptions in Messaging:Buses, or check the name.");
+                    List<RabbitMQBus> usingExchange = targets.Where(bus => bus.UsesExchange(key.Exchange)).ToList();
+                    if (usingExchange.Count == 0)
+                    {
+                        throw BusSelection.NoBusUses(key.Exchange);
+                    }
+
+                    foreach (RabbitMQBus skipped in targets.Except(usingExchange))
+                    {
+                        logger.LogInformation("[{Bus}] [RoutingKey(\"{RoutingKey}\")] on exchange '{Exchange}' is not bound on this bus: it doesn't use that exchange. It is bound on {Buses}.",
+                            skipped.BusName, key.RoutingKey, key.Exchange, string.Join(", ", usingExchange.Select(bus => bus.BusName)));
+                    }
+
+                    targets = usingExchange;
                 }
 
                 foreach (RabbitMQBus bus in targets)

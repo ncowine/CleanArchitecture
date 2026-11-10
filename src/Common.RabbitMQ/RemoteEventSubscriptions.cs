@@ -68,9 +68,23 @@ namespace Common.RabbitMQ
         {
             lock (gate)
             {
-                foreach (RabbitMQService service in running)
+                List<RabbitMQService> bound = new List<RabbitMQService>();
+                try
                 {
-                    service.Bind(remoteEvent, options);
+                    foreach (RabbitMQService service in running)
+                    {
+                        service.Bind(remoteEvent, options);
+                        bound.Add(service);
+                    }
+                }
+                catch
+                {
+                    foreach (RabbitMQService service in bound)
+                    {
+                        service.Unbind(remoteEvent, options);
+                    }
+
+                    throw;
                 }
 
                 keyed.Add((remoteEvent, options));

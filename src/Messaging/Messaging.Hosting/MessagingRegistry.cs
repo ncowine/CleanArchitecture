@@ -38,7 +38,14 @@ namespace Messaging.Hosting
             return handlers
                 .GroupBy(h => h.HandlerType)
                 .SelectMany(g => g.Key.GetCustomAttributes<RoutingKeyAttribute>(inherit: false)
-                    .Select(a => (a, (IReadOnlyCollection<string>)g.First().Buses)));
+                    .Select(a => (a, HandlerBuses(g))));
+        }
+
+        private static IReadOnlyCollection<string> HandlerBuses(IEnumerable<HandlerRegistration> registrations)
+        {
+            return registrations.Any(r => r.Buses.Count == 0)
+                ? (IReadOnlyCollection<string>)new string[0]
+                : registrations.SelectMany(r => r.Buses).Distinct(StringComparer.Ordinal).ToList();
         }
 
         public IEnumerable<HandlerRegistration> GetHandlers(Type messageType, string busName)

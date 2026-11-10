@@ -83,7 +83,7 @@ RabbitMQ.Client calls RabbitMQBus.OnMessageReceived for each delivery
        ├─ nothing subscribed to that wire name? → ack and skip (normal: the queue gets the whole exchange)
        ├─ build MessageContext
        └─ HandleWithRetries: deserialize → dispatcher.Dispatch(...), retrying on shared queues
-  └─ Settle: ack, reject (= dead-letter) or nothing (stopping)
+  └─ Settle: ack, reject (= dead-letter) or nothing (stopping: also when a handler fails because the bus is shutting down)
 
 dispatcher.Dispatch is where the front doors differ (IInboundDispatcher):
   Legacy: PrismDispatcher.Dispatch → RemoteEventDescriptor.PublishLocal → GetEvent<T>().Publish(payload)

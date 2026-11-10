@@ -161,9 +161,7 @@ namespace Messaging.RabbitMQ
 
             if (!string.IsNullOrWhiteSpace(exchange) && !UsesExchange(exchange))
             {
-                throw new InvalidOperationException(
-                    $"Cannot bind routing key '{routingKey}' on exchange '{exchange}': bus '{options.BusName}' doesn't use it. " +
-                    "Add it to the bus's Subscriptions in Messaging:Buses, or check the name.");
+                throw BusSelection.NotUsedBy(options.BusName, exchange);
             }
 
             bool changed = false;
@@ -482,12 +480,13 @@ namespace Messaging.RabbitMQ
         private async Task<MessageSettlement> HandleWithRetries(MessageRegistration registration, MessageContext context, BasicDeliverEventArgs args, CancellationToken token)
         {
             int attempts = IsShared ? options.MaxAttempts : 1;
+            byte[] body = args.Body.ToArray();
 
             try
             {
                 for (int attempt = 1; ; attempt++)
                 {
-                    object message = MessageSerializer.Deserialize(args.Body.ToArray(), registration.MessageType);
+                    object message = MessageSerializer.Deserialize(body, registration.MessageType);
 
                     try
                     {
@@ -504,6 +503,12 @@ namespace Messaging.RabbitMQ
                         return MessageSettlement.None;
                     }
                 }
+            }
+            catch (Exception ex) when (token.IsCancellationRequested)
+            {
+                logger.LogInformation("[{Bus}] Handling {WireName} {MessageId} stopped because the bus is shutting down; the message is left for redelivery: {Error}",
+                    options.BusName, context.WireName, context.MessageId, ex.Message);
+                return MessageSettlement.None;
             }
             catch (Exception ex)
             {

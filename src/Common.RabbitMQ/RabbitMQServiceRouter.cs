@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Messaging;
+using Messaging.RabbitMQ;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Prism.Events;
@@ -123,46 +124,7 @@ namespace Common.RabbitMQ
 
         internal string BusForBinding(SubscribeOptions options)
         {
-            bool hasExchange = !string.IsNullOrWhiteSpace(options.Exchange);
-            if (!string.IsNullOrWhiteSpace(options.Bus))
-            {
-                if (!buses.ContainsKey(options.Bus))
-                {
-                    throw new InvalidOperationException($"Cannot bind a routing key on bus '{options.Bus}': it is not configured for this application.");
-                }
-
-                if (hasExchange && !UsesExchange(configs[options.Bus], options.Exchange))
-                {
-                    throw new InvalidOperationException(
-                        $"Cannot bind a routing key on exchange '{options.Exchange}': bus '{options.Bus}' doesn't use it. Add it to Messaging:Buses:{options.Bus}:Subscriptions, or check the name.");
-                }
-
-                return options.Bus;
-            }
-
-            if (hasExchange)
-            {
-                List<string> matches = configs
-                    .Where(c => UsesExchange(c.Value, options.Exchange))
-                    .Select(c => c.Key)
-                    .ToList();
-
-                if (matches.Count == 1)
-                {
-                    return matches[0];
-                }
-
-                if (matches.Count > 1)
-                {
-                    throw new InvalidOperationException(
-                        $"Exchange '{options.Exchange}' is on several buses ({string.Join(", ", matches)}): set SubscribeOptions.Bus to say which.");
-                }
-
-                throw new InvalidOperationException(
-                    $"Cannot bind a routing key on exchange '{options.Exchange}': no bus uses it. Add it to a bus's Subscriptions in Messaging:Buses, or check the name.");
-            }
-
-            return DefaultBus;
+            return BusSelection.ForBinding(buses.Keys, (name, exchange) => UsesExchange(configs[name], exchange), DefaultBus, options.Bus, options.Exchange);
         }
 
         private static bool UsesExchange(RabbitMQConfig config, string exchange)
