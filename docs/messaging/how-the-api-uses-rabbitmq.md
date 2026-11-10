@@ -126,7 +126,7 @@ other projects translate between your code and that engine. It lives in `src/Mes
 | --- | --- | --- |
 | `Messaging.Abstractions` | `[Message]`, `IMessagePublisher`, `IMessageHandler<T>`, `MessageContext`. No dependencies. | Contracts, every app |
 | `Messaging.RabbitMQ` | `RabbitMQBus`, the engine: connect, declare, publish, consume, retry, reconnect. Knows nothing about DI or Prism. | Everything, indirectly |
-| `Messaging.Hosting` | DI registration (`AddMessaging`), handlers, subscribers, JSON, `MessagingClient` for desktop apps | The API, modern WPF apps |
+| `Messaging.Hosting` | DI registration (`AddMessaging`), handlers, subscribers, for any app on the .NET Generic Host | The API, modern WPF apps |
 
 ### Bus, handler, subscriber
 
@@ -135,9 +135,10 @@ Three words cover the configuration. All of it happens in one `AddMessaging` cal
 
 ```csharp
 services.AddMessaging(config, messaging => messaging           // one bus per Messaging:Buses entry
-    .AddHandlers(typeof(OrderSavedHandler).Assembly)            // every IMessageHandler<T> in it, on every bus
-    .Subscribe("OtherApp", "OtherApp.Events.#"));               // also receive from another app's exchange
+    .AddHandlers(typeof(OrderSavedHandler).Assembly));          // every IMessageHandler<T> in it, on every bus
 ```
+
+Another app's exchange is a subscription in configuration: `Messaging:Buses:Main:Subscriptions`.
 
 - **Bus**: one connection to a broker plus this app's own exchange. An app can have several; the API has one, `Main`.
 - **Publishing** needs no registration: a message goes to the default bus, with the exchange name as the routing key and its wire name in the `event-type` header.

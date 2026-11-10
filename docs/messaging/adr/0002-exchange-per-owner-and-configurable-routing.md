@@ -178,7 +178,7 @@ These follow ADR 0001's steps 0–3b, which are done. Each can be released on it
    - **Routes:** `Route<T>()` with no `.To(...)` means the application's only bus. `.WithRoutingKey(key or o => ...)` sets the key, and `PublishOptions.RoutingKey` overrides it per call.
    - **Receiving and subscriptions:** `AddMessages(assembly)` receives every `[Message]` type without a handler. `Subscribe(exchange, keys...)` adds a subscription in code. `IMessageSink` receives every message after its handlers.
    - **Telemetry:** now opt-in with `AddTelemetry()`, which the API calls. (Removed altogether on 2026-11-05, see ADR 0001.)
-   - **`MessagingClient`:** runs messaging without a .NET host, for Prism/DryIoc apps.
+   - **`MessagingClient`:** runs messaging without a .NET host, for Prism/DryIoc apps. *(Removed 2026-11-10, with `AddMessages`, `Subscribe` in code and the public `IMessageSink`.)*
    - **`Messaging.Prism`:** `UseEventAggregator(aggregator)` raises each message as `MessageEvent<T>`, with `PublishRemote` and `PublishRemoteTo` on it. This keeps the `IEventAggregator` style for plain classes. *(Removed 2026-11-10: apps that want the Prism style use `Common.RabbitMQ`, which targets net8.0 too; the others use `Messaging.Hosting`.)*
    - **The net8 WPF app is the reference:** its Legacy bus stays on Prism events through the adapter, and its Modern bus uses plain `Employees.Contracts` classes through the bridge, both on one aggregator.
    - **Common-event twins:** the plain-class twins for the common events already exist in `Employees.Contracts` (`EmployeeSaved`, `EmployeeCacheRefreshed`, `EmployeeUpdated`).

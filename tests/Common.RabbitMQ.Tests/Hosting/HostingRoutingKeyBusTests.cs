@@ -28,7 +28,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             await using (TestBus first = await TestBus.Create())
             await using (TestBus second = await TestBus.Create())
             {
-                using (MessagingClient client = TwoBuses(first, second))
+                using (TestClient client = TwoBuses(first, second))
                 {
                     await client.StartAsync(TestContext.Current.CancellationToken);
                     List<string> buses = Subscribe(client, new SubscribeOptions { Exchange = second.ExchangeName, RoutingKey = Key });
@@ -44,7 +44,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             await using (TestBus first = await TestBus.Create())
             await using (TestBus second = await TestBus.Create())
             {
-                using (MessagingClient client = TwoBuses(first, second))
+                using (TestClient client = TwoBuses(first, second))
                 {
                     await client.StartAsync(TestContext.Current.CancellationToken);
                     List<string> buses = Subscribe(client, new SubscribeOptions { Bus = "First", Exchange = second.ExchangeName, RoutingKey = Key });
@@ -57,10 +57,9 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void AnExchangeOnSeveralBuses_NeedsTheBusOption()
         {
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("First", options => Unreachable(options, "first"))
-                .AddBus("Second", options => Unreachable(options, "second"))
-                .Subscribe(new SubscriptionOptions { Exchange = "OldApp" })
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
+                .AddBus("First", options => { Unreachable(options, "first"); options.Subscriptions.Add(new SubscriptionOptions { Exchange = "OldApp" }); })
+                .AddBus("Second", options => { Unreachable(options, "second"); options.Subscriptions.Add(new SubscriptionOptions { Exchange = "OldApp" }); })
                 .UseDefaultBus("First"))))
             {
                 IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
@@ -76,7 +75,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void AnUnknownBus_IsRefused()
         {
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("Only", options => Unreachable(options, "only"))
                 .UseDefaultBus("Only"))))
             {
@@ -87,16 +86,16 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         /// <summary>Bus First owns <paramref name="first"/>'s exchange and is the default; bus Second owns <paramref name="second"/>'s.</summary>
-        private static MessagingClient TwoBuses(TestBus first, TestBus second)
+        private static TestClient TwoBuses(TestBus first, TestBus second)
         {
-            return MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+            return TestClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("First", options => HostingClientTests.Configure(options, first))
                 .AddBus("Second", options => HostingClientTests.Configure(options, second))
                 .UseDefaultBus("First")));
         }
 
         /// <summary>Subscribes with <paramref name="options"/> and returns the buses each received message came on.</summary>
-        private static List<string> Subscribe(MessagingClient client, SubscribeOptions options)
+        private static List<string> Subscribe(TestClient client, SubscribeOptions options)
         {
             List<string> buses = new List<string>();
             client.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>((message, context, token) =>

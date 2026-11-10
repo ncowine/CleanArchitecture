@@ -36,8 +36,8 @@ host starts
        └─ bus.Start(registrations)         RabbitMQBus.Start: starts the background loops (see Threads)
 ```
 
-A desktop app without the .NET Generic Host uses `MessagingClient.Create(...)`, which builds the same services and
-calls the hosted service's `StartAsync` itself.
+Every modern app runs on the .NET Generic Host, which starts the hosted service. (`MessagingClient`, for apps without
+a host, was removed on 2026-11-10.)
 
 **Legacy apps** (`Common.RabbitMQ`): `RabbitMQServiceRouter.FromConfiguration` makes one `RabbitMQService` per `Messaging:Buses` entry (its only way in).
 `RabbitMQService.Init` turns the `RabbitMQConfig` into `RabbitMQBusOptions` (`CreateOptions`), creates the
@@ -89,7 +89,7 @@ dispatcher.Dispatch is where the front doors differ (IInboundDispatcher):
   Legacy: PrismDispatcher.Dispatch → RemoteEventDescriptor.PublishLocal → GetEvent<T>().Publish(payload)
   Modern: ScopedDispatcher.Dispatch
             ├─ new DI scope → each handler: HandlerRegistration.Invoke → THandler.Handle(message, context, token)
-            └─ each IMessageSink.Deliver:
+            └─ each IMessageSink.Deliver (internal; the subscriber is the only one):
                  MessageSubscriber   → the IMessageSubscriber.Subscribe callbacks for this type
 ```
 

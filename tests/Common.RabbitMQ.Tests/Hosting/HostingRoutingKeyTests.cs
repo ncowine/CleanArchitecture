@@ -79,7 +79,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.Create())
             {
-                using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+                using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                     .AddBus(CompatBus.Name, options => HostingClientTests.Configure(options, bus))
                     .UseDefaultBus(CompatBus.Name))))
                 {
@@ -130,7 +130,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void SubscribeOptions_WithoutAKey_IsRefused()
         {
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("Only", options => { options.ExchangeName = "only"; options.HostName = "127.0.0.1"; options.Port = 1; })
                 .UseDefaultBus("Only"))))
             {

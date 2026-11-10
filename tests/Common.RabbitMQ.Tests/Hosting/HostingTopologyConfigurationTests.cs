@@ -19,7 +19,6 @@ namespace Common.RabbitMQ.Tests.Hosting
                 {
                     ["Messaging:Buses:Server:ExchangeName"] = "Server",
                     ["Messaging:Buses:Server:ExchangeType"] = "direct",
-                    ["Messaging:Buses:Server:BindOwnExchange"] = "false",
                     ["Messaging:Buses:Server:Subscriptions:0:Exchange"] = "AppA",
                     ["Messaging:Buses:Server:Subscriptions:1:Exchange"] = "Audit",
                     ["Messaging:Buses:Server:Subscriptions:2:Exchange"] = "AppB",
@@ -36,7 +35,6 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                 Assert.Equal("Server", options.ExchangeName);
                 Assert.Equal("direct", options.ExchangeType);
-                Assert.False(options.BindOwnExchange);
                 Assert.Equal(3, options.Subscriptions.Count);
 
                 Assert.Equal("AppA", options.Subscriptions[0].Exchange);

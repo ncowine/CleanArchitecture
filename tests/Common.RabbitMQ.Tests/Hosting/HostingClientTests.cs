@@ -16,7 +16,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 {
     /// <summary>
     /// Messaging.Hosting for modern clients (ADR 0002, delivery plan step 8): publishing to the only bus, routing keys per
-    /// call, subscriptions in code, telemetry opt-in, receiving without handlers, and <see cref="MessagingClient"/>.
+    /// call, and the default bus.
     /// </summary>
     public class HostingClientTests
     {
@@ -57,41 +57,16 @@ namespace Common.RabbitMQ.Tests.Hosting
             }
         }
 
-        [Fact]
-        public async Task AddMessages_ReceivesWithoutHandlers_ThroughASink()
-        {
-            await using (TestBus bus = await TestBus.Create())
-            {
-                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
-                RecordingSink sink = new RecordingSink();
-
-                await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging =>
-                {
-                    messaging.AddMessages(typeof(CompatMessage).Assembly);
-                    messaging.Services.AddSingleton<IMessageSink>(sink);
-                }))
-                {
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
-
-                    legacy.PublishRemote(CompatPayloads.Golden());
-
-                    CompatMessage received = Assert.IsType<CompatMessage>(await sink.Next(TestBus.Timeout));
-                    Assert.Equal(42, received.Id);
-                    Assert.Equal("compat", received.Name);
-                }
-            }
-        }
 
         [Fact]
-        public async Task MessagingClient_StartsWithoutAHost_AndPublishes()
+        public async Task Publishes_ToALegacyApp()
         {
             await using (TestBus bus = await TestBus.Create())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 await bus.WaitUntilConnected();
 
-                using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+                using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                     .AddBus(CompatBus.Name, options => Configure(options, bus))
                     .UseDefaultBus(CompatBus.Name))))
                 {
@@ -112,7 +87,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 await bus.WaitUntilConnected();
 
-                using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+                using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                     .AddBus(CompatBus.Name, options => Configure(options, bus))
                     .UseDefaultBus(CompatBus.Name))))
                 {
@@ -136,7 +111,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void Publishing_WithSeveralBuses_AndNoDefault_Throws()
         {
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("First", Unreachable)
                 .AddBus("Second", Unreachable))))
             {
@@ -148,7 +123,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task Publishing_GoesToTheDefaultBus_UnlessTheCallNamesAnother()
         {
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("First", Unreachable)
                 .AddBus("Second", Unreachable)
                 .UseDefaultBus("Second"))))
@@ -168,7 +143,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void Publishing_ToAnUnknownBus_Throws()
         {
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging.AddBus("Only", Unreachable))))
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging.AddBus("Only", Unreachable))))
             {
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
                     client.Publisher.Publish(GoldenMessage(), new PublishOptions { Bus = "Mistyped" }));
@@ -180,7 +155,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public void UseDefaultBus_Twice_Throws()
         {
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-                MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+                TestClient.Create(services => services.AddMessaging(messaging => messaging
                     .AddBus("First", Unreachable)
                     .AddBus("Second", Unreachable)
                     .UseDefaultBus("First")
@@ -192,7 +167,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public void UseDefaultBus_WithNoValue_Throws()
         {
             ArgumentException error = Assert.Throws<ArgumentException>(() =>
-                MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+                TestClient.Create(services => services.AddMessaging(messaging => messaging
                     .AddBus("Only", Unreachable)
                     .UseDefaultBus(null))));
             Assert.Contains("Messaging:DefaultBus", error.Message);
@@ -201,7 +176,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task NoDefaultBus_FailsAtStartup_EvenWithOneBus()
         {
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("Only", Unreachable))))
             {
                 InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => client.StartAsync(TestContext.Current.CancellationToken));
@@ -212,7 +187,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task UnknownDefaultBus_FailsAtStartup()
         {
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                 .AddBus("Only", Unreachable)
                 .UseDefaultBus("Mistyped"))))
             {
@@ -221,21 +196,6 @@ namespace Common.RabbitMQ.Tests.Hosting
             }
         }
 
-        [Fact]
-        public void Subscribe_InCode_JoinsTheBusSubscriptions()
-        {
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("Only", Unreachable)
-                .Subscribe("AppA"))))
-            {
-                RabbitMQBus bus = client.Services.GetRequiredKeyedService<RabbitMQBus>("Only");
-                RabbitMQBusOptions options = client.Services.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get("Only");
-
-                Assert.NotNull(bus);
-                SubscriptionOptions subscription = Assert.Single(options.Subscriptions);
-                Assert.Equal("AppA", subscription.Exchange);
-            }
-        }
 
         internal static void Configure(RabbitMQBusOptions options, TestBus bus)
         {

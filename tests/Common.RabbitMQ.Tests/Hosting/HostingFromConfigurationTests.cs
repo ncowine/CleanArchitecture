@@ -29,7 +29,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             IConfiguration configuration = Load(@"""DefaultBus"": ""Second""," + Buses);
 
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(configuration)))
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(configuration)))
             {
                 await client.StartAsync(TestContext.Current.CancellationToken);
                 RabbitMQBus first = client.Services.GetRequiredKeyedService<RabbitMQBus>("First");
@@ -42,26 +42,12 @@ namespace Common.RabbitMQ.Tests.Hosting
             }
         }
 
-        [Fact]
-        public void ConfigureRunsAfterTheBusesAreAdded()
-        {
-            IConfiguration configuration = Load(@"""DefaultBus"": ""First""," + Buses);
-
-            using (MessagingClient client = MessagingClient.Create(services => services.AddMessaging(configuration, messaging => messaging
-                .Subscribe(new SubscriptionOptions { Exchange = "AppA" }, "Second"))))
-            {
-                client.Services.GetRequiredKeyedService<RabbitMQBus>("Second");
-                RabbitMQBusOptions second = client.Services.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get("Second");
-
-                Assert.Equal("AppA", Assert.Single(second.Subscriptions).Exchange);
-            }
-        }
 
         [Fact]
         public void WithoutADefault_Throws()
         {
             ArgumentException error = Assert.Throws<ArgumentException>(() =>
-                MessagingClient.Create(services => services.AddMessaging(Load(Buses))));
+                TestClient.Create(services => services.AddMessaging(Load(Buses))));
 
             Assert.Contains("Messaging:DefaultBus", error.Message);
         }
@@ -70,7 +56,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public void NoBuses_Throws()
         {
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-                MessagingClient.Create(services => services.AddMessaging(Load(@"""DefaultBus"": ""Main"""))));
+                TestClient.Create(services => services.AddMessaging(Load(@"""DefaultBus"": ""Main"""))));
 
             Assert.Contains("Messaging:Buses", error.Message);
         }

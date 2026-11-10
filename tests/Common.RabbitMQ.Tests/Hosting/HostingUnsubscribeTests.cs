@@ -50,21 +50,6 @@ namespace Common.RabbitMQ.Tests.Hosting
             });
         }
 
-        [Fact]
-        public async Task AddMessages_KeepsReceiving_AfterTheLastSubscription()
-        {
-            RecordingSink sink = new RecordingSink();
-            await WithHost(messaging =>
-            {
-                messaging.AddMessages(typeof(CompatMessage).Assembly);
-                messaging.Services.AddSingleton<IMessageSink>(sink);
-            }, async (topology, host) =>
-            {
-                host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { }).Dispose();
-
-                Assert.True(await IsReceived(topology, sink));
-            });
-        }
 
 
 

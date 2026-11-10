@@ -148,12 +148,8 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         {
             await using (LegacyTopology topology = await LegacyTopology.Create())
             {
-                // The owner doesn't bind its own exchange here, so the subscriber's queue is the only one bound to it.
-                CoreApp owner = topology.CreateCore(AppA, options =>
-                {
-                    options.ExchangeType = exchangeType;
-                    options.BindOwnExchange = false;
-                }).Start();
+                // The owner's own binding uses its exchange name as the key, so it never matches "AppA.other" below.
+                CoreApp owner = topology.CreateCore(AppA, options => options.ExchangeType = exchangeType).Start();
                 await topology.WaitUntilConnected(owner);
                 Assert.Equal(200, await topology.DeclareExchange(topology.Exchange(AppA), exchangeType, durable: true));
 
@@ -171,7 +167,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 owner.Publish(OrderSavedWireName, GoldenOrder());
                 AssertGolden(await atSubscriber.Next(TestBus.Timeout));
 
-                // What else the binding lets through: no other queue is bound to AppA's exchange.
+                // What else the subscriber's binding lets through.
                 bool expectRoutable = exchangeType == "topic" || exchangeType == "fanout";
                 Assert.Equal(expectRoutable, await topology.IsRoutable(AppA, "AppA.other"));
             }

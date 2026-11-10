@@ -64,8 +64,6 @@ namespace Messaging.Hosting
             MessagingRegistry registry = provider.GetRequiredService<MessagingRegistry>();
             RabbitMQBusOptions options = provider.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get(name);
 
-            options.Subscriptions.AddRange(registry.GetSubscriptions(name));
-
             return new RabbitMQBus(
                 options,
                 new ScopedDispatcher(provider.GetRequiredService<IServiceScopeFactory>(), registry, name),

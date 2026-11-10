@@ -502,9 +502,10 @@ public sealed class CustomerChangedHandler : IMessageHandler<CustomerChanged>
 }
 
 messaging.AddHandlers(typeof(CustomerChangedHandler).Assembly);   // picks up every IMessageHandler<T> in it
-messaging.Subscribe("AppB");                  // bind the queue to AppB's exchange, once, keyed "AppB"
-messaging.Subscribe("AppB", "AppB.Events.#"); // …or a pattern
 ```
+
+To receive AppB's messages, subscribe to its exchange in configuration: `"Subscriptions": [ { "Exchange": "AppB" } ]`
+under the bus. The queue binds it once, keyed "AppB". A pattern goes on the handler instead: `[RoutingKey("AppB.Events.#", Exchange = "AppB")]`.
 
 On a **shared queue** (the API's):
 
@@ -817,7 +818,7 @@ src/Messaging/
 ├── Messaging.Abstractions/MessageAttribute.cs          [Message("wire name")]
 ├── Messaging.RabbitMQ/RabbitMQBus.cs                   the engine: Enqueue (buffered)
 ├── Messaging.Hosting/MessagingServiceCollectionExtensions.cs   AddMessaging(configuration): buses from Messaging:Buses
-├── Messaging.Hosting/MessagingBuilder.cs               AddHandlers, Subscribe, AddMessages
+├── Messaging.Hosting/MessagingBuilder.cs               AddHandlers
 ├── Messaging.Hosting/MessagePublisher.cs               IMessagePublisher
 └── Messaging.Hosting/IMessageSubscriber.cs             for desktop apps
 

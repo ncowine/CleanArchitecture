@@ -736,7 +736,7 @@ namespace Messaging.RabbitMQ
             return channel.ExchangeDeclareAsync(
                 exchange: options.ExchangeName,
                 type: options.ExchangeType,
-                durable: options.ExchangeDurable,
+                durable: true,
                 autoDelete: false,
                 cancellationToken: token);
         }
@@ -763,10 +763,7 @@ namespace Messaging.RabbitMQ
 
         private IEnumerable<(string Exchange, string RoutingKey)> Bindings()
         {
-            if (options.BindOwnExchange)
-            {
-                yield return (options.ExchangeName, options.ExchangeName);
-            }
+            yield return (options.ExchangeName, options.ExchangeName);
 
             foreach (SubscriptionOptions subscription in options.Subscriptions)
             {
@@ -783,7 +780,7 @@ namespace Messaging.RabbitMQ
 
             IEnumerable<string> exchanges = !string.IsNullOrWhiteSpace(exchange)
                 ? new[] { exchange }
-                : (options.BindOwnExchange ? new[] { options.ExchangeName } : Array.Empty<string>()).Concat(SubscribedExchanges());
+                : new[] { options.ExchangeName }.Concat(SubscribedExchanges());
 
             return exchanges.Select(e => (e, routingKey)).ToList();
         }
