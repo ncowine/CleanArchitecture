@@ -265,6 +265,10 @@ in the net472 window, as `{"Id":"...","Name":"..."}`. It's received with `IMessa
 rather than a handler class, to show both styles: a message that arrives before `Subscribe` is called is dropped, so
 subscribe before `app.Run()`. The real API doesn't handle this event.
 
+**A routing-key pattern.** The flag subscription binds `equipment.#`, a pattern, while `EquipmentDisposedHandler` binds
+the exact key `equipment`. Both match what the net472 window sends (`#` matches zero or more words), and the flag
+would still arrive if that app moved to keys such as `equipment.flagged`. The log line shows the key it came with.
+
 **No tuple payloads.** This event's payload was a tuple until 2026-11-09. A tuple's items are fields, which
 System.Text.Json (the one serializer, legacy apps included) doesn't serialize, so they arrived empty. Tuples are now
 rejected when the event is first used: use a class with `{ get; set; }` properties, or a primitive.

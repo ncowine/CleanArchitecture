@@ -104,7 +104,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task AKeyOnAMissingExchange_IsSkipped_AndTheBusKeepsReceiving()
+        public async Task AKeyOnAnExchangeNoBusUses_IsRefused_AndTheBusKeepsReceiving()
         {
             await using (TestBus bus = await TestBus.Create())
             {
@@ -116,10 +116,11 @@ namespace Common.RabbitMQ.Tests.Hosting
                     await host.WaitUntilConnected();
                     IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
 
-                    Received<CompatMessage> received = new Received<CompatMessage>();
-                    subscriber.Subscribe<CompatMessage>(received.Add, options: new SubscribeOptions { Exchange = "compat.no-such-exchange", RoutingKey = Key });
-                    await Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken);
+                    Assert.Throws<InvalidOperationException>(() =>
+                        subscriber.Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { Exchange = "compat.no-such-exchange", RoutingKey = Key }));
 
+                    Received<CompatMessage> received = new Received<CompatMessage>();
+                    subscriber.Subscribe<CompatMessage>(received.Add);
                     legacy.PublishRemote(CompatPayloads.Golden());
                     Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
                     Assert.True(host.Bus.IsConsumerConnected);
