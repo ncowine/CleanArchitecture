@@ -1,3 +1,5 @@
+using Messaging;
+using Messaging.Hosting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,16 +11,17 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Messaging.Hosting
+namespace Common.RabbitMQ.Tests.Hosting
 {
-    public sealed class MessagingClient : IDisposable
+    /// <summary>Runs messaging's hosted services without a .NET host: the test harness (was Messaging.Hosting's MessagingClient).</summary>
+    public sealed class TestClient : IDisposable
     {
         private readonly ServiceProvider provider;
         private readonly List<IHostedService> hostedServices;
         private bool started;
         private bool disposed;
 
-        private MessagingClient(ServiceProvider provider)
+        private TestClient(ServiceProvider provider)
         {
             this.provider = provider;
             hostedServices = provider.GetServices<IHostedService>().ToList();
@@ -28,7 +31,7 @@ namespace Messaging.Hosting
 
         public IMessagePublisher Publisher => provider.GetRequiredService<IMessagePublisher>();
 
-        public static MessagingClient Create(Action<IServiceCollection> configure)
+        public static TestClient Create(Action<IServiceCollection> configure)
         {
             if (configure == null)
             {
@@ -40,14 +43,14 @@ namespace Messaging.Hosting
             services.TryAddSingleton<ILoggerFactory, NullLoggerFactory>();
             services.TryAdd(ServiceDescriptor.Singleton(typeof(ILogger<>), typeof(NullLogger<>)));
 
-            return new MessagingClient(services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }));
+            return new TestClient(services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }));
         }
 
         public async Task StartAsync(CancellationToken cancellationToken = default)
         {
             if (disposed)
             {
-                throw new ObjectDisposedException(nameof(MessagingClient));
+                throw new ObjectDisposedException(nameof(TestClient));
             }
 
             if (started)

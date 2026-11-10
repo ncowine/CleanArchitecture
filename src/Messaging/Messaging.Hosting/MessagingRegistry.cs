@@ -10,8 +10,6 @@ namespace Messaging.Hosting
     {
         private readonly HashSet<string> buses = new HashSet<string>(StringComparer.Ordinal);
         private readonly List<HandlerRegistration> handlers = new List<HandlerRegistration>();
-        private readonly List<MessageTypeRegistration> messageTypes = new List<MessageTypeRegistration>();
-        private readonly List<PendingSubscription> subscriptions = new List<PendingSubscription>();
 
         public IReadOnlyCollection<string> BusNames => buses;
 
@@ -35,23 +33,6 @@ namespace Messaging.Hosting
             handlers.Add(handler);
         }
 
-        public void AddMessageType(MessageTypeRegistration messageType)
-        {
-            messageTypes.Add(messageType);
-        }
-
-        public void AddSubscription(PendingSubscription subscription)
-        {
-            subscriptions.Add(subscription);
-        }
-
-        public IEnumerable<SubscriptionOptions> GetSubscriptions(string busName)
-        {
-            return subscriptions
-                .Where(s => s.BusName == null || string.Equals(s.BusName, busName, StringComparison.Ordinal))
-                .Select(s => s.Subscription);
-        }
-
         public IEnumerable<(RoutingKeyAttribute Key, IReadOnlyCollection<string> Buses)> GetHandlerRoutingKeys()
         {
             return handlers
@@ -67,14 +48,9 @@ namespace Messaging.Hosting
 
         public IEnumerable<MessageRegistration> GetMessageRegistrations(string busName)
         {
-            IEnumerable<Type> handled = handlers
+            return handlers
                 .Where(h => Receives(h.Buses, busName))
-                .Select(h => h.MessageType);
-            IEnumerable<Type> added = messageTypes
-                .Where(m => Receives(m.Buses, busName))
-                .Select(m => m.MessageType);
-
-            return handled.Concat(added)
+                .Select(h => h.MessageType)
                 .Distinct()
                 .Select(t => new MessageRegistration(WireNames.Get(t), t));
         }
@@ -96,22 +72,6 @@ namespace Messaging.Hosting
             {
                 errors.AddRange(UnknownBuses(handler.Buses).Select(b => $"{handler.HandlerType.Name} receives from unknown bus '{b}'."));
                 errors.AddRange(MissingWireName(handler.MessageType));
-            }
-
-            foreach (MessageTypeRegistration messageType in messageTypes)
-            {
-                errors.AddRange(UnknownBuses(messageType.Buses).Select(b => $"{messageType.MessageType.Name} is received on unknown bus '{b}'."));
-            }
-
-            foreach (PendingSubscription subscription in subscriptions)
-            {
-                if (subscription.BusName == null && buses.Count != 1)
-                {
-                    errors.Add($"The subscription to '{subscription.Subscription.Exchange}' has no bus and this application has {buses.Count}. Pass the bus name.");
-                }
-
-                errors.AddRange(UnknownBuses(subscription.BusName == null ? new string[0] : new[] { subscription.BusName })
-                    .Select(b => $"The subscription to '{subscription.Subscription.Exchange}' is for unknown bus '{b}'."));
             }
 
             foreach (string busName in buses)

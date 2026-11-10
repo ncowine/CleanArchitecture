@@ -146,7 +146,7 @@ Two ideas explain almost everything:
 |---|---|---|---|---|
 | `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `IMessageHandler<T>`, `[Message]`, `MessageContext`. | Everything below. |
 | `Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | RabbitMQ.Client 7.1.2, Microsoft.Extensions.Logging.Abstractions 8.0, System.Text.Json 8.0.5 (net472, netstandard2.0) | **The engine**: `RabbitMQBus`, its options and the one serializer, `MessageSerializer`. | All front doors. |
-| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | The modern front door for any net8+ app (API, WPF, worker; no ASP.NET dependency): `AddMessaging`, handlers, `IMessageSubscriber`, `MessagingClient`. | The API, modern WPF apps. |
+| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | The modern front door for any net8+ app (API, WPF, worker; no ASP.NET dependency): `AddMessaging`, handlers, `IMessageSubscriber`. | The API, modern WPF apps. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
 | `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Configuration.Binder, the engine (with System.Text.Json) | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
 | `Common.Events` | net472, net8.0 | Common.RabbitMQ | The demo apps' Prism events (`EmployeeUpdated` and others). | Demo WPF apps. |
@@ -484,7 +484,7 @@ publisher.Publish(new EmployeeSaved { Id = 7, Name = "Ada" });
   needs `[Message("...")]`. It takes effect at once and never changes the broker's bindings (one per exchange).
 - `Subscribe` returns an `IDisposable`. **Dispose it to unsubscribe.** Subscriptions are strong references (Prism's
   are weak), so a window or view model that goes away before the app ends must dispose its subscriptions. When the last
-  subscriber for a type goes, it is dropped on arrival again, unless a handler or `AddMessages` still wants the type.
+  subscriber for a type goes, it is dropped on arrival again, unless a handler still wants the type.
 - **On a durable shared queue, subscribe before starting and stay subscribed.** The queue keeps last run's bindings and
   messages, and a message for a type nothing has subscribed to yet is dropped; subscribing later logs a warning. The
   broker can hand a message to an instance with no subscriber left, which drops it. Give all instances the same
@@ -526,13 +526,8 @@ publisher.Publish(order, new PublishOptions { RoutingKey = "orders.eu.saved" });
 publisher.Publish(order, new PublishOptions { Bus = "Partners" });
 ```
 
-**More options:**
-
-```csharp
-messaging.Subscribe("AppA");                                                     // another app's exchange
-messaging.AddMessages(typeof(OrderSaved).Assembly);                              // bind everything, for a custom sink
-services.AddSingleton<IMessageSink, MySink>();                                   // see every message
-```
+**Another app's exchange** is a subscription in configuration, `Messaging:Buses:Main:Subscriptions`, as
+`[ { "Exchange": "AppA" } ]`. There's no way to add one in code.
 
 Configuration mistakes stop the app at startup with a clear list of what's wrong, for example a handler on a bus that
 doesn't exist or a class without `[Message]`.
@@ -578,8 +573,6 @@ The step-by-step version is in
 | `UserName`, `Password` | `guest`, `guest` | Broker credentials. The default `guest` only works from the same machine as the broker. |
 | `ExchangeName` | *(required)* | This app's own exchange. **Set it explicitly**: others bind to it by name. |
 | `ExchangeType` | `topic` | `topic`, `direct`, `fanout` or `headers`. Keep `topic` while legacy apps subscribe to it. |
-| `ExchangeDurable` | `true` | Whether the exchange survives a broker restart. |
-| `BindOwnExchange` | `true` | Also receive this app's own message types from its own exchange (the legacy behaviour). |
 | `Subscriptions` | *(none)* | Other apps' exchanges, by `Exchange`. Each is bound with the exchange name; other keys are bound by subscribing with `SubscribeOptions`. |
 | `ClientName` | the app's name | Shown in the management UI, sent as app-id, used in queue names. |
 | `QueueMode` | `PerInstance` | `PerInstance` (desktop) or `Shared` (servers). |
@@ -626,7 +619,7 @@ the same and have the same defaults. The differences:
 | `ClientName` | the process name | Set it: the process name includes `.exe`. |
 | `ReconnectDelaySeconds`, `OutstandingPollIntervalMilliseconds`, `HeartbeatSeconds` | `5`, `100`, `30` | Whole numbers, where the server uses `ReconnectDelay`, `OutstandingPollInterval` and `Heartbeat` (time spans). |
 
-Server-only keys (`QueueMode`, retries, `ExchangeDurable`, `BindOwnExchange`) are ignored here.
+Server-only keys (`QueueMode`, retries) are ignored here.
 
 ### Headers on the wire
 

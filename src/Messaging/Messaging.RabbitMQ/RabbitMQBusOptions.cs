@@ -21,10 +21,6 @@ namespace Messaging.RabbitMQ
 
         public string ExchangeType { get; set; } = "topic";
 
-        public bool ExchangeDurable { get; set; } = true;
-
-        public bool BindOwnExchange { get; set; } = true;
-
         public List<SubscriptionOptions> Subscriptions { get; set; } = new List<SubscriptionOptions>();
 
         public string ClientName { get; set; }

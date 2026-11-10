@@ -65,42 +65,6 @@ namespace Messaging.Hosting
             return this;
         }
 
-        public MessagingBuilder AddMessages(Assembly assembly, params string[] busNames)
-        {
-            if (assembly == null)
-            {
-                throw new ArgumentNullException(nameof(assembly));
-            }
-
-            foreach (Type type in assembly.GetTypes().Where(t => !t.IsAbstract && t.GetCustomAttribute<MessageAttribute>(inherit: false) != null))
-            {
-                Registry.AddMessageType(new MessageTypeRegistration(type, busNames ?? new string[0]));
-            }
-
-            return this;
-        }
-
-        public MessagingBuilder Subscribe(string exchange)
-        {
-            if (string.IsNullOrWhiteSpace(exchange))
-            {
-                throw new ArgumentException("An exchange is required.", nameof(exchange));
-            }
-
-            return Subscribe(new SubscriptionOptions { Exchange = exchange });
-        }
-
-        public MessagingBuilder Subscribe(SubscriptionOptions subscription, string busName = null)
-        {
-            if (subscription == null || string.IsNullOrWhiteSpace(subscription.Exchange))
-            {
-                throw new ArgumentException("A subscription with an exchange is required.", nameof(subscription));
-            }
-
-            Registry.AddSubscription(new PendingSubscription(subscription, busName));
-            return this;
-        }
-
         public MessagingBuilder AddHandlers(Assembly assembly, params string[] busNames)
         {
             if (assembly == null)
