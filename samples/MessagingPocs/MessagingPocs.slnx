@@ -11,6 +11,8 @@
   </Folder>
   <Folder Name="/From the API (referenced)/">
     <Project Path="../../src/Modules/Equipment/Equipment.Messages/Equipment.Messages.csproj" />
+  </Folder>
+  <Folder Name="/Messaging/">
     <Project Path="../../src/Messaging/Messaging.Abstractions/Messaging.Abstractions.csproj" />
     <Project Path="../../src/Messaging/Messaging.RabbitMQ/Messaging.RabbitMQ.csproj" />
     <Project Path="../../src/Messaging/Messaging.Hosting/Messaging.Hosting.csproj" />
