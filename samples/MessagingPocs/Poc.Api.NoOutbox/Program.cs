@@ -36,13 +36,20 @@ WebApplication app = builder.Build();
 // ❌ DON'T use scoped services directly here: there's no scope. Create one with app.Services.CreateAsyncScope().
 // An exception fails the message, as in a handler class: it's retried, then dead-lettered.
 IMessageSubscriber subscriber = app.Services.GetRequiredService<IMessageSubscriber>();
-// The net472 app sends flags with the "equipment" routing key: subscribing with it binds that key on its exchange.
+// The net472 app sends flags with the "equipment" routing key. EquipmentDisposedHandler binds that exact key; this
+// subscription binds a pattern instead. On a topic exchange "*" matches one word and "#" zero or more, so
+// "equipment.#" matches "equipment" as well as "equipment.flagged" or "equipment.eu.flagged", if the app ever sends
+// those. A message that matches both bindings still arrives once: a queue gets one copy, however many bindings match.
+// Patterns are for subscribing only: a publisher's key is always a concrete one.
+// ⚠️ The exchange must be a TOPIC exchange: only topic exchanges read "*" and "#". It's the exchange's owner that sets
+//    the type (ExchangeType on its bus, default "topic"); Poc.Net472 doesn't set it, so its exchange is topic. On a
+//    "direct" exchange "equipment.#" only matches a key that is literally "equipment.#", and "fanout" ignores keys.
 subscriber.Subscribe<EquipmentFlagged>((message, context, cancellationToken) =>
 {
-    app.Logger.LogInformation("Equipment {Name} ({EquipmentId}) flagged", message.Name, message.Id);
+    app.Logger.LogInformation("Equipment {Name} ({EquipmentId}) flagged, key '{RoutingKey}'", message.Name, message.Id, context.RoutingKey);
 
     return Task.CompletedTask;
-}, new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment" });
+}, new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment.#" });
 
 LogShape<StatusChanged>(subscriber, app.Logger);
 LogShape<MaintenanceScheduled>(subscriber, app.Logger);

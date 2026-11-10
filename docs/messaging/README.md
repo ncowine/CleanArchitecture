@@ -287,6 +287,19 @@ flowchart LR
   [RoutingKey("equipment", Exchange = "Poc.Net472")]                                                      // on a handler class: bound at startup
   ```
 
+  **A key can be a pattern** when subscribing, on a topic exchange (the default): `*` matches exactly one word, `#`
+  zero or more. `Poc.Api.NoOutbox` subscribes to flags with `equipment.#`, which matches `equipment` as well as
+  `equipment.flagged` or `equipment.eu.flagged`:
+
+  ```csharp
+  subscriber.Subscribe<EquipmentFlagged>(OnFlagged, options: new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment.#" });
+  [RoutingKey("orders.*.saved", Exchange = "AppC")]          // orders.eu.saved, orders.us.saved, not orders.eu.x.saved
+  ```
+
+  A queue gets one copy of a message however many of its bindings match. A pattern means nothing when publishing:
+  the publisher's key is always concrete, and the exchange matches it against the bindings. On a `direct` exchange a
+  pattern is compared as plain text, and `fanout` ignores keys.
+
   A key on an exchange that doesn't exist yet is skipped with a warning and tried again at the next connect. A shared
   queue keeps a binding when the service stops; one left behind by an instance that crashed stays until removed by hand.
 
