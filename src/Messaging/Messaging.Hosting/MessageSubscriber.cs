@@ -16,56 +16,12 @@ namespace Messaging.Hosting
         private readonly object gate = new object();
         private readonly Dictionary<string, Type> wireNameOwners = new Dictionary<string, Type>(StringComparer.Ordinal);
         private readonly HashSet<Type> receiving = new HashSet<Type>();
-        private readonly Dictionary<Type, int> requested = new Dictionary<Type, int>();
         private Dictionary<Type, MessageSubscription[]> subscriptions = new Dictionary<Type, MessageSubscription[]>();
 
         public MessageSubscriber(IServiceProvider provider, MessagingRegistry registry)
         {
             this.provider = provider;
             this.registry = registry;
-        }
-
-        public void Subscribe(Type messageType, SubscribeOptions options = null)
-        {
-            if (messageType == null)
-            {
-                throw new ArgumentNullException(nameof(messageType));
-            }
-
-            RequireRoutingKey(options);
-            lock (gate)
-            {
-                StartReceiving(messageType);
-                requested.TryGetValue(messageType, out int count);
-                requested[messageType] = count + 1;
-                Bind(options);
-            }
-        }
-
-        public void Unsubscribe(Type messageType, SubscribeOptions options = null)
-        {
-            if (messageType == null)
-            {
-                throw new ArgumentNullException(nameof(messageType));
-            }
-
-            lock (gate)
-            {
-                if (!requested.TryGetValue(messageType, out int count))
-                {
-                    return;
-                }
-
-                Unbind(options);
-                if (count > 1)
-                {
-                    requested[messageType] = count - 1;
-                    return;
-                }
-
-                requested.Remove(messageType);
-                StopIfUnused(messageType);
-            }
         }
 
         public IDisposable Subscribe<TMessage>(Action<TMessage> handler, SynchronizationContext synchronizationContext = null, SubscribeOptions options = null)
@@ -143,7 +99,7 @@ namespace Messaging.Hosting
 
         private void StopIfUnused(Type messageType)
         {
-            if (requested.ContainsKey(messageType) || subscriptions.ContainsKey(messageType) || !receiving.Remove(messageType))
+            if (subscriptions.ContainsKey(messageType) || !receiving.Remove(messageType))
             {
                 return;
             }
