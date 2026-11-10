@@ -67,14 +67,14 @@ The legacy projects keep their paths. Legacy apps reference them by relative `Pr
 - `IMessageHandler<T>`: `Task Handle(T message, MessageContext context, CancellationToken)`
 - `MessageContext`: message ID, correlation ID, headers, bus name, redelivery flag
 - `[Message("wire-name")]`: the message's stable identity on the wire
-- `IMessageSerializer`
+- `IMessageSerializer` (removed 2026-11-09: there is one serializer, `MessageSerializer` in the core)
 - `IMessagingObserver`: publish, receive, handled, failed and connection-state callbacks. `OnPublishing` runs on the publishing caller's thread, so ambient context (the current `Activity`, a correlation ID) is available, and it is where headers are added. An observer that throws is logged and never affects delivery.
 
 #### Messaging.RabbitMQ (the transport core)
 
 - Owns connections, reconnect loops, the outgoing buffer, topology, the wire-name registry and inbound dispatch through an `IInboundDispatcher`.
 - Calls `IMessagingObserver` at each stage. The default is a no-op.
-- Takes no dependency on Prism, Newtonsoft, or OpenTelemetry, nor on `Microsoft.Extensions.*` apart from `Logging.Abstractions` (amended 2026-11-03).
+- Takes no dependency on Prism, Newtonsoft, or OpenTelemetry, nor on `Microsoft.Extensions.*` apart from `Logging.Abstractions` (amended 2026-11-03). System.Text.Json was added on 2026-11-09 for the one serializer (section 4).
 
 #### Messaging.Hosting (server)
 
@@ -89,7 +89,7 @@ The legacy projects keep their paths. Legacy apps reference them by relative `Pr
 #### Legacy adapter (`Common.RabbitMQ`)
 
 - Public API unchanged (except that on 2026-11-04 `[RemoteEvent(bus)]` was removed and `PublishRemote`'s service parameter became `PublishOptions`, see [ADR 0002](0002-exchange-per-owner-and-configurable-routing.md)): `RemotePubSubEvent<T>`, `[RemoteEvent(bus)]`, `GetEvent<T>().PublishRemote(payload, service?)`, `IRabbitMQService.Publish(Type, object)`, `RabbitMQServiceProvider`, and the `RabbitMQService` constructor signature.
-- `RabbitMQService` becomes a façade over the core: a `PrismDispatcher` (`GetEvent<T>().Publish`), a Newtonsoft 12.0.3 serializer and the no-op observer.
+- `RabbitMQService` becomes a façade over the core: a `PrismDispatcher` (`GetEvent<T>().Publish`), a Newtonsoft 12.0.3 serializer and the no-op observer. (Since 2026-11-09 the adapter uses the core's System.Text.Json serializer, see section 4.)
 - New, optional App.config setting: `mode="SubscribeOnly"` skips the publisher connection and buffer. It defaults to the current behaviour.
 - `PublishRemote` may later get `[Obsolete]` (a compiler warning, not a break) once publishing has moved to the server.
 
@@ -114,7 +114,8 @@ The legacy projects keep their paths. Legacy apps reference them by relative `Pr
 - The server uses System.Text.Json with PascalCase names, case-insensitive reads, ISO 8601 dates and numeric enums.
 - **Golden tests** check both directions: bytes from the server deserialize correctly under Newtonsoft 12.0.3, and the reverse.
 - Measured: with the relaxed JSON encoder, System.Text.Json writes the legacy employee bodies byte for byte. The only difference found is whole decimals and doubles (`12` instead of `12.0`), which both libraries read to the same value. It is pinned in `type-coverage.stj.json`.
-- The serializer is per bus. If a payload can't round-trip, a bus can switch to a Newtonsoft serializer through configuration, with no change to the core.
+- ~~The serializer is per bus.~~ Superseded 2026-11-09, below: one serializer, no per-bus choice.
+- **Update (2026-11-09): one serializer.** The System.Text.Json serializer moved into the core as the static `MessageSerializer` (`Messaging.RabbitMQ`, with the System.Text.Json 8.0.5 package on net472 and netstandard2.0), and the legacy adapter uses it too; `Common.RabbitMQ` no longer references Newtonsoft. `IMessageSerializer` and the per-bus serializer setting are gone: `RabbitMQBus` calls `MessageSerializer` directly. The wire format is unchanged: the golden tests now run on net472 as well, against the Newtonsoft 12 files that apps on the old library write. Payloads are classes with `{ get; set; }` properties, or primitives. **Tuples are rejected** when an event or message type is first used (`EnsureNoTuples`): their items are fields, which System.Text.Json skips, so they arrived empty. Legacy apps whose payload classes rely on Newtonsoft-only behaviour (public fields, private setters, `[JsonProperty]`, `[DataContract]`) must change them. packages.config apps must add the System.Text.Json package themselves, as they don't pick up transitive packages.
 
 ### 5. Observability
 
@@ -138,11 +139,11 @@ The legacy projects keep their paths. Legacy apps reference them by relative `Pr
 
 ### 7. Dependency hygiene
 
-- Each third-party dependency lives in exactly **one** layer: Prism and Newtonsoft in the legacy adapter, RabbitMQ.Client in the core.
+- Each third-party dependency lives in exactly **one** layer: Prism in the legacy adapter, RabbitMQ.Client and System.Text.Json in the core. (Newtonsoft was in the legacy adapter until 2026-11-09; it is now only the tests' baseline.)
 - **Central Package Management:** `Directory.Packages.props` at the repository root pins every version for this repo's projects: RabbitMQ.Client 7.1.2, Prism.Core 8.1.97, Newtonsoft.Json 12.0.3.
 - **Legacy apps follow their own conventions.** An SDK-style legacy app inside this tree opts out with `<ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>` and keeps its own `Version` attributes (see `WpfApp.Net472`). Non-SDK (packages.config) apps are unaffected by Central Package Management.
 - The legacy adapter compiles against the lowest version any legacy app uses, so apps can bind up but are never forced up.
-- Newtonsoft.Json 12.0.3 carries advisory GHSA-5crp-9r3c-p9vr (deeply nested JSON can cause a stack overflow, fixed in 13.0.1). It's accepted as a legacy constraint. The server doesn't use Newtonsoft (see section 4). Apps that can move to 13.x may bind up.
+- Newtonsoft.Json 12.0.3 carries advisory GHSA-5crp-9r3c-p9vr (deeply nested JSON can cause a stack overflow, fixed in 13.0.1). It's accepted as a legacy constraint. The server doesn't use Newtonsoft (see section 4), and since 2026-11-09 no app on this library does: it's only the tests' baseline. Apps that can move to 13.x may bind up.
 - `AssemblyVersion` stays fixed per major version (for example `1.0.0.0`). The build number goes in `FileVersion` and `InformationalVersion`.
 - **Every library that legacy apps load targets `net472` explicitly**, alongside `netstandard2.0` and `net8.0`. When a non-SDK net472 app consumes a `netstandard2.0`-only library, it can need the `netstandard.dll` facade files and extra binding redirects. An explicit `net472` build avoids both.
 - The net472 build of the core and the adapter adds **no new packages** beyond those the legacy apps already carry, except `Microsoft.Extensions.Logging.Abstractions` and its dependencies (amended 2026-11-03). RabbitMQ.Client 7.1.2 already brings DiagnosticSource, System.Memory, Unsafe, Channels, Pipelines, RateLimiting and Bcl.AsyncInterfaces on net472, so there are no new binding redirects.

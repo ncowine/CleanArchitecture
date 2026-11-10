@@ -59,7 +59,7 @@ project.
 | Equipment created / updated / deleted | `Equipment.EquipmentCreated` … | the API, after the commit | `Equipment.Messages` classes |
 | A note on a piece of equipment | `Poc.Legacy.Events.EquipmentNoteSent` | net472, net8 | `RemotePubSubEvent<EquipmentNote>` |
 | Equipment disposed of | `Poc.Legacy.Events.EquipmentDisposed` | net472 | `RemotePubSubEvent<EquipmentDisposal>` |
-| Equipment flagged | `Poc.Legacy.Events.EquipmentFlagged` | net472 | `RemotePubSubEvent<(Guid id, string name)>` |
+| Equipment flagged | `Poc.Legacy.Events.EquipmentFlagged` | net472 | `RemotePubSubEvent<EquipmentFlag>` |
 | Ten payload shapes (below) | `Poc.Legacy.Events.Shapes.<Name>` | net472, net8 | `RemotePubSubEvent<T>`, read by net10 and `Poc.Api.NoOutbox` as `Poc.Shapes` classes |
 | A row was selected (**local only**) | none: never on the wire | net472, net8, inside the app | `PubSubEvent<EquipmentRow?>` |
 
@@ -260,12 +260,14 @@ the API is stopped and a handler that keeps failing doesn't lose them. Run `setu
 `Poc.Net472` exchange doesn't exist yet. Click **Dispose of selected** in a net472 window to see it. The real API
 also handles this event, and deletes that equipment if it's running.
 
-**A tuple payload.** `EquipmentFlagged : RemotePubSubEvent<(Guid id, string name)>` is sent by **Flag selected** in the net472
-window. A tuple's names don't reach the wire, so the JSON is `{"Item1":"...","Item2":"..."}`, and the API's
-`EquipmentFlagged` class maps those with `[JsonPropertyName]`. It's received with `IMessageSubscriber.Subscribe` in
-`Program.cs` rather than a handler class, to show both styles: a message that arrives before `Subscribe` is called is dropped, so subscribe before
-`app.Run()`. Receiving into a tuple, or into a class without that
-mapping, doesn't throw: the values just come out as `Guid.Empty` and empty. The real API doesn't handle this event.
+**Subscribing without a handler class.** `EquipmentFlagged : RemotePubSubEvent<EquipmentFlag>` is sent by **Flag selected**
+in the net472 window, as `{"Id":"...","Name":"..."}`. It's received with `IMessageSubscriber.Subscribe` in `Program.cs`
+rather than a handler class, to show both styles: a message that arrives before `Subscribe` is called is dropped, so
+subscribe before `app.Run()`. The real API doesn't handle this event.
+
+**No tuple payloads.** This event's payload was a tuple until 2026-11-09. A tuple's items are fields, which
+System.Text.Json (the one serializer, legacy apps included) doesn't serialize, so they arrived empty. Tuples are now
+rejected when the event is first used: use a class with `{ get; set; }` properties, or a primitive.
 
 **What you give up:** a change and its event can't be saved in one transaction. A database save can succeed and the
 API then stop before the event is sent, and nothing sends it later. `CleanArch.Api` accepts the same trade-off: it
@@ -294,6 +296,24 @@ setup-exchanges.ps1  creates the four exchanges
 
 On the API side: `src/Modules/Equipment/Equipment.Infrastructure/IntegrationEvents/EquipmentDisposed*.cs`, the
 `AddHandlers` line in `src/Api/CleanArch.Api/Program.cs`, and `Subscriptions` in its `appsettings.Development.json`.
+
+### One solution per app
+
+`MessagingPocs.slnx` opens everything. Each app also has its own solution, holding only the projects it builds with, in
+folders: **App**, **Messaging** (the RabbitMQ library projects), **Events** (the message and event classes) and
+**Shared** (the POCs' own helpers). Which ones the app references itself, and which come along with those:
+
+| Solution | Referenced by the app | Come along |
+|---|---|---|
+| `Poc.Net472.slnx` (legacy, Prism) | `Common.RabbitMQ`, `Poc.Legacy.Events`, `Poc.Shared` | `Messaging.RabbitMQ`, `Messaging.Abstractions`, `Equipment.Messages`, `Poc.Shapes` |
+| `Poc.Net8.slnx` (legacy, Prism, on .NET 8) | the same as net472 | the same as net472 |
+| `Poc.Net10.slnx` (modern, no Prism) | `Messaging.Hosting`, `Poc.Shapes`, `Poc.Shared` | `Messaging.RabbitMQ`, `Messaging.Abstractions`, `Equipment.Messages` |
+| `Poc3.SignalR.slnx` (SignalR only) | `Poc.Shared` | `Equipment.Messages`, `Messaging.Abstractions` (for `[Message]` on the contracts) |
+| `Poc.Api.NoOutbox.slnx` (API) | `Messaging.Hosting`, `Equipment.Messages`, `Poc.Shapes` | `Messaging.RabbitMQ`, `Messaging.Abstractions` |
+
+Only the messaging projects (`Common.RabbitMQ` for a legacy app, `Messaging.Hosting` for a modern one or an API) are
+needed in an app of your own. `Poc.Shared`, `Poc.Legacy.Events` and `Poc.Shapes` belong to these POCs, and
+`Equipment.Messages` is there because the POCs show the API's events.
 
 ## Clean-up
 

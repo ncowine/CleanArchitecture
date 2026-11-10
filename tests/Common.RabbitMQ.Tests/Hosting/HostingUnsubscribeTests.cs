@@ -10,13 +10,10 @@ using Messaging.Hosting;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Prism.Events;
 using Xunit;
 
 namespace Common.RabbitMQ.Tests.Hosting
 {
-    using Messaging.Prism;
-
     /// <summary>
     /// The modern side: when the last subscriber goes, the type is dropped on arrival again, unless a registration still
     /// wants it. The queue's binding (one per exchange) never changes, so a recording sink shows what is received.
@@ -69,32 +66,6 @@ namespace Common.RabbitMQ.Tests.Hosting
             });
         }
 
-        [Fact]
-        public async Task MessageEvent_LastUnsubscribe_StopsReceiving_UnlessAnIMessageSubscriberStillListens()
-        {
-            EventAggregator eventAggregator = new EventAggregator();
-            RecordingSink sink = new RecordingSink();
-            await WithHost(messaging =>
-            {
-                messaging.UseEventAggregator(eventAggregator);
-                messaging.Services.AddSingleton<IMessageSink>(sink);
-            }, async (topology, host) =>
-            {
-                PubSubEvent<CompatMessage> messageEvent = eventAggregator.GetEvent<MessageEvent<CompatMessage>>();
-                Prism.Events.SubscriptionToken token = messageEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                Assert.True(await IsReceived(topology, sink));
-
-                IDisposable subscription = host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { });
-                token.Dispose();
-                Assert.True(await IsReceived(topology, sink));
-
-                subscription.Dispose();
-                Assert.False(await IsReceived(topology, sink));
-
-                messageEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                Assert.True(await IsReceived(topology, sink));
-            });
-        }
 
         [Fact]
         public async Task SubscribeByType_IsCounted_ReceivingStopsWithTheLastUnsubscribe()
@@ -114,69 +85,8 @@ namespace Common.RabbitMQ.Tests.Hosting
             });
         }
 
-        [Fact]
-        public async Task MessageEvent_RefusedForAWireNameConflict_LeavesNothingBehind_AndDoesNotAffectTheOtherType()
-        {
-            EventAggregator eventAggregator = new EventAggregator();
-            Received<CompatMessage> received = new Received<CompatMessage>();
-            await WithHost(messaging => messaging.UseEventAggregator(eventAggregator), async (topology, host) =>
-            {
-                host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
 
-                MessageEvent<Employees.Contracts.CompatMessageTwin> twin = eventAggregator.GetEvent<MessageEvent<Employees.Contracts.CompatMessageTwin>>();
-                Action<Employees.Contracts.CompatMessageTwin> handler = _ => { };
 
-                Assert.Throws<InvalidOperationException>(() => twin.Subscribe(handler, keepSubscriberReferenceAlive: true));
-                Assert.False(twin.Contains(handler));
-                Assert.Throws<InvalidOperationException>(() => twin.Subscribe(handler, keepSubscriberReferenceAlive: true));
-
-                twin.Unsubscribe(handler);
-                await PublishGolden(topology);
-                Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
-            });
-        }
-
-        [Fact]
-        public async Task HostedServices_StartTheReceiver_BeforeTheBuses()
-        {
-            EventAggregator eventAggregator = new EventAggregator();
-            await WithHost(messaging => messaging.UseEventAggregator(eventAggregator), (topology, host) =>
-            {
-                List<string> started = host.Services.GetServices<IHostedService>().Select(s => s.GetType().Name).ToList();
-
-                Assert.True(started.IndexOf("MessageEventReceiver") < started.IndexOf("MessagingHostedService"), string.Join(", ", started));
-                return Task.CompletedTask;
-            });
-        }
-
-        [Fact]
-        public async Task SharedQueue_MessageEventSubscribedBeforeStart_ReceivesWhatIsAlreadyOnTheQueue()
-        {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
-            {
-                string service = "svc-" + Guid.NewGuid().ToString("N");
-                topology.DeleteOnDispose(service, service + ".dead-letter");
-                string exchange = topology.Exchange(App);
-                Action<RabbitMQBusOptions> shared = options => Share(options, service);
-
-                await using (TestHost previous = await TestHost.Start(topology.Broker.HostName, topology.Broker.Port, topology.Broker, exchange, App, messaging => messaging.AddMessages(typeof(CompatMessage).Assembly), shared))
-                {
-                    await previous.WaitUntilConnected();
-                }
-
-                await PublishGolden(topology);
-
-                EventAggregator eventAggregator = new EventAggregator();
-                Received<CompatMessage> received = new Received<CompatMessage>();
-                eventAggregator.GetEvent<MessageEvent<CompatMessage>>().Subscribe(received.Add, keepSubscriberReferenceAlive: true);
-
-                await using (TestHost next = await TestHost.Start(topology.Broker.HostName, topology.Broker.Port, topology.Broker, exchange, App, messaging => messaging.UseEventAggregator(eventAggregator), shared))
-                {
-                    Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
-                    Assert.Null(await topology.Get(service + ".dead-letter"));
-                }
-            }
-        }
 
         [Fact]
         public async Task SharedQueue_ASecondClassWithTheSameWireName_IsRefused_AfterTheFirstUnsubscribes()

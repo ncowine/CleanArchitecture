@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/App/">
+    <Project Path="Poc3.SignalR/Poc3.SignalR.csproj" />
+  </Folder>
+  <Folder Name="/Messaging/">
+    <Project Path="../../src/Messaging/Messaging.Abstractions/Messaging.Abstractions.csproj" />
+  </Folder>
+  <Folder Name="/Events/">
+    <Project Path="../../src/Modules/Equipment/Equipment.Messages/Equipment.Messages.csproj" />
+  </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="Poc.Shared/Poc.Shared.csproj" />
+  </Folder>
+</Solution>

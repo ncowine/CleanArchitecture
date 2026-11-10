@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/App/">
+    <Project Path="Poc.Net472/Poc.Net472.csproj" />
+  </Folder>
+  <Folder Name="/Messaging/">
+    <Project Path="../../src/Common.RabbitMQ/Common.RabbitMQ.csproj" />
+    <Project Path="../../src/Messaging/Messaging.Abstractions/Messaging.Abstractions.csproj" />
+    <Project Path="../../src/Messaging/Messaging.RabbitMQ/Messaging.RabbitMQ.csproj" />
+  </Folder>
+  <Folder Name="/Events/">
+    <Project Path="../../src/Modules/Equipment/Equipment.Messages/Equipment.Messages.csproj" />
+    <Project Path="Poc.Legacy.Events/Poc.Legacy.Events.csproj" />
+    <Project Path="Poc.Shapes/Poc.Shapes.csproj" />
+  </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="Poc.Shared/Poc.Shared.csproj" />
+  </Folder>
+</Solution>
