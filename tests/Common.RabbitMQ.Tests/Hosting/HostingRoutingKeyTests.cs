@@ -62,14 +62,14 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                 // Two message types sharing one key: one binding.
                 IDisposable first = subscriber.Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { RoutingKey = Key });
-                subscriber.Subscribe(typeof(KeyedMessage), new SubscribeOptions { RoutingKey = Key });
+                IDisposable second = subscriber.Subscribe<KeyedMessage>(_ => { }, options: new SubscribeOptions { RoutingKey = Key });
                 Assert.True(await bus.WaitUntilRoutable(Key, true));
 
                 first.Dispose();
                 await Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken);
                 Assert.True(await bus.IsRoutable(Key));
 
-                subscriber.Unsubscribe(typeof(KeyedMessage), new SubscribeOptions { RoutingKey = Key });
+                second.Dispose();
                 Assert.True(await bus.WaitUntilRoutable(Key, false));
             }
         }
