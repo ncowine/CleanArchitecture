@@ -20,7 +20,6 @@ public class TransportIndependenceTests
         "RabbitMQ.Client",
         "Messaging.RabbitMQ",
         "Messaging.Hosting",
-        "Messaging.Prism",
         "Common.RabbitMQ",
         "Microsoft.AspNetCore.SignalR",
         "Microsoft.AspNetCore.SignalR.Core",

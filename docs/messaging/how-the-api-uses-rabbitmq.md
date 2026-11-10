@@ -102,7 +102,7 @@ Why each choice:
 | Targets `netstandard2.0` | Desktop apps on .NET Framework 4.7.2 and .NET 8 can both reference it. The API runs on .NET 10. |
 | Only reference: `Messaging.Abstractions` | That's where `[Message]` lives, and it has no dependencies. A receiving app doesn't pull in RabbitMQ just to read the class. |
 | `[Message("Equipment.EquipmentCreated")]` | The wire name is the message's identity, sent in the `event-type` header. It's never derived from the C# type, so the class can be renamed or moved without breaking receivers. |
-| Plain get/set properties | System.Text.Json (server) and Newtonsoft.Json (legacy apps) read them the same way. |
+| Plain get/set properties | System.Text.Json (every app on this library) and Newtonsoft.Json (apps still on the old library) read them the same way. No tuples: they're rejected. |
 | One class for both channels | The same object is the RabbitMQ message and the SignalR payload, so a client gets the same shape whichever way it listens. |
 
 The rules for changing a contract, because other apps depend on it:
@@ -127,7 +127,6 @@ other projects translate between your code and that engine. It lives in `src/Mes
 | `Messaging.Abstractions` | `[Message]`, `IMessagePublisher`, `IMessageHandler<T>`, `MessageContext`. No dependencies. | Contracts, every app |
 | `Messaging.RabbitMQ` | `RabbitMQBus`, the engine: connect, declare, publish, consume, retry, reconnect. Knows nothing about DI or Prism. | Everything, indirectly |
 | `Messaging.Hosting` | DI registration (`AddMessaging`), handlers, subscribers, JSON, `MessagingClient` for desktop apps | The API, modern WPF apps |
-| `Messaging.Prism` | Bridges received messages to Prism's `IEventAggregator` as `MessageEvent<T>` | Modern WPF apps that keep Prism |
 
 ### Bus, handler, subscriber
 
@@ -296,7 +295,7 @@ on message from queue:
     type = registry[wireName]                        // "Equipment.EquipmentCreated" -> EquipmentCreated
     if unknown or not subscribed: ack and skip       // normal: the queue gets the whole exchange
     message = JSON.deserialize(body, type)
-    run handlers, then sinks (subscribers, Prism bridge)
+    run handlers, then sinks (subscribers)
     ack                                              // broker deletes it
 ```
 
@@ -316,15 +315,16 @@ _subscriptions.Add(subscriber.Subscribe<EquipmentCreated>(List.Apply, _ui));  //
 foreach (var s in _subscriptions) s.Dispose();   // strong references: always unsubscribe
 ```
 
-### Option B: .NET 8 app that keeps Prism (`Messaging.Prism`; no POC at present)
+### Option B: .NET 8 or later app that keeps Prism (`Common.RabbitMQ`)
 
-`MessagingClient` hosts messaging inside a Prism app, and `UseEventAggregator` raises each message as a Prism event:
+The legacy adapter targets net8.0 too. Declare each API event as a `RemotePubSubEvent` whose namespace and name make
+the API's wire name, with the API's class as the payload (`Poc.Legacy.Events/FromApi`):
 
 ```csharp
-var client = MessagingClient.Create(services => services.AddMessaging(configuration, messaging => messaging
-    .UseEventAggregator(eventAggregator)));
+namespace Equipment;   // "Equipment" + "EquipmentCreated" = [Message("Equipment.EquipmentCreated")]
+public class EquipmentCreated : RemotePubSubEvent<Messages.EquipmentCreated> { }
 
-eventAggregator.GetEvent<MessageEvent<EquipmentCreated>>()
+eventAggregator.GetEvent<EquipmentCreated>()
     .Subscribe(List.Apply, ThreadOption.UIThread);
 ```
 
@@ -406,7 +406,7 @@ The original `Common.RabbitMQ` had problems [ADR 0001](adr/0001-decouple-messagi
 
 ```
 legacy WPF (net472)  -> Common.RabbitMQ (Prism adapter, public API unchanged) --\
-modern WPF (net8)    -> Messaging.Hosting [+ Messaging.Prism]                   -> Messaging.RabbitMQ -> broker
+modern apps (net8+) -> Messaging.Hosting                                      -> Messaging.RabbitMQ -> broker
 CleanArch.Api        -> Messaging.Hosting                                    --/
 ```
 
@@ -432,8 +432,9 @@ The rules that keep them compatible:
   identify messages by type name; new code declares it explicitly.
 - **Keep the default routing key** (the exchange name) for anything legacy apps receive. Legacy apps bind each exchange
   with its owner's name, so a custom routing key never reaches them.
-- **JSON must be identical.** The server serializes with System.Text.Json configured to produce the same bytes as
-  legacy Newtonsoft.Json. Golden-file tests in `tests/Common.RabbitMQ.Tests` compare the bytes.
+- **JSON must be identical.** Every app on this library, legacy ones included, serializes with System.Text.Json
+  (`MessageSerializer`) configured to produce the same bytes as Newtonsoft.Json, which apps on the old library use.
+  Golden-file tests in `tests/Common.RabbitMQ.Tests` compare the bytes on net472 and net8.
 - **Everyone publishes the same way.** The API and legacy apps both buffer and send in the background.
 
 Equipment's events use new-style wire names (`Equipment.EquipmentCreated`) because no legacy app consumes them today.

@@ -13,7 +13,6 @@ All paths are under `src/`. `RabbitMQBus` means `Messaging/Messaging.RabbitMQ/Ra
     │
     ├── Legacy WPF app ──────► Common.RabbitMQ          (the old Prism API, frozen)
     ├── API / modern app ────► Messaging.Hosting        (AddMessaging, IMessagePublisher, IMessageSubscriber)
-    │                            └── Messaging.Prism    (optional: messages as Prism events)
     ▼
  Messaging.RabbitMQ   RabbitMQBus: one bus = two connections, a queue, a send buffer. Knows nothing about Prism or DI.
  Messaging.Abstractions   types every layer shares: MessageContext, [Message]
@@ -92,7 +91,6 @@ dispatcher.Dispatch is where the front doors differ (IInboundDispatcher):
             ├─ new DI scope → each handler: HandlerRegistration.Invoke → THandler.Handle(message, context, token)
             └─ each IMessageSink.Deliver:
                  MessageSubscriber   → the IMessageSubscriber.Subscribe callbacks for this type
-                 EventAggregatorSink → GetEvent<MessageEvent<T>>().Publish(message)   (Messaging.Prism)
 ```
 
 ## Threads

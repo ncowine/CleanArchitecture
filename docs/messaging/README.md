@@ -64,8 +64,8 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
   reconnects, sends, receives, retries and dead-letters. Everything else in the repository is a thin "front door"
   that translates between how an app thinks and the engine:
   - **Old WPF apps** use Prism events: `eventAggregator.GetEvent<OrderSaved>().PublishRemote(order)`.
-  - **New WPF apps** use plain classes, still through Prism: `GetEvent<MessageEvent<OrderSaved>>().PublishRemote(order)`.
-    Or they use **no Prism at all**: `IMessagePublisher.Publish(order)` and `IMessageSubscriber.Subscribe<OrderSaved>(...)`.
+  - **New apps** that want the Prism style use the same adapter (it targets net8.0 too). Otherwise they use plain
+    classes and **no Prism at all**: `IMessagePublisher.Publish(order)` and `IMessageSubscriber.Subscribe<OrderSaved>(...)`.
   - **The server** uses handlers: `IMessagePublisher.Publish(order)` and `IMessageHandler<OrderSaved>`.
 - **Sending is fire-and-forget.** A message is put in a buffer instantly and delivered in the background, even if
   RabbitMQ is briefly down.
@@ -103,7 +103,7 @@ The whole system uses a post office analogy. Each term has the everyday picture 
 | **Prism / event aggregator** | The internal intercom inside one app. | The desktop apps' in-process messaging (`IEventAggregator`). "Remote" messaging extends it across apps. |
 | **Contract** | The agreed form layout. | A plain class describing a message's fields, e.g. `Employees.Contracts.EmployeeUpdated`. |
 | **Handler** | The clerk who processes one kind of letter. | A server class `IMessageHandler<T>` that runs when a message of type `T` arrives. |
-| **Serializer** | The typist who turns a form into text and back. | Converts a message object to JSON bytes and back. Legacy apps use Newtonsoft.Json; the server uses System.Text.Json set up to produce the same bytes. |
+| **Serializer** | The typist who turns a form into text and back. | Converts a message object to JSON bytes and back. Every app uses System.Text.Json, set up to produce the same bytes as Newtonsoft.Json, which apps on the old library still use (since 2026-11-09; legacy apps used Newtonsoft before). Payloads are classes with `{ get; set; }` properties, or primitives: **tuples are rejected**. |
 
 ---
 
@@ -113,18 +113,17 @@ The whole system uses a post office analogy. Each term has the everyday picture 
 flowchart TB
     subgraph Apps["Programs"]
         L["Legacy WPF app<br/>(.NET Framework 4.7.2)<br/>Prism events"]
-        M["Modern WPF app<br/>(.NET 8)<br/>plain classes via Prism"]
+        M["Modern app<br/>(.NET 8+)<br/>plain classes, IMessageSubscriber"]
         S["Server / WebApi<br/>(.NET 10)<br/>handlers"]
     end
     subgraph FrontDoors["Front doors (translation only)"]
         A["Common.RabbitMQ<br/>legacy adapter"]
-        P["Messaging.Prism<br/>event aggregator bridge"]
         H["Messaging.Hosting<br/>DI, handlers, JSON"]
     end
     Core["Messaging.RabbitMQ<br/><b>RabbitMQBus</b> - the only code that talks to RabbitMQ"]
     B[("RabbitMQ broker")]
     L --> A --> Core
-    M --> P --> H
+    M --> H
     S --> H --> Core
     Core <--> B
 ```
@@ -145,12 +144,11 @@ Two ideas explain almost everything:
 
 | Project | Target | Depends on | What it is | Who uses it |
 |---|---|---|---|---|
-| `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `IMessageHandler<T>`, `[Message]`, `MessageContext`, `IMessageSerializer`. | Everything below. |
-| `Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | RabbitMQ.Client 7.1.2, Microsoft.Extensions.Logging.Abstractions 8.0 | **The engine**: `RabbitMQBus` and its options. | All front doors. |
-| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | Server-style setup: `AddMessaging`, handlers, `IMessageSubscriber`, System.Text.Json, `MessagingClient`. | The API, modern WPF apps. |
-| `Messaging/Messaging.Prism` | net8.0 | Prism.Core, Messaging.Hosting | Optional bridge: plain message classes as Prism events (`MessageEvent<T>`). | Modern WPF apps that like the Prism style. |
+| `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `IMessageHandler<T>`, `[Message]`, `MessageContext`. | Everything below. |
+| `Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | RabbitMQ.Client 7.1.2, Microsoft.Extensions.Logging.Abstractions 8.0, System.Text.Json 8.0.5 (net472, netstandard2.0) | **The engine**: `RabbitMQBus`, its options and the one serializer, `MessageSerializer`. | All front doors. |
+| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | The modern front door for any net8+ app (API, WPF, worker; no ASP.NET dependency): `AddMessaging`, handlers, `IMessageSubscriber`, `MessagingClient`. | The API, modern WPF apps. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
-| `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Newtonsoft 12.0.3, Configuration.Binder, the engine | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
+| `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Configuration.Binder, the engine (with System.Text.Json) | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
 | `Common.Events` | net472, net8.0 | Common.RabbitMQ | The demo apps' Prism events (`EmployeeUpdated` and others). | Demo WPF apps. |
 | `WpfApp.Net472` | net472 | the above | Demo legacy desktop app. | You, to try things. |
 | `WpfApp.Net8` | net8.0-windows | the above | Demo modern desktop app. It uses **both** styles side by side: Prism events on its Legacy bus, plain classes on its Modern bus. | You, and as the reference for migrating apps that keep Prism. |
@@ -164,7 +162,7 @@ Two ideas explain almost everything:
 | `Common.RabbitMQ.Tests/Golden` | Message bodies are **byte-for-byte** what legacy apps expect (golden JSON files). |
 | `Common.RabbitMQ.Tests/PublicApi` | The legacy adapter's public API has **nothing removed or changed**, only approved additions. |
 | `Common.RabbitMQ.Tests/Broker` | The engine against a real broker: delivery, echo drop, headers, queues, retries, dead letters. |
-| `Common.RabbitMQ.Tests/Hosting` | The server side and modern clients: handlers, JSON, health, routing keys, the Prism bridge, `IMessageSubscriber`. |
+| `Common.RabbitMQ.Tests/Hosting` | The server side and modern clients: handlers, JSON, health, routing keys, `IMessageSubscriber`. |
 | `Common.RabbitMQ.Tests/LegacyModel` | A **model of the real legacy library** and every assumption about it, plus the new code working with it. |
 | `Common.RabbitMQ.Tests/Adapter` | The legacy adapter's newer features: events by assembly, appsettings.json, routing rules. |
 | `Fixtures/Common.RabbitMQ.Baseline` | A **frozen copy** of the original library, so tests can prove old and new builds talk to each other. |
@@ -229,8 +227,7 @@ that. The API avoids it by publishing through its outbox with a confirmed publis
 6. It hands the object to the **dispatcher**, the one step that differs per front door:
    - **Legacy:** `eventAggregator.GetEvent<TheEvent>().Publish(payload)`, so your normal Prism subscribers run.
    - **Server and modern apps:** each registered handler runs in its **own dependency-injection scope**, then every
-     sink runs. The Prism bridge is a sink that raises `MessageEvent<T>`. `IMessageSubscriber` is a sink that calls
-     the subscriptions for that message type.
+     sink runs. `IMessageSubscriber` is a sink that calls the subscriptions for that message type.
 7. It **settles** the message: acknowledges it on success. On failure, see [When things go wrong](#when-things-go-wrong-retries-dead-letters-and-reconnecting).
 
 ---
@@ -285,7 +282,7 @@ flowchart LR
 
   ```csharp
   SubscribeOptions equipment = new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment" };
-  eventAggregator.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, equipment, ThreadOption.UIThread);   // Prism, legacy or MessageEvent<T>
+  eventAggregator.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, equipment, ThreadOption.UIThread);   // Prism (Common.RabbitMQ)          
   subscriber.Subscribe<EquipmentDisposed>(OnDisposed, options: equipment);                                // IMessageSubscriber
   [RoutingKey("equipment", Exchange = "Poc.Net472")]                                                      // on a handler class: bound at startup
   ```
@@ -427,44 +424,20 @@ router = RabbitMQServiceRouter.FromConfiguration(eventAggregator, configuration,
 A `RabbitMQService` built on its own takes it as its third constructor argument. Nothing is written to Trace any more,
 and there's no `Log` event: an app that used either passes a logger instead.
 
-### B. A modern WPF app (.NET 8, plain classes, Prism style)
+### B. A modern app that keeps the Prism style (.NET 8 or later)
 
-**1. Write messages as plain classes with a wire name:**
+Use `Common.RabbitMQ`, exactly as in recipe A. It targets net8.0 too, so a net8 or net10 app references it and keeps
+`RemotePubSubEvent<T>`, `GetEvent<T>().Subscribe(...)` and `PublishRemote`. To receive the API's events, declare a
+`RemotePubSubEvent<TheApiClass>` whose namespace and name make the API's wire name, as
+`samples/MessagingPocs/Poc.Legacy.Events/FromApi` does.
 
-```csharp
-[Message("Common.Events.EmployeeSaved")]      // same wire name as the legacy event, so both sides interoperate
-public class EmployeeSaved
-{
-    public int Id { get; set; }
-    public string Name { get; set; }
-}
-```
-
-**2. Start messaging and connect it to Prism** (see `src/WpfApp.Net8/App.xaml.cs`):
-
-```csharp
-MessagingClient client = MessagingClient.Create(services => services.AddMessaging(configuration, messaging => messaging
-    .UseEventAggregator(eventAggregator)));        // raise received messages as MessageEvent<T>
-
-containerRegistry.RegisterInstance(client);
-containerRegistry.RegisterInstance(client.Publisher);
-await client.StartAsync();                         // connects in the background
-```
-
-**3. Use it like any Prism event:**
-
-```csharp
-eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().Subscribe(OnSaved, ThreadOption.UIThread);
-eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemote(saved);      // other apps + local subscribers
-eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemoteOnly(saved);  // other apps only
-eventAggregator.GetEvent<MessageEvent<EmployeeSaved>>().PublishRemote(saved, new PublishOptions { Bus = "Partners", RoutingKey = "employees.eu" });
-```
-
-`PublishRemote` finds the publisher through Prism's container, just like the legacy version.
+There used to be a third way, `Messaging.Prism`: plain classes raised as `MessageEvent<T>` through `Messaging.Hosting`.
+It was removed on 2026-11-10. An app picks `Common.RabbitMQ` for the Prism style or `Messaging.Hosting` (recipe C)
+for plain classes.
 
 ### C. A modern WPF app without Prism (.NET 8)
 
-Use the same plain message classes as recipe B, but no Prism, no event aggregator and no DryIoc. See
+Write messages as plain classes with a wire name (`[Message("...")]`), and use no Prism, no event aggregator and no DryIoc. See
 `src/WpfApp.Modern`.
 
 **1. Start the .NET Generic Host in `App.xaml.cs`.** It gives you DI, `appsettings.json` and logging, and starts
@@ -509,7 +482,6 @@ publisher.Publish(new EmployeeSaved { Id = 7, Name = "Ada" });
 
 - **Subscribing is what stops a type being dropped on arrival**, so nothing has to be registered. The message class
   needs `[Message("...")]`. It takes effect at once and never changes the broker's bindings (one per exchange).
-  `MessageEvent<T>` subscriptions work the same way.
 - `Subscribe` returns an `IDisposable`. **Dispose it to unsubscribe.** Subscriptions are strong references (Prism's
   are weak), so a window or view model that goes away before the app ends must dispose its subscriptions. When the last
   subscriber for a type goes, it is dropped on arrival again, unless a handler or `AddMessages` still wants the type.
@@ -743,7 +715,7 @@ dotnet test tests/Common.RabbitMQ.Tests
 ```
 
 - **About 200 tests** run on **both** .NET Framework 4.7.2 and .NET 8. They include golden bytes, public API checks,
-  a real broker, the legacy model, hosting and the Prism bridge.
+  a real broker, the legacy model and hosting.
 - **Without a broker,** broker tests are **skipped**, unless `RABBITMQ_TESTS_REQUIRED=1`. The non-broker tests still run.
 - **A different broker:** set `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_VHOST`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`.
 - **Tests clean up after themselves.** Each uses uniquely named exchanges and queues and deletes them afterwards.
@@ -779,9 +751,8 @@ The full reasoning is in the two ADRs. The short version:
 
 - **Legacy apps must not need code changes.** Legacy adapter changes are additive only, and the wire format is frozen
   (golden tests, frozen baseline, public API test).
-- **Each third-party dependency lives in exactly one layer.** Prism and Newtonsoft are only in the legacy adapter and
-  the optional Prism bridge. RabbitMQ.Client is only in the engine. Contracts depend on nothing.
-- **Versions are shared with the legacy apps:** RabbitMQ.Client 7.1.2, Prism.Core 8.1.97, Newtonsoft.Json 12.0.3,
+- **Each third-party dependency lives in exactly one layer.** Prism is only in the legacy adapter. RabbitMQ.Client and System.Text.Json are only in the engine (Newtonsoft only in the tests' baseline). Contracts depend on nothing.
+- **Versions are shared with the legacy apps:** RabbitMQ.Client 7.1.2, Prism.Core 8.1.97 (and Newtonsoft.Json 12.0.3 for the tests' baseline),
   pinned in `Directory.Packages.props`. The Prism-free demo app adds CommunityToolkit.Mvvm 8.4.2 and
   Microsoft.Extensions.Hosting 8.0.1. `WpfApp.Net472` opts out of central package versions, as legacy apps do.
 - **Every library that legacy apps load also targets net472**, so they never need extra "netstandard" files.
