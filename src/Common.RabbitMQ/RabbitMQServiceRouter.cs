@@ -123,17 +123,27 @@ namespace Common.RabbitMQ
 
         internal string BusForBinding(SubscribeOptions options)
         {
+            bool hasExchange = !string.IsNullOrWhiteSpace(options.Exchange);
             if (!string.IsNullOrWhiteSpace(options.Bus))
             {
-                return buses.ContainsKey(options.Bus)
-                    ? options.Bus
-                    : throw new InvalidOperationException($"Cannot bind a routing key on bus '{options.Bus}': it is not configured for this application.");
+                if (!buses.ContainsKey(options.Bus))
+                {
+                    throw new InvalidOperationException($"Cannot bind a routing key on bus '{options.Bus}': it is not configured for this application.");
+                }
+
+                if (hasExchange && !UsesExchange(configs[options.Bus], options.Exchange))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot bind a routing key on exchange '{options.Exchange}': bus '{options.Bus}' doesn't use it. Add it to Messaging:Buses:{options.Bus}:Subscriptions, or check the name.");
+                }
+
+                return options.Bus;
             }
 
-            if (!string.IsNullOrWhiteSpace(options.Exchange))
+            if (hasExchange)
             {
                 List<string> matches = configs
-                    .Where(c => c.Value.ExchangeName == options.Exchange || c.Value.Subscriptions.Any(s => s != null && s.Exchange == options.Exchange))
+                    .Where(c => UsesExchange(c.Value, options.Exchange))
                     .Select(c => c.Key)
                     .ToList();
 
@@ -147,9 +157,17 @@ namespace Common.RabbitMQ
                     throw new InvalidOperationException(
                         $"Exchange '{options.Exchange}' is on several buses ({string.Join(", ", matches)}): set SubscribeOptions.Bus to say which.");
                 }
+
+                throw new InvalidOperationException(
+                    $"Cannot bind a routing key on exchange '{options.Exchange}': no bus uses it. Add it to a bus's Subscriptions in Messaging:Buses, or check the name.");
             }
 
             return DefaultBus;
+        }
+
+        private static bool UsesExchange(RabbitMQConfig config, string exchange)
+        {
+            return config.ExchangeName == exchange || config.Subscriptions.Any(s => s != null && s.Exchange == exchange);
         }
 
         public void Publish(Type eventType, object payload)

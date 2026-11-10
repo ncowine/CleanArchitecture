@@ -159,6 +159,13 @@ namespace Messaging.RabbitMQ
         {
             EnsureNotDisposed();
 
+            if (!string.IsNullOrWhiteSpace(exchange) && !UsesExchange(exchange))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot bind routing key '{routingKey}' on exchange '{exchange}': bus '{options.BusName}' doesn't use it. " +
+                    "Add it to the bus's Subscriptions in Messaging:Buses, or check the name.");
+            }
+
             bool changed = false;
             lock (bindingGate)
             {

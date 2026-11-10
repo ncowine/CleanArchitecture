@@ -117,10 +117,12 @@ namespace Messaging.Hosting
         private IDisposable Add(MessageSubscription subscription)
         {
             RequireRoutingKey(subscription.Options);
+            SubscribeOptions options = subscription.Options;
+            RabbitMQBus bindingBus = options == null ? null : BindingBus(provider, registry, options.Bus, options.Exchange);
             lock (gate)
             {
                 StartReceiving(subscription.MessageType);
-                Bind(subscription.Options);
+                bindingBus?.Bind(options.Exchange, options.RoutingKey);
 
                 Dictionary<Type, MessageSubscription[]> next = new Dictionary<Type, MessageSubscription[]>(subscriptions);
                 next[subscription.MessageType] = next.TryGetValue(subscription.MessageType, out MessageSubscription[] existing)
@@ -166,14 +168,6 @@ namespace Messaging.Hosting
             }
         }
 
-        private void Bind(SubscribeOptions options)
-        {
-            if (options != null)
-            {
-                BindingBus(provider, registry, options.Bus, options.Exchange).Bind(options.Exchange, options.RoutingKey);
-            }
-        }
-
         private void Unbind(SubscribeOptions options)
         {
             if (options != null)
@@ -191,7 +185,14 @@ namespace Messaging.Hosting
                     throw new InvalidOperationException($"Cannot bind a routing key on bus '{busName}': it is not configured for this application.");
                 }
 
-                return provider.GetRequiredKeyedService<RabbitMQBus>(busName);
+                RabbitMQBus named = provider.GetRequiredKeyedService<RabbitMQBus>(busName);
+                if (!string.IsNullOrWhiteSpace(exchange) && !named.UsesExchange(exchange))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot bind a routing key on exchange '{exchange}': bus '{busName}' doesn't use it. Add it to Messaging:Buses:{busName}:Subscriptions, or check the name.");
+                }
+
+                return named;
             }
 
             if (!string.IsNullOrWhiteSpace(exchange))
@@ -211,6 +212,9 @@ namespace Messaging.Hosting
                     throw new InvalidOperationException(
                         $"Exchange '{exchange}' is on several buses ({string.Join(", ", matches.Select(b => b.BusName))}): set SubscribeOptions.Bus to say which.");
                 }
+
+                throw new InvalidOperationException(
+                    $"Cannot bind a routing key on exchange '{exchange}': no bus uses it. Add it to a bus's Subscriptions in Messaging:Buses, or check the name.");
             }
 
             string defaultBus = registry.GetDefaultBus()

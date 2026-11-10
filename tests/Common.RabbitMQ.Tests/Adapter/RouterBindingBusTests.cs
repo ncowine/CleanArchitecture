@@ -16,11 +16,24 @@ namespace Common.RabbitMQ.Tests.Adapter
         private const int UnreachablePort = 1;
 
         [Fact]
-        public void TheBusOption_Wins()
+        public void TheBusOption_Wins_WhenThatBusUsesTheExchange()
         {
             using (RabbitMQServiceRouter router = Router())
             {
-                Assert.Equal("First", BusFor(router, new SubscribeOptions { Bus = "First", Exchange = "second-app", RoutingKey = "k" }));
+                Assert.Equal("Second", BusFor(router, new SubscribeOptions { Bus = "Second", Exchange = "OldApp", RoutingKey = "k" }));
+                Assert.Equal("First", BusFor(router, new SubscribeOptions { Bus = "First", RoutingKey = "k" }));
+            }
+        }
+
+        [Fact]
+        public void TheBusOption_WithAnExchangeThatBusDoesNotUse_Throws()
+        {
+            using (RabbitMQServiceRouter router = Router())
+            {
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+                    BusFor(router, new SubscribeOptions { Bus = "First", Exchange = "second-app", RoutingKey = "k" }));
+                Assert.Contains("second-app", error.Message);
+                Assert.Contains("'First'", error.Message);
             }
         }
 
@@ -35,12 +48,23 @@ namespace Common.RabbitMQ.Tests.Adapter
         }
 
         [Fact]
-        public void AnExchangeNoBusUses_OrNone_GoesToTheDefaultBus()
+        public void NoExchange_GoesToTheDefaultBus()
         {
             using (RabbitMQServiceRouter router = Router())
             {
-                Assert.Equal("First", BusFor(router, new SubscribeOptions { Exchange = "elsewhere", RoutingKey = "k" }));
                 Assert.Equal("First", BusFor(router, new SubscribeOptions { RoutingKey = "k" }));
+            }
+        }
+
+        [Fact]
+        public void AnExchangeNoBusUses_Throws()
+        {
+            using (RabbitMQServiceRouter router = Router())
+            {
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+                    BusFor(router, new SubscribeOptions { Exchange = "elsewhere", RoutingKey = "k" }));
+                Assert.Contains("'elsewhere'", error.Message);
+                Assert.Contains("no bus uses it", error.Message);
             }
         }
 

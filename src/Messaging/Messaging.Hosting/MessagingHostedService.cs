@@ -27,9 +27,18 @@ namespace Messaging.Hosting
 
             foreach ((RoutingKeyAttribute key, IReadOnlyCollection<string> buses) in registry.GetHandlerRoutingKeys())
             {
-                IEnumerable<RabbitMQBus> targets = buses.Count > 0
+                List<RabbitMQBus> targets = buses.Count > 0
                     ? buses.Select(name => provider.GetRequiredKeyedService<RabbitMQBus>(name))
-                    : new[] { MessageSubscriber.BindingBus(provider, registry, null, key.Exchange) };
+                        .Where(bus => string.IsNullOrWhiteSpace(key.Exchange) || bus.UsesExchange(key.Exchange))
+                        .ToList()
+                    : new List<RabbitMQBus> { MessageSubscriber.BindingBus(provider, registry, null, key.Exchange) };
+
+                if (targets.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"[RoutingKey(\"{key.RoutingKey}\")] binds exchange '{key.Exchange}', which none of its buses ({string.Join(", ", buses)}) uses. " +
+                        "Add it to a bus's Subscriptions in Messaging:Buses, or check the name.");
+                }
 
                 foreach (RabbitMQBus bus in targets)
                 {

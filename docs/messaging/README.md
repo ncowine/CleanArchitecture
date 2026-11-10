@@ -276,9 +276,16 @@ flowchart LR
   so messages sent without a key keep arriving.
 
   **Which bus**, when an app has several: `SubscribeOptions.Bus` if set. Otherwise the one bus that has `Exchange` as
-  its own exchange or in its `Subscriptions`, or the default bus when none has. The same exchange name on two buses
-  (for example the same app in two vhosts) is ambiguous: subscribing throws and asks for `Bus`. A handler's
-  `[RoutingKey]` goes on the buses it receives from (`AddHandlers(assembly, "Legacy")`), or is placed the same way.
+  its own exchange or in its `Subscriptions`, or the default bus when there's no `Exchange`. The same exchange name on
+  two buses (for example the same app in two vhosts) is ambiguous: subscribing throws and asks for `Bus`. A handler's
+  `[RoutingKey]` goes on those of the buses it receives from (`AddHandlers(assembly, "Legacy")`) that use its exchange,
+  or is placed the same way.
+
+  **Guards (2026-11-10):** a bus or exchange that doesn't match the configuration throws, instead of binding
+  somewhere unexpected. Subscribing throws `InvalidOperationException` for a `Bus` that isn't in `Messaging:Buses`, an
+  `Exchange` that no bus has as its own exchange or in its `Subscriptions`, or a `Bus` and `Exchange` where that bus
+  doesn't use that exchange. For a handler's `[RoutingKey]`, the app fails at startup. Nothing is left half
+  subscribed. Publishing already throws for an unknown `PublishOptions.Bus` (it has no exchange to check).
 
   ```csharp
   SubscribeOptions equipment = new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment" };
@@ -300,7 +307,8 @@ flowchart LR
   the publisher's key is always concrete, and the exchange matches it against the bindings. On a `direct` exchange a
   pattern is compared as plain text, and `fanout` ignores keys.
 
-  A key on an exchange that doesn't exist yet is skipped with a warning and tried again at the next connect. A shared
+  A key on a subscribed exchange that doesn't exist on the broker yet is skipped with a warning and tried again at the
+  next connect (a subscribed exchange missing at connect time already fails the connect, and is retried). A shared
   queue keeps a binding when the service stops; one left behind by an instance that crashed stays until removed by hand.
 
 ### Two kinds of queue

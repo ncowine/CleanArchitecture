@@ -39,18 +39,37 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task TheBusOption_ChoosesTheBus()
+        public void TheBusOption_WithAnExchangeThatBusDoesNotUse_IsRefused()
         {
-            await using (TestBus first = await TestBus.Create())
-            await using (TestBus second = await TestBus.Create())
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
+                .AddBus("First", options => Unreachable(options, "first"))
+                .AddBus("Second", options => Unreachable(options, "second"))
+                .UseDefaultBus("First"))))
             {
-                using (TestClient client = TwoBuses(first, second))
-                {
-                    await client.StartAsync(TestContext.Current.CancellationToken);
-                    List<string> buses = Subscribe(client, new SubscribeOptions { Bus = "First", Exchange = second.ExchangeName, RoutingKey = Key });
+                IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
 
-                    await AssertArrivesOnlyOn("First", second, buses);
-                }
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+                    subscriber.Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { Bus = "First", Exchange = "second", RoutingKey = Key }));
+                Assert.Contains("'second'", error.Message);
+                Assert.Contains("'First'", error.Message);
+            }
+        }
+
+        [Fact]
+        public void AnExchangeNoBusUses_IsRefused_AndNothingIsLeftReceiving()
+        {
+            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
+                .AddBus("Only", options => Unreachable(options, "only"))
+                .UseDefaultBus("Only"))))
+            {
+                IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
+
+                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+                    subscriber.Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { Exchange = "Mistyped", RoutingKey = Key }));
+                Assert.Contains("no bus uses it", error.Message);
+
+                // A later subscription to a twin class with the same wire name is still allowed: the refused one left nothing behind.
+                subscriber.Subscribe<Employees.Contracts.CompatMessageTwin>(_ => { }).Dispose();
             }
         }
 
