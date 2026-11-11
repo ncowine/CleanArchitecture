@@ -87,6 +87,10 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "class Common.RabbitMQ.RabbitMQSubscription",
             "ctor Common.RabbitMQ.RabbitMQSubscription()",
             "property Common.RabbitMQ.RabbitMQSubscription.Exchange : System.String { get; set; }",
+
+            // One-way TLS to the broker.
+            "property Common.RabbitMQ.RabbitMQConfig.UseTls : System.Boolean { get; set; }",
+            "property Common.RabbitMQ.RabbitMQConfig.TlsServerName : System.String { get; set; }",
         };
 
         [Fact]

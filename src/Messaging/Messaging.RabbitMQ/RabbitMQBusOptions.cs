@@ -17,6 +17,12 @@ namespace Messaging.RabbitMQ
 
         public string Password { get; set; } = "guest";
 
+        /// <summary>Connect over TLS (AMQPS). The broker's TLS listener is usually port 5671: set <see cref="Port"/> too.</summary>
+        public bool UseTls { get; set; }
+
+        /// <summary>The name the broker's certificate must match. Defaults to <see cref="HostName"/>.</summary>
+        public string TlsServerName { get; set; }
+
         public string ExchangeName { get; set; }
 
         public string ExchangeType { get; set; } = "topic";
