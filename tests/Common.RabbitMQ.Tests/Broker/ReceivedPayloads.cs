@@ -23,7 +23,7 @@ namespace Common.RabbitMQ.Tests.Broker
         }
 
         /// <returns>The next payload, or null when none arrives within <paramref name="timeout"/>.</returns>
-        public async Task<CompatPayload> Next(TimeSpan timeout)
+        public async Task<CompatPayload> NextAsync(TimeSpan timeout)
         {
             if (!await available.WaitAsync(timeout).ConfigureAwait(false))
             {

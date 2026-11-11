@@ -23,15 +23,15 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task OnlyTheBaselineHeadersAreSent_ToTheOnlyBus()
         {
-            await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => { }))
+            await using (TestBus bus = await TestBus.CreateAsync())
+            await using (TestHost host = await TestHost.StartAsync(bus, "compat-client", messaging => { }))
             {
-                await host.WaitUntilConnected();
-                WireCapture capture = await bus.Capture();
+                await host.WaitUntilConnectedAsync();
+                WireCapture capture = await bus.CaptureAsync();
 
                 host.Services.GetRequiredService<IMessagePublisher>().Publish(GoldenMessage());
 
-                CapturedMessage message = await capture.Next(TestBus.Timeout);
+                CapturedMessage message = await capture.NextAsync(TestBus.Timeout);
                 Assert.NotNull(message);
                 Assert.Equal(bus.ExchangeName, message.RoutingKey);
                 Assert.Equal(new[] { "event-type", "source-id", "x-dotnet-pub-seq-no" }, message.Headers.Keys.OrderBy(k => k, StringComparer.Ordinal));
@@ -42,18 +42,18 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task PublishOptions_RoutingKey_OverridesTheExchangeName()
         {
-            await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-client", messaging => { }))
+            await using (TestBus bus = await TestBus.CreateAsync())
+            await using (TestHost host = await TestHost.StartAsync(bus, "compat-client", messaging => { }))
             {
-                await host.WaitUntilConnected();
-                WireCapture capture = await bus.Capture();
+                await host.WaitUntilConnectedAsync();
+                WireCapture capture = await bus.CaptureAsync();
                 IMessagePublisher publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
                 publisher.Publish(GoldenMessage(), new PublishOptions { RoutingKey = "call.key" });
                 publisher.Publish(GoldenMessage());
 
-                Assert.Equal("call.key", (await capture.Next(TestBus.Timeout))?.RoutingKey);
-                Assert.Equal(bus.ExchangeName, (await capture.Next(TestBus.Timeout))?.RoutingKey);
+                Assert.Equal("call.key", (await capture.NextAsync(TestBus.Timeout))?.RoutingKey);
+                Assert.Equal(bus.ExchangeName, (await capture.NextAsync(TestBus.Timeout))?.RoutingKey);
             }
         }
 
@@ -61,10 +61,10 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task Publishes_ToALegacyApp()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                     .AddBus(CompatBus.Name, options => Configure(options, bus))
@@ -74,7 +74,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                     client.Publisher.Publish(GoldenMessage());
 
-                    CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await legacy.Received.Next(TestBus.Timeout));
+                    CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await legacy.Received.NextAsync(TestBus.Timeout));
                 }
             }
         }
@@ -82,10 +82,10 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task Subscribing_BeforeTheClientStarts_BindsWhenItConnects()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                     .AddBus(CompatBus.Name, options => Configure(options, bus))
@@ -103,7 +103,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                     legacy.PublishRemote(CompatPayloads.Golden());
 
-                    Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
+                    Assert.Equal(42, (await received.NextAsync(TestBus.Timeout))?.Id);
                 }
             }
         }

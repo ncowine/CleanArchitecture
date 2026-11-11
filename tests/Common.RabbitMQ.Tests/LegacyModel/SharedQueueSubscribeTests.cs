@@ -26,7 +26,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         [Fact]
         public async Task SubscribingBeforeStart_WithoutWaiting_ReceivesWhatIsAlreadyOnTheQueue()
         {
-            await WithBacklog(async (topology, next, deadLetterQueue) =>
+            await WithBacklogAsync(async (topology, next, deadLetterQueue) =>
             {
                 Received<Order> received = next.Record<Order>(WireName);
                 RabbitMQBus bus = next.CreateBus();
@@ -34,31 +34,31 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 bus.Subscribe(new MessageRegistration(WireName, typeof(Order)));
                 next.Start();
 
-                Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
+                Assert.Equal(42, (await received.NextAsync(TestBus.Timeout))?.Id);
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
-                Assert.Null(await topology.Get(deadLetterQueue));
+                Assert.Null(await topology.GetAsync(deadLetterQueue));
             });
         }
 
         [Fact]
         public async Task AMessageNobodySubscribesTo_IsDropped_NotDeadLettered()
         {
-            await WithBacklog(async (topology, next, deadLetterQueue) =>
+            await WithBacklogAsync(async (topology, next, deadLetterQueue) =>
             {
                 next.Start();
-                await topology.WaitUntilConnected(next);
+                await topology.WaitUntilConnectedAsync(next);
 
                 // The queue is bound to the whole exchange, so events this service doesn't handle are normal.
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
-                Assert.Null(await topology.Get(deadLetterQueue));
-                Assert.Null(await topology.Get(deadLetterQueue.Substring(0, deadLetterQueue.Length - ".dead-letter".Length)));
+                Assert.Null(await topology.GetAsync(deadLetterQueue));
+                Assert.Null(await topology.GetAsync(deadLetterQueue.Substring(0, deadLetterQueue.Length - ".dead-letter".Length)));
             });
         }
 
         [Fact]
         public async Task SubscribingAfterStart_Warns_ButNotBeforeStart()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 string service = "svc-" + Guid.NewGuid().ToString("N");
                 RecordingLogger logger = new RecordingLogger();
@@ -82,9 +82,9 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             options.SharedQueueName = service;
         }
 
-        private static async Task WithBacklog(Func<LegacyTopology, CoreApp, string, Task> test)
+        private static async Task WithBacklogAsync(Func<LegacyTopology, CoreApp, string, Task> test)
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 string service = "svc-" + Guid.NewGuid().ToString("N");
                 topology.DeleteOnDispose(service, service + ".dead-letter");
@@ -92,11 +92,11 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 CoreApp previous = topology.CreateCore(App, options => Share(options, service));
                 previous.Listen<Order>(WireName);
                 previous.Start();
-                await topology.WaitUntilConnected(previous);
+                await topology.WaitUntilConnectedAsync(previous);
                 previous.Dispose();
 
                 Dictionary<string, object> headers = new Dictionary<string, object> { [WireHeaders.MessageType] = WireName };
-                await topology.PublishRaw(App, topology.Exchange(App), headers, GoldenFile.Read("compat-payload.json"));
+                await topology.PublishRawAsync(App, topology.Exchange(App), headers, GoldenFile.Read("compat-payload.json"));
 
                 await test(topology, topology.CreateCore(App, options => Share(options, service)), service + ".dead-letter");
             }

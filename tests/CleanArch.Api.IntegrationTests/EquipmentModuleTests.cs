@@ -208,7 +208,7 @@ public sealed class EquipmentModuleTests : IAsyncLifetime
         Assert.Equal("London HQ", (await sender.Send(new GetSiteEquipmentSummary.Query(london), default))!.SiteName);
 
         var handler = ActivatorUtilities.CreateInstance<SiteRenamedHandler>(scope.ServiceProvider);
-        await handler.Handle(
+        await handler.HandleAsync(
             new SiteRenamed { SiteId = london, Name = "London Campus" },
             new MessageContext("ReferenceData.SiteRenamed", "Main", "m1", false,
                 new Dictionary<string, string>(), "ReferenceData", "ReferenceData.SiteRenamed"),

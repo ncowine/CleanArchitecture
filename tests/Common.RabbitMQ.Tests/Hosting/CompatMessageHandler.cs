@@ -27,7 +27,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             this.publisher = publisher;
         }
 
-        public Task Handle(CompatMessage message, MessageContext context, CancellationToken cancellationToken)
+        public Task HandleAsync(CompatMessage message, MessageContext context, CancellationToken cancellationToken)
         {
             if (message.Name == Fail)
             {

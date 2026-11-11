@@ -25,15 +25,15 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task WithoutABus_TheKeyGoesOnTheBusThatUsesTheExchange()
         {
-            await using (TestBus first = await TestBus.Create())
-            await using (TestBus second = await TestBus.Create())
+            await using (TestBus first = await TestBus.CreateAsync())
+            await using (TestBus second = await TestBus.CreateAsync())
             {
                 using (TestClient client = TwoBuses(first, second))
                 {
                     await client.StartAsync(TestContext.Current.CancellationToken);
                     List<string> buses = Subscribe(client, new SubscribeOptions { Exchange = second.ExchangeName, RoutingKey = Key });
 
-                    await AssertArrivesOnlyOn("Second", second, buses);
+                    await AssertArrivesOnlyOnAsync("Second", second, buses);
                 }
             }
         }
@@ -129,12 +129,12 @@ namespace Common.RabbitMQ.Tests.Hosting
             return buses;
         }
 
-        private static async Task AssertArrivesOnlyOn(string busName, TestBus exchange, List<string> buses)
+        private static async Task AssertArrivesOnlyOnAsync(string busName, TestBus exchange, List<string> buses)
         {
-            Assert.True(await exchange.WaitUntilRoutable(Key, true));
+            Assert.True(await exchange.WaitUntilRoutableAsync(Key, true));
 
             Dictionary<string, object> headers = new Dictionary<string, object> { [WireHeaders.MessageType] = "Compat.Events.CompatEvent" };
-            await exchange.PublishRaw(headers, GoldenFile.Read("compat-payload.json"), Key);
+            await exchange.PublishRawAsync(headers, GoldenFile.Read("compat-payload.json"), Key);
             await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
 
             lock (buses)

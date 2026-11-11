@@ -71,8 +71,6 @@ namespace Common.RabbitMQ.Tests.PublicApi
             "implements Common.RabbitMQ.RemotePubSubEvent<TPayload> : Common.RabbitMQ.IRemoteEvent",
 
             // Section 3: routing keys chosen by the publisher.
-            "interface Common.RabbitMQ.IRoutingKeyPublisher",
-            "method abstract Common.RabbitMQ.IRoutingKeyPublisher.Publish(System.Type, System.Object, System.String) : System.Void",
             "implements Common.RabbitMQ.RabbitMQService : Common.RabbitMQ.IRoutingKeyPublisher",
             "implements Common.RabbitMQ.RabbitMQServiceRouter : Common.RabbitMQ.IRoutingKeyPublisher",
             "method Common.RabbitMQ.RabbitMQService.Publish(System.Type, System.Object, System.String) : System.Void",

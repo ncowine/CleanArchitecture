@@ -21,15 +21,15 @@ namespace Common.RabbitMQ.Tests.Broker
         [InlineData(CompatBuild.Core)]
         public async Task Sends_FrozenRoutingKeyHeadersAndBody(CompatBuild build)
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint sender = bus.AddEndpoint(build, "compat-sender");
-                await bus.WaitUntilConnected();
-                WireCapture capture = await bus.Capture();
+                await bus.WaitUntilConnectedAsync();
+                WireCapture capture = await bus.CaptureAsync();
 
                 sender.PublishRemote(CompatPayloads.Golden());
 
-                CapturedMessage message = await capture.Next(TestBus.Timeout);
+                CapturedMessage message = await capture.NextAsync(TestBus.Timeout);
                 Assert.NotNull(message);
                 Assert.Equal(bus.ExchangeName, message.Exchange);
                 // The baseline routes by event name; every other build, like the real legacy library, by exchange name.
@@ -54,19 +54,19 @@ namespace Common.RabbitMQ.Tests.Broker
                 [MessageHeaders.SourceId] = "another-application",
             };
 
-            await ReceivesGoldenMessage(build, headers);
+            await ReceivesGoldenMessageAsync(build, headers);
         }
 
-        private static async Task ReceivesGoldenMessage(CompatBuild build, IDictionary<string, object> headers)
+        private static async Task ReceivesGoldenMessageAsync(CompatBuild build, IDictionary<string, object> headers)
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint receiver = bus.AddEndpoint(build, "compat-receiver");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
-                await bus.PublishRaw(headers, GoldenFile.Read(GoldenBody));
+                await bus.PublishRawAsync(headers, GoldenFile.Read(GoldenBody));
 
-                CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await receiver.Received.Next(TestBus.Timeout));
+                CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await receiver.Received.NextAsync(TestBus.Timeout));
             }
         }
     }

@@ -13,7 +13,7 @@ namespace Common.RabbitMQ.Tests
         public ConcurrentQueue<LogEntry> Entries { get; } = new ConcurrentQueue<LogEntry>();
 
         /// <returns>The first matching entry, or null when none is logged within <paramref name="timeout"/>.</returns>
-        public async Task<LogEntry> WaitFor(Func<LogEntry, bool> predicate, TimeSpan timeout)
+        public async Task<LogEntry> WaitForAsync(Func<LogEntry, bool> predicate, TimeSpan timeout)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             while (true)

@@ -17,7 +17,7 @@ public sealed class EquipmentDisposedHandler : IMessageHandler<EquipmentDisposed
         this.logger = logger;
     }
 
-    public Task Handle(EquipmentDisposed message, MessageContext context, CancellationToken cancellationToken)
+    public Task HandleAsync(EquipmentDisposed message, MessageContext context, CancellationToken cancellationToken)
     {
         logger.LogInformation("Equipment {AssetTag} ({EquipmentId}) disposed by {DisposedBy}",
             message.AssetTag, message.EquipmentId, message.DisposedBy);

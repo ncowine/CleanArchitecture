@@ -26,7 +26,7 @@ namespace Common.RabbitMQ
                     }
 
                     RemoteEventDescriptor descriptor = new RemoteEventDescriptor(type, payloadType);
-                    AddName(descriptor);
+                    AddWireName(descriptor);
                     eventsByType[type] = descriptor;
                 }
             }
@@ -34,7 +34,7 @@ namespace Common.RabbitMQ
 
         public IReadOnlyCollection<RemoteEventDescriptor> Events => eventsByType.Values.ToList();
 
-        internal RemoteEventDescriptor Find(Type eventType)
+        internal RemoteEventDescriptor FindOrAdd(Type eventType)
         {
             if (eventsByType.TryGetValue(eventType, out RemoteEventDescriptor descriptor))
             {
@@ -48,7 +48,7 @@ namespace Common.RabbitMQ
             }
 
             descriptor = new RemoteEventDescriptor(eventType, payloadType);
-            AddName(descriptor);
+            AddWireName(descriptor);
             return eventsByType.GetOrAdd(eventType, descriptor);
         }
 
@@ -75,7 +75,7 @@ namespace Common.RabbitMQ
             return null;
         }
 
-        private void AddName(RemoteEventDescriptor descriptor)
+        private void AddWireName(RemoteEventDescriptor descriptor)
         {
             RemoteEventDescriptor existing = eventsByName.GetOrAdd(descriptor.EventName, descriptor);
             if (existing.EventType != descriptor.EventType)

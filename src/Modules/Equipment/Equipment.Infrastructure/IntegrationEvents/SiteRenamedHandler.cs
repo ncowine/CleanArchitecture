@@ -26,7 +26,7 @@ public sealed partial class SiteRenamedHandler : IMessageHandler<SiteRenamed>
         _logger = logger;
     }
 
-    public async Task Handle(SiteRenamed message, MessageContext context, CancellationToken cancellationToken)
+    public async Task HandleAsync(SiteRenamed message, MessageContext context, CancellationToken cancellationToken)
     {
         await _referenceData.ForgetSiteAsync(message.SiteId, cancellationToken);
         _summaries.OnSiteChanged(message.SiteId);

@@ -22,39 +22,39 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public async Task SubscribingWithAKey_Receives_AndUnsubscribingUnbinds()
         {
-            await WithApp(async (topology, app, sender) =>
+            await WithAppAsync(async (topology, app, sender) =>
             {
                 Received<Order> received = new Received<Order>();
                 SubscriptionToken token = app.Events.GetEvent<KeyedFirst>()
                     .Subscribe(received.Add, new SubscribeOptions { RoutingKey = Key }, keepSubscriberReferenceAlive: true);
-                Assert.True(await WaitUntilRoutable(topology, true));
+                Assert.True(await WaitUntilRoutableAsync(topology, true));
 
                 sender.PublishRemoteTo<KeyedFirst, Order>(Key, new Order { Id = 7 });
-                Assert.Equal(7, (await received.Next(TestBus.Timeout))?.Id);
+                Assert.Equal(7, (await received.NextAsync(TestBus.Timeout))?.Id);
 
                 token.Dispose();
-                Assert.True(await WaitUntilRoutable(topology, false));
+                Assert.True(await WaitUntilRoutableAsync(topology, false));
             });
         }
 
         [Fact]
         public async Task TwoEventsShareAKey_TheBindingStaysUntilBothUnsubscribe()
         {
-            await WithApp(async (topology, app, sender) =>
+            await WithAppAsync(async (topology, app, sender) =>
             {
                 SubscriptionToken first = app.Events.GetEvent<KeyedFirst>()
                     .Subscribe(_ => { }, new SubscribeOptions { RoutingKey = Key }, keepSubscriberReferenceAlive: true);
                 Action<Order> second = _ => { };
                 app.Events.GetEvent<KeyedSecond>().Subscribe(second, new SubscribeOptions { RoutingKey = Key }, keepSubscriberReferenceAlive: true);
-                Assert.True(await WaitUntilRoutable(topology, true));
+                Assert.True(await WaitUntilRoutableAsync(topology, true));
 
                 first.Dispose();
                 await Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken);
-                Assert.True(await topology.IsRoutable(App, Key));
+                Assert.True(await topology.IsRoutableAsync(App, Key));
 
                 // Unsubscribing by action releases the key too.
                 app.Events.GetEvent<KeyedSecond>().Unsubscribe(second);
-                Assert.True(await WaitUntilRoutable(topology, false));
+                Assert.True(await WaitUntilRoutableAsync(topology, false));
             });
         }
 
@@ -68,12 +68,12 @@ namespace Common.RabbitMQ.Tests.Adapter
             Assert.False(keyed.Contains(_ => { }));
         }
 
-        private static async Task<bool> WaitUntilRoutable(LegacyTopology topology, bool expected)
+        private static async Task<bool> WaitUntilRoutableAsync(LegacyTopology topology, bool expected)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             while (stopwatch.Elapsed < TestBus.Timeout)
             {
-                if (await topology.IsRoutable(App, Key) == expected)
+                if (await topology.IsRoutableAsync(App, Key) == expected)
                 {
                     return true;
                 }
@@ -84,13 +84,13 @@ namespace Common.RabbitMQ.Tests.Adapter
             return false;
         }
 
-        private static async Task WithApp(Func<LegacyTopology, AdapterApp, AdapterApp, Task> test)
+        private static async Task WithAppAsync(Func<LegacyTopology, AdapterApp, AdapterApp, Task> test)
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 AdapterApp app = topology.StartAdapter(App, null);
                 AdapterApp sender = topology.StartAdapter(App, null);
-                await topology.WaitUntilConnected(app, sender);
+                await topology.WaitUntilConnectedAsync(app, sender);
                 await test(topology, app, sender);
             }
         }

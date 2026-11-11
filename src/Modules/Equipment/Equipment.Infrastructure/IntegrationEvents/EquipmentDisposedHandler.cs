@@ -27,7 +27,7 @@ public sealed partial class EquipmentDisposedHandler : IMessageHandler<Equipment
         _logger = logger;
     }
 
-    public async Task Handle(EquipmentDisposed message, MessageContext context, CancellationToken cancellationToken)
+    public async Task HandleAsync(EquipmentDisposed message, MessageContext context, CancellationToken cancellationToken)
     {
         bool deleted = await _sender.Send(new DeleteEquipment.Command(message.EquipmentId), cancellationToken);
         LogHandled(message.AssetTag, message.EquipmentId, message.DisposedBy, deleted);

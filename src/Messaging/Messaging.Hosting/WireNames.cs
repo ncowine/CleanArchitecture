@@ -5,7 +5,7 @@ using Messaging.RabbitMQ;
 
 namespace Messaging.Hosting
 {
-    public static class WireNames
+    internal static class WireNames
     {
         private static readonly ConcurrentDictionary<Type, string> cache = new ConcurrentDictionary<Type, string>();
 

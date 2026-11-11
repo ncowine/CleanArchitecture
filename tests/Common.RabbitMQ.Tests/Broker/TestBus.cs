@@ -36,9 +36,9 @@ namespace Common.RabbitMQ.Tests.Broker
         public BrokerSettings Broker => broker;
 
         /// <summary>Skips the test when there is no broker (see <see cref="BrokerSettings"/>).</summary>
-        public static async Task<TestBus> Create()
+        public static async Task<TestBus> CreateAsync()
         {
-            BrokerSettings broker = await BrokerSettings.Require().ConfigureAwait(false);
+            BrokerSettings broker = await BrokerSettings.RequireAsync().ConfigureAwait(false);
             string exchangeName = $"compat.test.{Guid.NewGuid():N}";
 
             IConnection connection = await broker.CreateConnectionFactory().CreateConnectionAsync("Common.RabbitMQ.Tests").ConfigureAwait(false);
@@ -90,12 +90,12 @@ namespace Common.RabbitMQ.Tests.Broker
         }
 
         /// <summary>Waits until every endpoint has its consumer queue bound and its publisher open.</summary>
-        public Task WaitUntilConnected()
+        public Task WaitUntilConnectedAsync()
         {
-            return WaitUntilConnected(endpoints.ToArray());
+            return WaitUntilConnectedAsync(endpoints.ToArray());
         }
 
-        public async Task WaitUntilConnected(params ICompatEndpoint[] which)
+        public async Task WaitUntilConnectedAsync(params ICompatEndpoint[] which)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             while (!Array.TrueForAll(which, e => e.IsConnected))
@@ -109,13 +109,13 @@ namespace Common.RabbitMQ.Tests.Broker
             }
         }
 
-        public Task<WireCapture> Capture()
+        public Task<WireCapture> CaptureAsync()
         {
-            return WireCapture.Start(channel, ExchangeName);
+            return WireCapture.StartAsync(channel, ExchangeName);
         }
 
         /// <summary>Binds a queue that refuses every publish, so the broker nacks messages sent with <paramref name="routingKey"/>.</summary>
-        public async Task RejectPublishes(string routingKey)
+        public async Task RejectPublishesAsync(string routingKey)
         {
             Dictionary<string, object> arguments = new Dictionary<string, object>
             {
@@ -127,13 +127,13 @@ namespace Common.RabbitMQ.Tests.Broker
         }
 
         /// <summary>Publishes as another application would, without either build: routed with the exchange name.</summary>
-        public Task PublishRaw(IDictionary<string, object> headers, byte[] body)
+        public Task PublishRawAsync(IDictionary<string, object> headers, byte[] body)
         {
-            return PublishRaw(headers, body, ExchangeName);
+            return PublishRawAsync(headers, body, ExchangeName);
         }
 
-        /// <summary>As <see cref="PublishRaw(IDictionary{string, object}, byte[])"/>, routed with <paramref name="routingKey"/>.</summary>
-        public async Task PublishRaw(IDictionary<string, object> headers, byte[] body, string routingKey)
+        /// <summary>As <see cref="PublishRawAsync(IDictionary{string, object}, byte[])"/>, routed with <paramref name="routingKey"/>.</summary>
+        public async Task PublishRawAsync(IDictionary<string, object> headers, byte[] body, string routingKey)
         {
             BasicProperties properties = new BasicProperties
             {
@@ -146,7 +146,7 @@ namespace Common.RabbitMQ.Tests.Broker
         }
 
         /// <summary>Whether a message sent to the test exchange with <paramref name="routingKey"/> reaches any queue.</summary>
-        public async Task<bool> IsRoutable(string routingKey)
+        public async Task<bool> IsRoutableAsync(string routingKey)
         {
             CreateChannelOptions options = new CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true);
             using (IChannel probe = await connection.CreateChannelAsync(options).ConfigureAwait(false))
@@ -164,12 +164,12 @@ namespace Common.RabbitMQ.Tests.Broker
         }
 
         /// <summary>Waits until <see cref="IsRoutable"/> says <paramref name="expected"/>: bindings change in the background.</summary>
-        public async Task<bool> WaitUntilRoutable(string routingKey, bool expected)
+        public async Task<bool> WaitUntilRoutableAsync(string routingKey, bool expected)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             while (stopwatch.Elapsed < Timeout)
             {
-                if (await IsRoutable(routingKey).ConfigureAwait(false) == expected)
+                if (await IsRoutableAsync(routingKey).ConfigureAwait(false) == expected)
                 {
                     return true;
                 }
@@ -181,7 +181,7 @@ namespace Common.RabbitMQ.Tests.Broker
         }
 
         /// <summary>Takes one message off <paramref name="queueName"/>, or null when it is empty.</summary>
-        public async Task<CapturedMessage> Get(string queueName)
+        public async Task<CapturedMessage> GetAsync(string queueName)
         {
             BasicGetResult result = await channel.BasicGetAsync(queueName, autoAck: true).ConfigureAwait(false);
             return result == null ? null : WireCapture.Copy(result.Exchange, result.RoutingKey, result.BasicProperties, result.Body);
@@ -191,7 +191,7 @@ namespace Common.RabbitMQ.Tests.Broker
         /// Passively declares <paramref name="queueName"/> from this test's own connection.
         /// </summary>
         /// <returns>200 when the queue exists and is usable, otherwise the broker's reply code (404 not found, 405 locked).</returns>
-        public async Task<ushort> PassiveDeclare(string queueName)
+        public async Task<ushort> PassiveDeclareAsync(string queueName)
         {
             // A failed passive declare closes the channel, so use a throwaway one.
             using (IChannel probe = await connection.CreateChannelAsync().ConfigureAwait(false))

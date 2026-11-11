@@ -8,23 +8,23 @@ namespace Common.RabbitMQ
     {
         public static void PublishRemote<TPayload>(this RemotePubSubEvent<TPayload> remoteEvent, TPayload payload, PublishOptions options = null)
         {
-            Send(remoteEvent, payload, options);
+            SendToBroker(remoteEvent, payload, options);
             remoteEvent.Publish(payload);
         }
 
         public static void PublishRemoteOnly<TPayload>(this RemotePubSubEvent<TPayload> remoteEvent, TPayload payload, PublishOptions options = null)
         {
-            Send(remoteEvent, payload, options);
+            SendToBroker(remoteEvent, payload, options);
         }
 
-        private static void Send<TPayload>(RemotePubSubEvent<TPayload> remoteEvent, TPayload payload, PublishOptions options)
+        private static void SendToBroker<TPayload>(RemotePubSubEvent<TPayload> remoteEvent, TPayload payload, PublishOptions options)
         {
             if (remoteEvent == null)
             {
                 throw new ArgumentNullException(nameof(remoteEvent));
             }
 
-            IRabbitMQService service = Resolve(options?.Bus);
+            IRabbitMQService service = ResolveService(options?.Bus);
             if (string.IsNullOrEmpty(options?.RoutingKey))
             {
                 service.Publish(remoteEvent.GetType(), payload);
@@ -33,13 +33,13 @@ namespace Common.RabbitMQ
 
             if (!(service is IRoutingKeyPublisher routingPublisher))
             {
-                throw new NotSupportedException($"{service.GetType().Name} does not support routing keys; it must implement {nameof(IRoutingKeyPublisher)}.");
+                throw new NotSupportedException($"{service.GetType().Name} does not support routing keys. Register RabbitMQService or RabbitMQServiceRouter.");
             }
 
             routingPublisher.Publish(remoteEvent.GetType(), payload, options.RoutingKey);
         }
 
-        private static IRabbitMQService Resolve(string bus)
+        private static IRabbitMQService ResolveService(string bus)
         {
             IRabbitMQService service = RabbitMQServiceProvider.Resolve();
             if (string.IsNullOrEmpty(bus))

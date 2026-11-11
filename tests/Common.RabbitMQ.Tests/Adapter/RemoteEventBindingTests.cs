@@ -26,23 +26,23 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public async Task SubscribingAfterInit_ReceivesThatEvent()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 AdapterApp receiver = topology.StartAdapter(App, null);
                 AdapterApp sender = topology.StartAdapter(App, null);
-                await topology.WaitUntilConnected(receiver, sender);
+                await topology.WaitUntilConnectedAsync(receiver, sender);
 
                 Received<Order> received = receiver.Listen<SubscribedAfterInit, Order>();
 
                 sender.PublishRemote<SubscribedAfterInit, Order>(new Order { Id = 7 });
-                Assert.Equal(7, (await received.Next(TestBus.Timeout))?.Id);
+                Assert.Equal(7, (await received.NextAsync(TestBus.Timeout))?.Id);
             }
         }
 
         [Fact]
         public async Task SubscribingBeforeInit_Receives_WithNothingRegistered()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 EventAggregator eventAggregator = new EventAggregator();
                 Received<Order> received = new Received<Order>();
@@ -52,7 +52,7 @@ namespace Common.RabbitMQ.Tests.Adapter
                 {
                     service.Init(topology.Broker.CreateCurrentConfig("Main", topology.Exchange(App), App));
                     AdapterApp sender = topology.StartAdapter(App, null);
-                    await topology.WaitUntilConnected(sender);
+                    await topology.WaitUntilConnectedAsync(sender);
                     for (int i = 0; i < 100 && !service.IsConsumerConnected; i++)
                     {
                         await Task.Delay(100, TestContext.Current.CancellationToken);
@@ -60,7 +60,7 @@ namespace Common.RabbitMQ.Tests.Adapter
 
                     sender.PublishRemote<SubscribedBeforeInit, Order>(new Order { Id = 8 });
 
-                    Assert.Equal(8, (await received.Next(TestBus.Timeout))?.Id);
+                    Assert.Equal(8, (await received.NextAsync(TestBus.Timeout))?.Id);
                 }
             }
         }

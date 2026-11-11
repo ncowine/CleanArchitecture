@@ -23,11 +23,11 @@ namespace Common.RabbitMQ.Tests.Broker
         [Fact]
         public async Task EveryBuild_ReceivesMessagesWithExtraHeaders()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint current = bus.AddEndpoint(CompatBuild.Current, "compat-current");
                 ICompatEndpoint core = bus.AddEndpoint(CompatBuild.Core, "compat-core");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 Dictionary<string, object> headers = new Dictionary<string, object>
                 {
@@ -36,11 +36,11 @@ namespace Common.RabbitMQ.Tests.Broker
                     ["traceparent"] = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
                     ["x-custom"] = "custom",
                 };
-                await bus.PublishRaw(headers, GoldenFile.Read("compat-payload.json"));
+                await bus.PublishRawAsync(headers, GoldenFile.Read("compat-payload.json"));
 
                 CompatPayload payload = CompatPayloads.Golden();
-                CompatibilityMatrixTests.AssertPayload(payload, await current.Received.Next(TestBus.Timeout));
-                CompatibilityMatrixTests.AssertPayload(payload, await core.Received.Next(TestBus.Timeout));
+                CompatibilityMatrixTests.AssertPayload(payload, await current.Received.NextAsync(TestBus.Timeout));
+                CompatibilityMatrixTests.AssertPayload(payload, await core.Received.NextAsync(TestBus.Timeout));
             }
         }
 
@@ -50,15 +50,15 @@ namespace Common.RabbitMQ.Tests.Broker
         [InlineData(CompatBuild.Core)]
         public async Task OnlyTheBaselineHeadersAreSent(CompatBuild build)
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint sender = bus.AddEndpoint(build, "compat-sender");
-                await bus.WaitUntilConnected();
-                WireCapture capture = await bus.Capture();
+                await bus.WaitUntilConnectedAsync();
+                WireCapture capture = await bus.CaptureAsync();
 
                 sender.PublishRemote(CompatPayloads.Golden());
 
-                CapturedMessage message = await capture.Next(TestBus.Timeout);
+                CapturedMessage message = await capture.NextAsync(TestBus.Timeout);
                 Assert.NotNull(message);
                 string[] expected = { WireHeaders.MessageType, WireHeaders.SourceId, ClientSequenceNumber };
                 Assert.Equal(expected.OrderBy(h => h), message.Headers.Keys.OrderBy(h => h));

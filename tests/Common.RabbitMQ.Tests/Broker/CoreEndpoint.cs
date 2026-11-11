@@ -71,7 +71,7 @@ namespace Common.RabbitMQ.Tests.Broker
             bus.Enqueue(WireName, payload);
         }
 
-        public Task Dispatch(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
+        public Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref attempts);
 

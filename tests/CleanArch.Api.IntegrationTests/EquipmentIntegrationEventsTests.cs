@@ -120,7 +120,7 @@ public sealed class EquipmentIntegrationEventsTests : IAsyncLifetime
             using var scope = _withoutBroker.CreateScope();
             var handler = new EquipmentDisposedHandler(
                 scope.ServiceProvider.GetRequiredService<ISender>(), NullLogger<EquipmentDisposedHandler>.Instance);
-            await handler.Handle(disposed, new MessageContext(
+            await handler.HandleAsync(disposed, new MessageContext(
                 "Poc.Legacy.Events.EquipmentDisposed", "Main", $"m{delivery}", delivery > 0,
                 new Dictionary<string, string>(), "Poc.Net472", "Poc.Legacy.Events.EquipmentDisposed"), default);
         }

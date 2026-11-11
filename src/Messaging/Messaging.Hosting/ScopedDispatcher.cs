@@ -18,7 +18,7 @@ namespace Messaging.Hosting
             this.busName = busName;
         }
 
-        public async Task Dispatch(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
+        public async Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
         {
             AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
             try
@@ -31,7 +31,7 @@ namespace Messaging.Hosting
 
                 foreach (IMessageSink sink in scope.ServiceProvider.GetServices<IMessageSink>())
                 {
-                    await sink.Deliver(message, context, cancellationToken).ConfigureAwait(false);
+                    await sink.DeliverAsync(message, context, cancellationToken).ConfigureAwait(false);
                 }
             }
             finally

@@ -55,7 +55,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task TwoHostInstances_ShareTheWork_EachMessageOnce()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 string service = "svc-" + Guid.NewGuid().ToString("N");
                 Action<RabbitMQBusOptions> shared = options =>
@@ -65,13 +65,13 @@ namespace Common.RabbitMQ.Tests.Hosting
                 };
 
                 ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
-                await using (TestHost first = await TestHost.Start(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
-                await using (TestHost second = await TestHost.Start(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
+                await using (TestHost first = await TestHost.StartAsync(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
+                await using (TestHost second = await TestHost.StartAsync(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
                 {
                     bus.DeleteOnDispose(first.Bus.QueueName, first.Bus.DeadLetterQueueName);
-                    await bus.WaitUntilConnected();
-                    await first.WaitUntilConnected();
-                    await second.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await first.WaitUntilConnectedAsync();
+                    await second.WaitUntilConnectedAsync();
 
                     const int count = 20;
                     for (int id = 1; id <= count; id++)
@@ -87,17 +87,17 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                     await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
 
-                    List<int> ids = (await Drain(first.Handled)).Concat(await Drain(second.Handled)).Select(h => h.Message.Id).ToList();
+                    List<int> ids = (await DrainAsync(first.Handled)).Concat(await DrainAsync(second.Handled)).Select(h => h.Message.Id).ToList();
                     Assert.Equal(Enumerable.Range(1, count), ids.OrderBy(id => id));
                     Assert.True(first.Handled.Count > 0 && second.Handled.Count > 0, $"Work was not shared: {first.Handled.Count} and {second.Handled.Count}.");
                 }
             }
         }
 
-        private static async Task<List<HandledMessage>> Drain(HandledMessages handled)
+        private static async Task<List<HandledMessage>> DrainAsync(HandledMessages handled)
         {
             List<HandledMessage> messages = new List<HandledMessage>();
-            for (HandledMessage message = await handled.Next(TimeSpan.Zero); message != null; message = await handled.Next(TimeSpan.Zero))
+            for (HandledMessage message = await handled.NextAsync(TimeSpan.Zero); message != null; message = await handled.NextAsync(TimeSpan.Zero))
             {
                 messages.Add(message);
             }

@@ -39,22 +39,22 @@ namespace Common.RabbitMQ
         public override SubscriptionToken Subscribe(Action<TPayload> action, ThreadOption threadOption, bool keepSubscriberReferenceAlive, Predicate<TPayload> filter)
         {
             SubscriptionToken token = base.Subscribe(action, threadOption, keepSubscriberReferenceAlive, filter);
-            RemoteEventSubscriptions.Subscribed(this);
+            RemoteEventSubscriptions.StartReceiving(this);
             return token;
         }
 
         public override void Unsubscribe(SubscriptionToken token)
         {
             base.Unsubscribe(token);
-            ReleaseEndedKeys();
-            RemoteEventSubscriptions.StopIfUnused(this);
+            UnbindEndedKeys();
+            RemoteEventSubscriptions.StopReceivingIfUnused(this);
         }
 
         public override void Unsubscribe(Action<TPayload> subscriber)
         {
             base.Unsubscribe(subscriber);
-            ReleaseEndedKeys();
-            RemoteEventSubscriptions.StopIfUnused(this);
+            UnbindEndedKeys();
+            RemoteEventSubscriptions.StopReceivingIfUnused(this);
         }
 
         public override void Publish(TPayload payload)
@@ -62,16 +62,16 @@ namespace Common.RabbitMQ
             base.Publish(payload);
             if (!keyed.IsEmpty)
             {
-                ReleaseEndedKeys();
+                UnbindEndedKeys();
             }
 
             if (Subscriptions.Count == 0)
             {
-                RemoteEventSubscriptions.StopIfUnused(this);
+                RemoteEventSubscriptions.StopReceivingIfUnused(this);
             }
         }
 
-        private void ReleaseEndedKeys()
+        private void UnbindEndedKeys()
         {
             Prune();
             foreach (SubscribeOptions options in keyed.RemoveEnded(Subscriptions))

@@ -18,12 +18,12 @@ namespace Common.RabbitMQ.Tests.Broker
         [Fact]
         public async Task PublishRemote_ReachesBothBuilds_AndIsNotEchoed()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Current, "compat-sender");
                 ICompatEndpoint current = bus.AddEndpoint(CompatBuild.Current, "compat-current");
                 ICompatEndpoint core = bus.AddEndpoint(CompatBuild.Core, "compat-core");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 CompatPayload payload = CompatPayloads.Golden();
                 sender.PublishRemote(payload);
@@ -31,8 +31,8 @@ namespace Common.RabbitMQ.Tests.Broker
                 // Local subscribers are raised synchronously by PublishRemote.
                 Assert.Equal(1, sender.Received.Count);
 
-                AssertPayload(payload, await current.Received.Next(TestBus.Timeout));
-                AssertPayload(payload, await core.Received.Next(TestBus.Timeout));
+                AssertPayload(payload, await current.Received.NextAsync(TestBus.Timeout));
+                AssertPayload(payload, await core.Received.NextAsync(TestBus.Timeout));
 
                 // The sender's copy comes back from the broker alongside the others and must be dropped (source-id).
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
