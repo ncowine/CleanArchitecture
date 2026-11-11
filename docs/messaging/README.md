@@ -593,6 +593,8 @@ The step-by-step version is in
 | `HostName`, `Port` | `localhost`, `5672` | Where the broker is. |
 | `VirtualHost` | `/` | The broker compartment. Apps that talk to each other must share it. |
 | `UserName`, `Password` | `guest`, `guest` | Broker credentials. The default `guest` only works from the same machine as the broker. |
+| `UseTls` | `false` | Connect over TLS (one-way: the app checks the broker's certificate; the broker still checks `UserName`/`Password`). Set `Port` to the broker's TLS listener, usually `5671`. See [Connecting over TLS](#5-connecting-over-tls-optional). |
+| `TlsServerName` | `HostName` | The name the broker's certificate must match, when it differs from `HostName` (e.g. connecting by IP). |
 | `ExchangeName` | *(required)* | This app's own exchange. **Set it explicitly**: others bind to it by name. |
 | `ExchangeType` | `topic` | `topic`, `direct`, `fanout` or `headers`. Keep `topic` while legacy apps subscribe to it. |
 | `Subscriptions` | *(none)* | Other apps' exchanges, by `Exchange`. Each is bound with the exchange name; other keys are bound by subscribing with `SubscribeOptions`. |
@@ -632,7 +634,7 @@ Example (`src/WebApi/appsettings.json`):
 ### Legacy apps (`appsettings.json` → `Messaging:Buses:<name>`, bound onto `RabbitMQConfig`)
 
 The same section as above. The section key is the bus name; `Messaging:DefaultBus`, next to `Buses`, names the default
-and is required. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`,
+and is required. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`, `UseTls`, `TlsServerName`,
 `ExchangeName`, `ExchangeType`, `ClientName`, `PrefetchCount` and `Subscriptions` (`Exchange`) mean
 the same and have the same defaults. The differences:
 
@@ -720,6 +722,81 @@ src\WpfApp.Modern\bin\Debug\net8.0-windows\WpfApp.Modern.exe      # the app with
 - **From the API:** `curl -X POST http://localhost:5199/api/employees/7/legacy-update -H "Content-Type: application/json" -d "{\"name\":\"Ada\"}"`
 - **Reconnecting:** in the management UI, close a connection and watch the app reconnect on its own.
 
+### 5. Connecting over TLS (optional)
+
+TLS encrypts the traffic between the apps and the broker. This is **one-way TLS**: each app checks the broker's
+certificate, and the broker still checks `UserName` and `Password`. Apps need no certificates of their own. Use it
+whenever traffic leaves a single machine or a trusted network.
+
+**a. Make certificates.** In Git Bash, which comes with `openssl`. This creates your own certificate authority (CA)
+and a broker certificate signed by it. Put the name apps will use as `HostName` where it says `rabbit.example.com`:
+
+```bash
+mkdir -p /c/rabbitmq/certs && cd /c/rabbitmq/certs
+
+# Your own CA
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+  -keyout ca.key -out ca.pem -subj "//CN=MyCompany RabbitMQ CA"
+
+# The broker's certificate, signed by the CA
+openssl req -newkey rsa:2048 -nodes -keyout server.key -out server.csr \
+  -subj "//CN=rabbit.example.com"
+openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
+  -days 825 -out server.pem \
+  -extfile <(printf "subjectAltName=DNS:rabbit.example.com")
+```
+
+`//CN=` is how Git Bash writes `/CN=`, so it isn't taken for a Windows path. Keep `ca.key` and `server.key` private.
+If your company already has a CA, ask it for the broker certificate and skip this step.
+
+**b. Turn on the broker's TLS listener.** Add this to `%APPDATA%\RabbitMQ\rabbitmq.conf` (create the file if it
+doesn't exist), then restart the broker:
+
+```ini
+listeners.tcp.default  = 5672          # plain connections, while apps move over
+listeners.ssl.default  = 5671
+ssl_options.cacertfile = C:/rabbitmq/certs/ca.pem
+ssl_options.certfile   = C:/rabbitmq/certs/server.pem
+ssl_options.keyfile    = C:/rabbitmq/certs/server.key
+ssl_options.verify     = verify_none   # one-way TLS: don't ask apps for certificates
+```
+
+`rabbitmq-diagnostics.bat listeners` (in `sbin`) should list port 5671 as `amqp/ssl`.
+
+**c. Trust the CA on every machine that runs an app.** Run this once per machine, as administrator. Copy only
+`ca.pem`, never a `.key` file:
+
+```powershell
+Import-Certificate -FilePath C:\rabbitmq\certs\ca.pem -CertStoreLocation Cert:\LocalMachine\Root
+```
+
+**d. Point the apps at the TLS port.** Legacy and modern apps use the same keys:
+
+```json
+"Messaging": {
+  "DefaultBus": "Main",
+  "Buses": {
+    "Main": {
+      "HostName": "rabbit.example.com",
+      "Port": 5671,
+      "UseTls": true,
+      "UserName": "appb",
+      "Password": "…",
+      "ExchangeName": "AppB",
+      "ClientName": "AppB"
+    }
+  }
+}
+```
+
+- **`Port` doesn't change by itself:** set it to `5671` along with `UseTls`.
+- **Connecting by IP address,** or by a name the certificate doesn't contain: keep that address in `HostName` and add
+  `"TlsServerName": "rabbit.example.com"`.
+
+**e. Check it.** In the management UI, *Connections* shows the app's connection with the **TLS** column ticked.
+When every app has moved over, close the plain port by replacing `listeners.tcp.default = 5672` with
+`listeners.tcp = none`.
+
 ---
 
 ## Tests
@@ -794,6 +871,8 @@ The full reasoning is in the two ADRs. The short version:
 | Log: *Queue 'X' already exists with different settings* | A shared-queue setting such as `DeliveryLimit` changed after the queue was created. Queue settings can't change. | Put the setting back, or delete the queue so it's created again (its messages are lost). |
 | Log: *Deferred outbox message …* | The API couldn't reach the broker. | Nothing to do once the broker is back: the message goes out on the next poll, without using an attempt. |
 | Log: *NOT_ALLOWED - vhost X not found* | The vhost doesn't exist. | Create it (see [broker setup](#3-one-time-broker-setup-for-the-demo-apps)) or use `/`. |
+| Log: *The remote certificate is invalid…* (`AuthenticationException`) | With `UseTls`: the broker's certificate doesn't contain the name the app connects to, or this machine doesn't trust the CA. | Fix `HostName` or set `TlsServerName`, or import the CA (see [Connecting over TLS](#5-connecting-over-tls-optional), step c). |
+| With `UseTls`, the connection fails or hangs during connecting | `Port` still points at the plain listener (`5672`). | Set `Port` to the TLS listener, usually `5671`. |
 | An app receives nothing | No matching binding, or a different vhost. | In the management UI, check the queue's bindings and the vhost. Check the routing key the sender used. |
 | Messages pile up in `*.dead-letter` | A handler keeps failing, or the body can't be read. | Read the message in the management UI (`x-first-death-reason` says why), fix the cause, then move it back. |
 | `/health` is Unhealthy | A bus is disconnected. | The response lists which bus. Check the broker and the credentials. |

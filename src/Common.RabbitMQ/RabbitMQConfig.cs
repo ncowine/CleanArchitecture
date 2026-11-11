@@ -16,6 +16,10 @@ namespace Common.RabbitMQ
 
         public string Password { get; set; } = "guest";
 
+        public bool UseTls { get; set; }
+
+        public string TlsServerName { get; set; }
+
         public string ExchangeName { get; set; }
 
         public string ClientName { get; set; }

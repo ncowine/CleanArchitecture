@@ -223,6 +223,8 @@ namespace Common.RabbitMQ
                 VirtualHost = config.VirtualHost,
                 UserName = config.UserName,
                 Password = config.Password,
+                UseTls = config.UseTls,
+                TlsServerName = config.TlsServerName,
                 ExchangeName = config.ExchangeName,
                 ClientName = config.ClientName,
                 InstanceId = instanceId,

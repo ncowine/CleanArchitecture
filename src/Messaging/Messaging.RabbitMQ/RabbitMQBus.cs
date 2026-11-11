@@ -657,6 +657,11 @@ namespace Messaging.RabbitMQ
                 UserName = options.UserName,
                 Password = options.Password,
                 RequestedHeartbeat = options.Heartbeat,
+                Ssl = new SslOption
+                {
+                    Enabled = options.UseTls,
+                    ServerName = string.IsNullOrWhiteSpace(options.TlsServerName) ? options.HostName : options.TlsServerName,
+                },
 
                 AutomaticRecoveryEnabled = false,
                 TopologyRecoveryEnabled = false,

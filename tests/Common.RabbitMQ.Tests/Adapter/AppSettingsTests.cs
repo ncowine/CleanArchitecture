@@ -22,6 +22,8 @@ namespace Common.RabbitMQ.Tests.Adapter
         ""HostName"": ""broker"",
         ""UserName"": ""appb"",
         ""Password"": ""secret"",
+        ""UseTls"": true,
+        ""TlsServerName"": ""broker.example.com"",
         ""ExchangeName"": ""AppB"",
         ""ExchangeType"": ""direct"",
         ""ClientName"": ""AppB"",
@@ -44,6 +46,7 @@ namespace Common.RabbitMQ.Tests.Adapter
             Assert.Equal("localhost", legacy.HostName);
             Assert.Equal("/", legacy.VirtualHost);
             Assert.Equal("topic", legacy.ExchangeType);
+            Assert.False(legacy.UseTls);
             Assert.Empty(legacy.Subscriptions);
         }
 
@@ -66,6 +69,10 @@ namespace Common.RabbitMQ.Tests.Adapter
             Assert.Equal(legacy.HostName, modern.HostName);
             Assert.Equal(legacy.UserName, modern.UserName);
             Assert.Equal(legacy.Password, modern.Password);
+            Assert.True(modern.UseTls);
+            Assert.Equal(legacy.UseTls, modern.UseTls);
+            Assert.Equal("broker.example.com", modern.TlsServerName);
+            Assert.Equal(legacy.TlsServerName, modern.TlsServerName);
             Assert.Equal(legacy.ExchangeName, modern.ExchangeName);
             Assert.Equal(legacy.ExchangeType, modern.ExchangeType);
             Assert.Equal(legacy.ClientName, modern.ClientName);
