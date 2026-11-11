@@ -37,9 +37,9 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         public BrokerSettings Broker { get; }
 
         /// <summary>Skips the test when there is no broker (see <see cref="BrokerSettings"/>).</summary>
-        public static async Task<LegacyTopology> Create()
+        public static async Task<LegacyTopology> CreateAsync()
         {
-            BrokerSettings broker = await BrokerSettings.Require().ConfigureAwait(false);
+            BrokerSettings broker = await BrokerSettings.RequireAsync().ConfigureAwait(false);
             IConnection connection = await broker.CreateConnectionFactory().CreateConnectionAsync("Common.RabbitMQ.Tests legacy topology").ConfigureAwait(false);
             IChannel channel = await connection.CreateChannelAsync().ConfigureAwait(false);
             return new LegacyTopology(broker, connection, channel);
@@ -83,9 +83,9 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             return instance;
         }
 
-        public Task WaitUntilConnected(params AdapterApp[] which)
+        public Task WaitUntilConnectedAsync(params AdapterApp[] which)
         {
-            return WaitUntil(() => which.All(a => a.IsConnected));
+            return WaitUntilAsync(() => which.All(a => a.IsConnected));
         }
 
         /// <summary>Deletes durable (shared) queues when the topology is disposed.</summary>
@@ -94,24 +94,24 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             durableQueues.AddRange(queueNames.Where(q => q != null && !durableQueues.Contains(q)));
         }
 
-        public Task WaitUntilConnected(params LegacyApp[] which)
+        public Task WaitUntilConnectedAsync(params LegacyApp[] which)
         {
-            return WaitUntil(() => which.All(a => a.IsConnected));
+            return WaitUntilAsync(() => which.All(a => a.IsConnected));
         }
 
-        public Task WaitUntilConnected(params CoreApp[] which)
+        public Task WaitUntilConnectedAsync(params CoreApp[] which)
         {
-            return WaitUntil(() => which.All(a => a.IsConnected));
+            return WaitUntilAsync(() => which.All(a => a.IsConnected));
         }
 
         /// <summary>Takes one message off <paramref name="queueName"/>, or null when it is empty.</summary>
-        public async Task<CapturedMessage> Get(string queueName)
+        public async Task<CapturedMessage> GetAsync(string queueName)
         {
             BasicGetResult result = await channel.BasicGetAsync(queueName, autoAck: true).ConfigureAwait(false);
             return result == null ? null : WireCapture.Copy(result.Exchange, result.RoutingKey, result.BasicProperties, result.Body);
         }
 
-        private static async Task WaitUntil(Func<bool> connected)
+        private static async Task WaitUntilAsync(Func<bool> connected)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             while (!connected())
@@ -126,13 +126,13 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         }
 
         /// <summary>Everything published to <paramref name="app"/>'s exchange. The exchange must exist.</summary>
-        public Task<WireCapture> Capture(string app)
+        public Task<WireCapture> CaptureAsync(string app)
         {
-            return WireCapture.Start(channel, Exchange(app));
+            return WireCapture.StartAsync(channel, Exchange(app));
         }
 
         /// <summary>Publishes to <paramref name="app"/>'s exchange as another program would, without the legacy library.</summary>
-        public async Task PublishRaw(string app, string routingKey, IDictionary<string, object> headers, byte[] body)
+        public async Task PublishRawAsync(string app, string routingKey, IDictionary<string, object> headers, byte[] body)
         {
             BasicProperties properties = new BasicProperties { ContentType = "application/json", Headers = headers };
             await channel.BasicPublishAsync(Exchange(app), routingKey, mandatory: false, basicProperties: properties, body: body).ConfigureAwait(false);
@@ -142,7 +142,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         /// True when a message with <paramref name="routingKey"/> on <paramref name="app"/>'s exchange reaches at least one
         /// queue, i.e. some queue has a matching binding. Uses a mandatory publish: an unroutable message comes back.
         /// </summary>
-        public async Task<bool> IsRoutable(string app, string routingKey)
+        public async Task<bool> IsRoutableAsync(string app, string routingKey)
         {
             CreateChannelOptions options = new CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true);
             using (IChannel probe = await connection.CreateChannelAsync(options).ConfigureAwait(false))
@@ -161,21 +161,21 @@ namespace Common.RabbitMQ.Tests.LegacyModel
 
         /// <summary>Declares an exchange with the given arguments on a throwaway channel.</summary>
         /// <returns>200 when it exists with exactly these arguments (or was created), otherwise the broker's reply code (406 = different arguments).</returns>
-        public Task<ushort> DeclareExchange(string exchangeName, string type, bool durable)
+        public Task<ushort> DeclareExchangeAsync(string exchangeName, string type, bool durable)
         {
-            return OnThrowawayChannel(probe => probe.ExchangeDeclareAsync(exchangeName, type, durable, autoDelete: false));
+            return OnThrowawayChannelAsync(probe => probe.ExchangeDeclareAsync(exchangeName, type, durable, autoDelete: false));
         }
 
         /// <returns>200 when the exchange exists, 404 when it doesn't.</returns>
-        public Task<ushort> ExchangeExists(string exchangeName)
+        public Task<ushort> ExchangeExistsAsync(string exchangeName)
         {
-            return OnThrowawayChannel(probe => probe.ExchangeDeclarePassiveAsync(exchangeName));
+            return OnThrowawayChannelAsync(probe => probe.ExchangeDeclarePassiveAsync(exchangeName));
         }
 
         /// <returns>200 when the queue exists and is usable, 404 not found, 405 exclusive to another connection.</returns>
-        public Task<ushort> PassiveDeclareQueue(string queueName)
+        public Task<ushort> PassiveDeclareQueueAsync(string queueName)
         {
-            return OnThrowawayChannel(async probe => await probe.QueueDeclarePassiveAsync(queueName).ConfigureAwait(false));
+            return OnThrowawayChannelAsync(async probe => await probe.QueueDeclarePassiveAsync(queueName).ConfigureAwait(false));
         }
 
         public async ValueTask DisposeAsync()
@@ -218,7 +218,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         }
 
         /// <summary>A failed declare closes its channel, so each check gets its own.</summary>
-        private async Task<ushort> OnThrowawayChannel(Func<IChannel, Task> action)
+        private async Task<ushort> OnThrowawayChannelAsync(Func<IChannel, Task> action)
         {
             using (IChannel probe = await connection.CreateChannelAsync().ConfigureAwait(false))
             {

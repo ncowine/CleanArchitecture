@@ -84,7 +84,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             bus.Enqueue(wireName, message, routingKey);
         }
 
-        public Task Dispatch(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
+        public Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
         {
             contexts.Enqueue(context);
             recorders[registration.WireName](message);

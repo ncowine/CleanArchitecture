@@ -18,7 +18,7 @@ namespace Common.RabbitMQ
             this.registry = registry;
         }
 
-        public Task Dispatch(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
+        public Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
         {
             if (!registry.TryGet(registration.WireName, out RemoteEventDescriptor descriptor))
             {

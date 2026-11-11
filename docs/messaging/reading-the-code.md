@@ -57,8 +57,8 @@ Modern: publisher.Publish(message)         MessagePublisher.Publish
 RabbitMQBus.Enqueue
   └─ Prepare: serialize now, pick routing key and ID
   └─ add to outstandingMessages, return
-RabbitMQBus.OutstandingQueue               background loop
-  └─ PublishMessage: frozen headers (event-type, source-id) → BasicPublishAsync
+RabbitMQBus.OutstandingQueueAsync               background loop
+  └─ PublishMessageAsync: frozen headers (event-type, source-id) → BasicPublishAsync
   └─ removed from the buffer only after the broker confirms; on failure it stays and is tried again
 ```
 
@@ -73,23 +73,23 @@ EquipmentEventsBehavior.Handle               (src/Modules/Equipment/Equipment.In
 ## Receiving
 
 ```
-RabbitMQBus.KeepConnected(Consumer) → OpenConsumer
-  └─ declares the exchange and queue, binds every subscribed wire name, BasicConsumeAsync(OnMessageReceived)
+RabbitMQBus.KeepConnectedAsync(Consumer) → OpenConsumerAsync
+  └─ declares the exchange and queue, binds every subscribed wire name, BasicConsumeAsync(OnMessageReceivedAsync)
 
-RabbitMQ.Client calls RabbitMQBus.OnMessageReceived for each delivery
-  └─ Receive
+RabbitMQ.Client calls RabbitMQBus.OnMessageReceivedAsync for each delivery
+  └─ ReceiveAsync
        ├─ IsOwnEcho? → ack, skip                           (per-instance queues only)
        ├─ wire name from the event-type header (the routing key is only the publisher's name)
        ├─ nothing subscribed to that wire name? → ack and skip (normal: the queue gets the whole exchange)
        ├─ build MessageContext
-       └─ HandleWithRetries: deserialize → dispatcher.Dispatch(...), retrying on shared queues
-  └─ Settle: ack, reject (= dead-letter) or nothing (stopping: also when a handler fails because the bus is shutting down)
+       └─ HandleWithRetriesAsync: deserialize → dispatcher.DispatchAsync(...), retrying on shared queues
+  └─ SettleAsync: ack, reject (= dead-letter) or nothing (stopping: also when a handler fails because the bus is shutting down)
 
-dispatcher.Dispatch is where the front doors differ (IInboundDispatcher):
-  Legacy: PrismDispatcher.Dispatch → RemoteEventDescriptor.PublishLocal → GetEvent<T>().Publish(payload)
-  Modern: ScopedDispatcher.Dispatch
-            ├─ new DI scope → each handler: HandlerRegistration.Invoke → THandler.Handle(message, context, token)
-            └─ each IMessageSink.Deliver (internal; the subscriber is the only one):
+dispatcher.DispatchAsync is where the front doors differ (IInboundDispatcher):
+  Legacy: PrismDispatcher.DispatchAsync → RemoteEventDescriptor.PublishLocal → GetEvent<T>().Publish(payload)
+  Modern: ScopedDispatcher.DispatchAsync
+            ├─ new DI scope → each handler: HandlerRegistration.Invoke → THandler.HandleAsync(message, context, token)
+            └─ each IMessageSink.DeliverAsync (internal; the subscriber is the only one):
                  MessageSubscriber   → the IMessageSubscriber.Subscribe callbacks for this type
 ```
 
@@ -97,13 +97,13 @@ dispatcher.Dispatch is where the front doors differ (IInboundDispatcher):
 
 | What | Runs on | Notes |
 |---|---|---|
-| `KeepConnected` ×2, `OutstandingQueue` | Thread-pool loops started by `Start` | The connection loops check every `ReconnectDelay` (5 s), the buffer loop every `OutstandingPollInterval` (100 ms) when idle. All exit when `Dispose` cancels the bus's token. |
-| `OnMessageReceived`, so every handler, sink and Prism publish | A RabbitMQ.Client thread, **one message at a time per bus** (the client's default) | **Never the UI thread.** UI code must marshal: Prism `ThreadOption.UIThread`, or pass a `SynchronizationContext` to `IMessageSubscriber.Subscribe`. |
+| `KeepConnectedAsync` ×2, `OutstandingQueueAsync` | Thread-pool loops started by `Start` | The connection loops check every `ReconnectDelay` (5 s), the buffer loop every `OutstandingPollInterval` (100 ms) when idle. All exit when `Dispose` cancels the bus's token. |
+| `OnMessageReceivedAsync`, so every handler, sink and Prism publish | A RabbitMQ.Client thread, **one message at a time per bus** (the client's default) | **Never the UI thread.** UI code must marshal: Prism `ThreadOption.UIThread`, or pass a `SynchronizationContext` to `IMessageSubscriber.Subscribe`. |
 | `Enqueue`, `Publish`, `Subscribe` | Whatever thread calls them | Safe from any thread: `subscriptions` and `outstandingMessages` are concurrent collections. |
 
 Two places need care:
 
-- **`consumerLock`** (in `RabbitMQBus`) makes sure a reconnect (`OpenConsumer`/`CloseConsumer`) and a binding change
+- **`consumerLock`** (in `RabbitMQBus`) makes sure a reconnect (`OpenConsumerAsync`/`CloseConsumerAsync`) and a binding change
   (`Subscribe`/`Unsubscribe` → `BindOrUnbind`) never use the consumer channel at the same time.
 - **`Dispose`** cancels the loops, then closes both connections and waits at most 5 seconds. It runs the closing on
   the thread pool, so a UI thread calling `Dispose` can't deadlock. Messages still in the buffer are lost, and
@@ -115,7 +115,7 @@ Two places need care:
 |---|---|---|
 | `ConfigureAwait(false)` | Every `await` in the libraries | "Don't come back to the caller's thread after this await." Library code never needs the UI thread, and this stops a WPF app that waits on a task from deadlocking. |
 | `SemaphoreSlim` as a lock | `RabbitMQBus.consumerLock` | C# doesn't allow an `await` inside `lock { }`. `await consumerLock.WaitAsync()` … `Release()` in `finally` is the async version. |
-| Exception filters (`catch … when`) | `KeepConnected`, `HandleWithRetries` | The catch only applies when the condition is true. Otherwise the exception passes through untouched. |
+| Exception filters (`catch … when`) | `KeepConnectedAsync`, `HandleWithRetriesAsync` | The catch only applies when the condition is true. Otherwise the exception passes through untouched. |
 | Keyed services | `MessagingBuilder.AddBus`, `GetRequiredKeyedService<RabbitMQBus>(name)` | Several singletons of one type, told apart by a key: here, the bus name. |
 | Named options | `AddOptions<RabbitMQBusOptions>(name)`, `IOptionsMonitor<…>.Get(name)` | The same idea for settings: one `RabbitMQBusOptions` per bus. `PostConfigure` fills in the bus name and a default client name after binding. |
 | `Interlocked.Exchange` | `SubscriptionToken.Dispose` | Swaps the unsubscribe action for null in one atomic step, so disposing twice, even from two threads, unsubscribes once. |
@@ -130,8 +130,8 @@ Two places need care:
 |---|---|---|
 | Send a new message from the API | A class with `[Message("...")]` in the module's `*.Messages` project (the outbox picks it up from there) | The receiving apps' `Subscribe<T>(...)` |
 | Add a bus setting | `RabbitMQBusOptions`, used in `RabbitMQBus` | `RabbitMQConfig` and `RabbitMQService.CreateOptions` if legacy apps need it; the README's configuration reference |
-| Change what happens when a handler fails | `HandleWithRetries`, `FailedSettlement` | README "When things go wrong"; the `SharedQueueTests` |
-| Change reconnect behaviour | `KeepConnected`, `ReconnectDelay` | |
+| Change what happens when a handler fails | `HandleWithRetriesAsync`, `FailedSettlement` | README "When things go wrong"; the `SharedQueueTests` |
+| Change reconnect behaviour | `KeepConnectedAsync`, `ReconnectDelay` | |
 
 **Don't change without an ADR:** the frozen headers (`WireHeaders.MessageType`, `SourceId`), the JSON in
 `tests/Common.RabbitMQ.Tests/Golden/*.json`, anything under `tests/Fixtures`, or the public API of

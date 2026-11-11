@@ -117,12 +117,12 @@ namespace Common.RabbitMQ
 
             foreach (KeyValuePair<string, RabbitMQService> pair in buses)
             {
-                pair.Value.BindingBus = BusForBinding;
+                pair.Value.SelectBindingBus = SelectBindingBus;
                 pair.Value.Init(configs[pair.Key]);
             }
         }
 
-        internal string BusForBinding(SubscribeOptions options)
+        internal string SelectBindingBus(SubscribeOptions options)
         {
             return BusSelection.ForBinding(buses.Keys, (name, exchange) => UsesExchange(configs[name], exchange), DefaultBus, options.Bus, options.Exchange);
         }
@@ -134,12 +134,12 @@ namespace Common.RabbitMQ
 
         public void Publish(Type eventType, object payload)
         {
-            GetDefaultBus(eventType).Publish(eventType, payload);
+            GetRequiredDefaultBus(eventType).Publish(eventType, payload);
         }
 
         public void Publish(Type eventType, object payload, string routingKey)
         {
-            GetDefaultBus(eventType).Publish(eventType, payload, routingKey);
+            GetRequiredDefaultBus(eventType).Publish(eventType, payload, routingKey);
         }
 
         public void Dispose()
@@ -150,7 +150,7 @@ namespace Common.RabbitMQ
             }
         }
 
-        private RabbitMQService GetDefaultBus(Type eventType)
+        private RabbitMQService GetRequiredDefaultBus(Type eventType)
         {
             if (eventType == null)
             {

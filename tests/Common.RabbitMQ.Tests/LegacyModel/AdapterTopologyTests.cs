@@ -32,19 +32,19 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         [Fact]
         public async Task AdapterOwner_LegacySubscriberReceives_SenderNotEchoed()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 AdapterApp owner = topology.StartAdapter(AppA, null);
                 Received<Order> sent = owner.Listen<RemoteOrderSaved, Order>();
                 LegacyApp subscriber = topology.Start(AppB, new[] { AppA }, AppBEvents, AppAEvents);
                 Received<Order> atSubscriber = subscriber.Listen<OrderSaved, Order>();
-                await topology.WaitUntilConnected(owner);
-                await topology.WaitUntilConnected(subscriber);
+                await topology.WaitUntilConnectedAsync(owner);
+                await topology.WaitUntilConnectedAsync(subscriber);
 
                 owner.PublishRemote<RemoteOrderSaved, Order>(GoldenOrder());
 
                 Assert.Equal(1, sent.Count);
-                AssertGolden(await atSubscriber.Next(TestBus.Timeout));
+                AssertGolden(await atSubscriber.NextAsync(TestBus.Timeout));
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
                 Assert.Equal(1, sent.Count);
             }
@@ -53,27 +53,27 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         [Fact]
         public async Task LegacyOwner_AdapterSubscriberReceives()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 LegacyApp owner = topology.Start(AppA, new string[0], AppAEvents);
-                await topology.WaitUntilConnected(owner);
+                await topology.WaitUntilConnectedAsync(owner);
 
                 AdapterApp subscriber = topology.StartAdapter(
                     AppB,
                     config => config.Subscriptions.Add(new RabbitMQSubscription { Exchange = topology.Exchange(AppA) }));
                 Received<Order> atSubscriber = subscriber.Listen<RemoteOrderSaved, Order>();
-                await topology.WaitUntilConnected(subscriber);
+                await topology.WaitUntilConnectedAsync(subscriber);
 
                 owner.PublishRemote<OrderSaved, Order>(GoldenOrder());
 
-                AssertGolden(await atSubscriber.Next(TestBus.Timeout));
+                AssertGolden(await atSubscriber.NextAsync(TestBus.Timeout));
             }
         }
 
         [Fact]
         public async Task PublishRemoteTo_ReachesSubscribersThatBindTheKey_AndLocalSubscribers()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 AdapterApp owner = topology.StartAdapter(AppA, null);
                 Received<Order> sent = owner.Listen<RemoteOrderSaved, Order>();
@@ -86,14 +86,14 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 patternSubscriber.Start();
                 LegacyApp legacySubscriber = topology.Start(AppC, new[] { AppA }, AppAEvents);
                 Received<Order> atLegacySubscriber = legacySubscriber.Listen<OrderSaved, Order>();
-                await topology.WaitUntilConnected(owner);
-                await topology.WaitUntilConnected(patternSubscriber);
-                await topology.WaitUntilConnected(legacySubscriber);
+                await topology.WaitUntilConnectedAsync(owner);
+                await topology.WaitUntilConnectedAsync(patternSubscriber);
+                await topology.WaitUntilConnectedAsync(legacySubscriber);
 
                 owner.PublishRemoteTo<RemoteOrderSaved, Order>("orders.eu.saved", GoldenOrder());
 
                 Assert.Equal(1, sent.Count);
-                AssertGolden(await atPatternSubscriber.Next(TestBus.Timeout));
+                AssertGolden(await atPatternSubscriber.NextAsync(TestBus.Timeout));
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
                 Assert.Equal(0, atLegacySubscriber.Count);
             }
@@ -102,29 +102,29 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         [Fact]
         public async Task SharedEvents_TravelBetweenAdapterAndLegacyModel_ByWireName()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 AdapterApp sender = topology.StartAdapter(AppB, null);
                 LegacyApp subscriber = topology.Start(AppA, new[] { AppB }, AppAEvents, SharedEvents);
                 Received<User> atSubscriber = subscriber.Listen<UserChanged, User>();
-                await topology.WaitUntilConnected(sender);
-                await topology.WaitUntilConnected(subscriber);
+                await topology.WaitUntilConnectedAsync(sender);
+                await topology.WaitUntilConnectedAsync(subscriber);
 
                 sender.PublishRemote<RemoteUserChanged, User>(new User { Id = 7, Name = "shared", UpdatedAt = new DateTime(2026, 9, 26, 10, 15, 30, DateTimeKind.Utc) });
 
-                Assert.Equal("shared", (await atSubscriber.Next(TestBus.Timeout))?.Name);
+                Assert.Equal("shared", (await atSubscriber.NextAsync(TestBus.Timeout))?.Name);
             }
         }
 
         [Fact]
         public async Task ConfiguredExchangeType_IsDeclared()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 AdapterApp owner = topology.StartAdapter(AppA, config => config.ExchangeType = "direct");
-                await topology.WaitUntilConnected(owner);
+                await topology.WaitUntilConnectedAsync(owner);
 
-                Assert.Equal(200, await topology.DeclareExchange(owner.ExchangeName, "direct", durable: true));
+                Assert.Equal(200, await topology.DeclareExchangeAsync(owner.ExchangeName, "direct", durable: true));
             }
         }
 

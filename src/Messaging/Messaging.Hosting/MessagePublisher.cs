@@ -36,7 +36,7 @@ namespace Messaging.Hosting
                 throw new ArgumentNullException(nameof(message));
             }
 
-            string busName = !string.IsNullOrEmpty(options?.Bus) ? options.Bus : registry.GetDefaultBus();
+            string busName = !string.IsNullOrEmpty(options?.Bus) ? options.Bus : registry.DefaultBus;
             if (busName == null)
             {
                 throw new InvalidOperationException(

@@ -19,7 +19,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public async Task UnsubscribingWithTheToken_ThenSubscribingAgain_Receives()
         {
-            await WithApp(async (topology, app, sender) =>
+            await WithAppAsync(async (topology, app, sender) =>
             {
                 PubSubEvent<Order> remoteEvent = app.Events.GetEvent<ComesAndGoes>();
                 remoteEvent.Unsubscribe(remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true));
@@ -28,14 +28,14 @@ namespace Common.RabbitMQ.Tests.Adapter
                 remoteEvent.Subscribe(received.Add, keepSubscriberReferenceAlive: true);
                 sender.PublishRemote<ComesAndGoes, Order>(new Order { Id = 9 });
 
-                Assert.Equal(9, (await received.Next(TestBus.Timeout))?.Id);
+                Assert.Equal(9, (await received.NextAsync(TestBus.Timeout))?.Id);
             });
         }
 
         [Fact]
         public async Task UnsubscribingOneAction_TheOtherStillReceives()
         {
-            await WithApp(async (topology, app, sender) =>
+            await WithAppAsync(async (topology, app, sender) =>
             {
                 PubSubEvent<Order> remoteEvent = app.Events.GetEvent<ComesAndGoes>();
                 Action<Order> first = _ => { };
@@ -46,14 +46,14 @@ namespace Common.RabbitMQ.Tests.Adapter
                 remoteEvent.Unsubscribe(first);
                 sender.PublishRemote<ComesAndGoes, Order>(new Order { Id = 10 });
 
-                Assert.Equal(10, (await second.Next(TestBus.Timeout))?.Id);
+                Assert.Equal(10, (await second.NextAsync(TestBus.Timeout))?.Id);
             });
         }
 
         [Fact]
         public async Task QuickChanges_EndInTheLastState()
         {
-            await WithApp(async (topology, app, sender) =>
+            await WithAppAsync(async (topology, app, sender) =>
             {
                 PubSubEvent<Order> remoteEvent = app.Events.GetEvent<ComesAndGoes>();
                 for (int i = 0; i < 30; i++)
@@ -65,14 +65,14 @@ namespace Common.RabbitMQ.Tests.Adapter
                 remoteEvent.Subscribe(received.Add, keepSubscriberReferenceAlive: true);
                 sender.PublishRemote<ComesAndGoes, Order>(new Order { Id = 11 });
 
-                Assert.Equal(11, (await received.Next(TestBus.Timeout))?.Id);
+                Assert.Equal(11, (await received.NextAsync(TestBus.Timeout))?.Id);
             });
         }
 
         [Fact]
         public async Task SubscribingAfterUnregisterQueue_Resumes()
         {
-            await WithApp(async (topology, app, sender) =>
+            await WithAppAsync(async (topology, app, sender) =>
             {
                 PubSubEvent<Order> remoteEvent = app.Events.GetEvent<ComesAndGoes>();
                 remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
@@ -82,17 +82,17 @@ namespace Common.RabbitMQ.Tests.Adapter
                 remoteEvent.Subscribe(received.Add, keepSubscriberReferenceAlive: true);
                 sender.PublishRemote<ComesAndGoes, Order>(new Order { Id = 12 });
 
-                Assert.Equal(12, (await received.Next(TestBus.Timeout))?.Id);
+                Assert.Equal(12, (await received.NextAsync(TestBus.Timeout))?.Id);
             });
         }
 
-        private static async Task WithApp(Func<LegacyTopology, AdapterApp, AdapterApp, Task> test)
+        private static async Task WithAppAsync(Func<LegacyTopology, AdapterApp, AdapterApp, Task> test)
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 AdapterApp app = topology.StartAdapter(App, null);
                 AdapterApp sender = topology.StartAdapter(App, null);
-                await topology.WaitUntilConnected(app, sender);
+                await topology.WaitUntilConnectedAsync(app, sender);
                 await test(topology, app, sender);
             }
         }

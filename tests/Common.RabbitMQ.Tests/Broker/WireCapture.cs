@@ -19,7 +19,7 @@ namespace Common.RabbitMQ.Tests.Broker
         {
         }
 
-        public static async Task<WireCapture> Start(IChannel channel, string exchangeName)
+        public static async Task<WireCapture> StartAsync(IChannel channel, string exchangeName)
         {
             WireCapture capture = new WireCapture();
 
@@ -27,14 +27,14 @@ namespace Common.RabbitMQ.Tests.Broker
             await channel.QueueBindAsync(queue.QueueName, exchangeName, "#").ConfigureAwait(false);
 
             AsyncEventingBasicConsumer consumer = new AsyncEventingBasicConsumer(channel);
-            consumer.ReceivedAsync += capture.OnReceived;
+            consumer.ReceivedAsync += capture.OnReceivedAsync;
             await channel.BasicConsumeAsync(queue.QueueName, autoAck: true, consumer: consumer).ConfigureAwait(false);
 
             return capture;
         }
 
         /// <returns>The next message, or null when none arrives within <paramref name="timeout"/>.</returns>
-        public async Task<CapturedMessage> Next(TimeSpan timeout)
+        public async Task<CapturedMessage> NextAsync(TimeSpan timeout)
         {
             if (!await available.WaitAsync(timeout).ConfigureAwait(false))
             {
@@ -69,7 +69,7 @@ namespace Common.RabbitMQ.Tests.Broker
             };
         }
 
-        private Task OnReceived(object sender, BasicDeliverEventArgs args)
+        private Task OnReceivedAsync(object sender, BasicDeliverEventArgs args)
         {
             messages.Enqueue(Copy(args.Exchange, args.RoutingKey, args.BasicProperties, args.Body));
             available.Release();

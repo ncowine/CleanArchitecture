@@ -8,9 +8,9 @@ namespace Common.RabbitMQ
         private static readonly object gate = new object();
         private static readonly HashSet<IRemoteEvent> subscribed = new HashSet<IRemoteEvent>();
         private static readonly List<RabbitMQService> running = new List<RabbitMQService>();
-        private static readonly List<(IRemoteEvent Event, SubscribeOptions Options)> keyed = new List<(IRemoteEvent Event, SubscribeOptions Options)>();
+        private static readonly List<(IRemoteEvent Event, SubscribeOptions Options)> boundKeys = new List<(IRemoteEvent Event, SubscribeOptions Options)>();
 
-        public static void Subscribed(IRemoteEvent remoteEvent)
+        public static void StartReceiving(IRemoteEvent remoteEvent)
         {
             lock (gate)
             {
@@ -18,12 +18,12 @@ namespace Common.RabbitMQ
 
                 foreach (RabbitMQService service in running)
                 {
-                    service.Receive(remoteEvent);
+                    service.StartReceiving(remoteEvent);
                 }
             }
         }
 
-        public static void StopIfUnused(IRemoteEvent remoteEvent)
+        public static void StopReceivingIfUnused(IRemoteEvent remoteEvent)
         {
             lock (gate)
             {
@@ -41,20 +41,20 @@ namespace Common.RabbitMQ
             }
         }
 
-        public static int Join(RabbitMQService service)
+        public static int AddRunningService(RabbitMQService service)
         {
             lock (gate)
             {
                 running.Add(service);
-                foreach ((IRemoteEvent remoteEvent, SubscribeOptions options) in keyed)
+                foreach ((IRemoteEvent remoteEvent, SubscribeOptions options) in boundKeys)
                 {
-                    service.TryBind(remoteEvent, options);
+                    service.BindOrLog(remoteEvent, options);
                 }
 
                 int count = 0;
                 foreach (IRemoteEvent remoteEvent in subscribed)
                 {
-                    if (service.Receive(remoteEvent))
+                    if (service.StartReceiving(remoteEvent))
                     {
                         count++;
                     }
@@ -87,7 +87,7 @@ namespace Common.RabbitMQ
                     throw;
                 }
 
-                keyed.Add((remoteEvent, options));
+                boundKeys.Add((remoteEvent, options));
             }
         }
 
@@ -95,13 +95,13 @@ namespace Common.RabbitMQ
         {
             lock (gate)
             {
-                int index = keyed.FindIndex(k => ReferenceEquals(k.Event, remoteEvent) && ReferenceEquals(k.Options, options));
+                int index = boundKeys.FindIndex(k => ReferenceEquals(k.Event, remoteEvent) && ReferenceEquals(k.Options, options));
                 if (index < 0)
                 {
                     return;
                 }
 
-                keyed.RemoveAt(index);
+                boundKeys.RemoveAt(index);
                 foreach (RabbitMQService service in running)
                 {
                     service.Unbind(remoteEvent, options);
@@ -109,7 +109,7 @@ namespace Common.RabbitMQ
             }
         }
 
-        public static void Leave(RabbitMQService service)
+        public static void RemoveRunningService(RabbitMQService service)
         {
             lock (gate)
             {

@@ -23,25 +23,25 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task HostPublishes_BothLegacyBuildsReceive_WithTheGoldenBody()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint current = bus.AddEndpoint(CompatBuild.Current, "compat-current");
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-server", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => { }))
                 {
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
-                    WireCapture capture = await bus.Capture();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
+                    WireCapture capture = await bus.CaptureAsync();
 
                     CompatPayload payload = CompatPayloads.Golden();
                     host.Services.GetRequiredService<IMessagePublisher>().Publish(
                         new CompatMessage { Id = payload.Id, Name = payload.Name, UpdatedAt = payload.UpdatedAt });
 
-                    CompatibilityMatrixTests.AssertPayload(payload, await current.Received.Next(TestBus.Timeout));
-                    CompatibilityMatrixTests.AssertPayload(payload, await legacy.Received.Next(TestBus.Timeout));
+                    CompatibilityMatrixTests.AssertPayload(payload, await current.Received.NextAsync(TestBus.Timeout));
+                    CompatibilityMatrixTests.AssertPayload(payload, await legacy.Received.NextAsync(TestBus.Timeout));
 
-                    CapturedMessage message = await capture.Next(TestBus.Timeout);
+                    CapturedMessage message = await capture.NextAsync(TestBus.Timeout);
                     Assert.NotNull(message);
                     Assert.Equal(bus.ExchangeName, message.RoutingKey);
                     Assert.Equal("Compat.Events.CompatEvent", message.Headers[WireHeaders.MessageType]);
@@ -54,21 +54,21 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task LegacyBuildsPublish_HandlerRunsInANewScopePerMessage()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint current = bus.AddEndpoint(CompatBuild.Current, "compat-current");
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name)))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name)))
                 {
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
 
                     CompatPayload payload = CompatPayloads.Golden();
                     current.PublishRemote(payload);
-                    HandledMessage first = await host.Handled.Next(TestBus.Timeout);
+                    HandledMessage first = await host.Handled.NextAsync(TestBus.Timeout);
                     legacy.PublishRemote(payload);
-                    HandledMessage second = await host.Handled.Next(TestBus.Timeout);
+                    HandledMessage second = await host.Handled.NextAsync(TestBus.Timeout);
 
                     foreach (HandledMessage handled in new[] { first, second })
                     {
@@ -87,18 +87,18 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task AddHandlers_FindsTheAssemblysHandlers_OnTheOnlyBus()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly)))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly)))
                 {
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
 
                     legacy.PublishRemote(CompatPayloads.Golden());
 
-                    HandledMessage handled = await host.Handled.Next(TestBus.Timeout);
+                    HandledMessage handled = await host.Handled.NextAsync(TestBus.Timeout);
                     Assert.NotNull(handled);
                     Assert.Equal(CompatPayloads.Golden().Id, handled.Message.Id);
                     Assert.Equal(CompatBus.Name, handled.Context.BusName);
@@ -109,23 +109,23 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task HandlerRepublishes_AndDropsItsOwnCopy()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-server", messaging => messaging
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => messaging
                     .AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name)))
                 {
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
-                    WireCapture capture = await bus.Capture();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
+                    WireCapture capture = await bus.CaptureAsync();
 
                     CompatPayload payload = CompatPayloads.Golden();
                     payload.Name = CompatMessageHandler.Republish;
                     legacy.PublishRemote(payload);
 
-                    CapturedMessage incoming = await capture.Next(TestBus.Timeout);
-                    CapturedMessage reply = await capture.Next(TestBus.Timeout);
+                    CapturedMessage incoming = await capture.NextAsync(TestBus.Timeout);
+                    CapturedMessage reply = await capture.NextAsync(TestBus.Timeout);
                     Assert.NotNull(incoming);
                     Assert.NotNull(reply);
                     Assert.Equal(legacy.InstanceId, incoming.Headers[WireHeaders.SourceId]);
@@ -133,8 +133,8 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                     // The legacy app first saw its own message locally (PublishRemote), then receives the reply.
                     // The host drops its own copy of the reply.
-                    Assert.Equal(CompatMessageHandler.Republish, (await legacy.Received.Next(TestBus.Timeout))?.Name);
-                    Assert.Equal(CompatMessageHandler.Republished, (await legacy.Received.Next(TestBus.Timeout))?.Name);
+                    Assert.Equal(CompatMessageHandler.Republish, (await legacy.Received.NextAsync(TestBus.Timeout))?.Name);
+                    Assert.Equal(CompatMessageHandler.Republished, (await legacy.Received.NextAsync(TestBus.Timeout))?.Name);
                     await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
                     Assert.Equal(1, host.Handled.Count);
                 }
@@ -144,21 +144,21 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task FailingHandler_DoesNotStopTheBus()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name)))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name)))
                 {
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
 
                     CompatPayload failing = CompatPayloads.Golden();
                     failing.Name = CompatMessageHandler.Fail;
                     legacy.PublishRemote(failing);
                     legacy.PublishRemote(CompatPayloads.Golden());
 
-                    HandledMessage handled = await host.Handled.Next(TestBus.Timeout);
+                    HandledMessage handled = await host.Handled.NextAsync(TestBus.Timeout);
                     Assert.NotNull(handled);
                     Assert.Equal(CompatPayloads.Golden().Name, handled.Message.Name);
 

@@ -13,7 +13,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         private readonly ConcurrentQueue<object> messages = new ConcurrentQueue<object>();
         private readonly SemaphoreSlim available = new SemaphoreSlim(0);
 
-        public Task Deliver(object message, MessageContext context, CancellationToken cancellationToken)
+        public Task DeliverAsync(object message, MessageContext context, CancellationToken cancellationToken)
         {
             messages.Enqueue(message);
             available.Release();
@@ -21,7 +21,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         /// <returns>The next message, or null when none arrives within <paramref name="timeout"/>.</returns>
-        public async Task<object> Next(TimeSpan timeout)
+        public async Task<object> NextAsync(TimeSpan timeout)
         {
             if (!await available.WaitAsync(timeout).ConfigureAwait(false))
             {

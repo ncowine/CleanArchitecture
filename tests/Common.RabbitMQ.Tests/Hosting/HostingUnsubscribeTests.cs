@@ -32,21 +32,21 @@ namespace Common.RabbitMQ.Tests.Hosting
         public async Task DisposingTheLastSubscription_StopsReceiving_AndSubscribingAgainResumes()
         {
             RecordingSink sink = new RecordingSink();
-            await WithHost(messaging => messaging.Services.AddSingleton<IMessageSink>(sink), async (topology, host) =>
+            await WithHostAsync(messaging => messaging.Services.AddSingleton<IMessageSink>(sink), async (topology, host) =>
             {
                 IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
                 IDisposable first = subscriber.Subscribe<CompatMessage>(_ => { });
                 IDisposable second = subscriber.Subscribe<CompatMessage>(_ => { });
-                Assert.True(await IsReceived(topology, sink));
+                Assert.True(await IsReceivedAsync(topology, sink));
 
                 first.Dispose();
-                Assert.True(await IsReceived(topology, sink));
+                Assert.True(await IsReceivedAsync(topology, sink));
 
                 second.Dispose();
-                Assert.False(await IsReceived(topology, sink));
+                Assert.False(await IsReceivedAsync(topology, sink));
 
                 subscriber.Subscribe<CompatMessage>(_ => { });
-                Assert.True(await IsReceived(topology, sink));
+                Assert.True(await IsReceivedAsync(topology, sink));
             });
         }
 
@@ -59,14 +59,14 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task SharedQueue_ASecondClassWithTheSameWireName_IsRefused_AfterTheFirstUnsubscribes()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 string service = "svc-" + Guid.NewGuid().ToString("N");
                 topology.DeleteOnDispose(service, service + ".dead-letter");
 
-                await using (TestHost host = await TestHost.Start(topology.Broker.HostName, topology.Broker.Port, topology.Broker, topology.Exchange(App), App, messaging => { }, options => Share(options, service)))
+                await using (TestHost host = await TestHost.StartAsync(topology.Broker.HostName, topology.Broker.Port, topology.Broker, topology.Exchange(App), App, messaging => { }, options => Share(options, service)))
                 {
-                    await host.WaitUntilConnected();
+                    await host.WaitUntilConnectedAsync();
                     IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
                     subscriber.Subscribe<CompatMessage>(_ => { }).Dispose();
 
@@ -79,7 +79,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task SharedQueue_OneInstanceUnsubscribing_TheOthersStillReceive()
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
             {
                 string service = "svc-" + Guid.NewGuid().ToString("N");
                 topology.DeleteOnDispose(service, service + ".dead-letter");
@@ -91,24 +91,24 @@ namespace Common.RabbitMQ.Tests.Hosting
                 string exchange = topology.Exchange(App);
                 Received<CompatMessage> atB = new Received<CompatMessage>();
 
-                await using (TestHost b = await TestHost.Start(topology.Broker.HostName, topology.Broker.Port, topology.Broker, exchange, App, messaging => { }, shared))
+                await using (TestHost b = await TestHost.StartAsync(topology.Broker.HostName, topology.Broker.Port, topology.Broker, exchange, App, messaging => { }, shared))
                 {
                     b.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(atB.Add);
-                    await b.WaitUntilConnected();
+                    await b.WaitUntilConnectedAsync();
 
-                    await using (TestHost a = await TestHost.Start(topology.Broker.HostName, topology.Broker.Port, topology.Broker, exchange, App, messaging => { }, shared))
+                    await using (TestHost a = await TestHost.StartAsync(topology.Broker.HostName, topology.Broker.Port, topology.Broker, exchange, App, messaging => { }, shared))
                     {
                         IDisposable subscription = a.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { });
-                        await a.WaitUntilConnected();
+                        await a.WaitUntilConnectedAsync();
 
                         subscription.Dispose();
                         await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
                     }
 
                     // Only B consumes now.
-                    await PublishGolden(topology);
+                    await PublishGoldenAsync(topology);
 
-                    Assert.Equal(42, (await atB.Next(TestBus.Timeout))?.Id);
+                    Assert.Equal(42, (await atB.NextAsync(TestBus.Timeout))?.Id);
                 }
             }
         }
@@ -119,28 +119,28 @@ namespace Common.RabbitMQ.Tests.Hosting
             options.SharedQueueName = service;
         }
 
-        private static async Task WithHost(Action<MessagingBuilder> configure, Func<LegacyTopology, TestHost, Task> test)
+        private static async Task WithHostAsync(Action<MessagingBuilder> configure, Func<LegacyTopology, TestHost, Task> test)
         {
-            await using (LegacyTopology topology = await LegacyTopology.Create())
-            await using (TestHost host = await TestHost.Start(topology.Broker.HostName, topology.Broker.Port, topology.Broker, topology.Exchange(App), App, configure))
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
+            await using (TestHost host = await TestHost.StartAsync(topology.Broker.HostName, topology.Broker.Port, topology.Broker, topology.Exchange(App), App, configure))
             {
-                await host.WaitUntilConnected();
+                await host.WaitUntilConnectedAsync();
                 await test(topology, host);
             }
         }
 
-        private static Task PublishGolden(LegacyTopology topology)
+        private static Task PublishGoldenAsync(LegacyTopology topology)
         {
             Dictionary<string, object> headers = new Dictionary<string, object> { [WireHeaders.MessageType] = WireName };
-            return topology.PublishRaw(App, topology.Exchange(App), headers, GoldenFile.Read("compat-payload.json"));
+            return topology.PublishRawAsync(App, topology.Exchange(App), headers, GoldenFile.Read("compat-payload.json"));
         }
 
         /// <summary>Publishes one message and says whether it reached the sink, i.e. wasn't dropped on arrival.</summary>
-        private static async Task<bool> IsReceived(LegacyTopology topology, RecordingSink sink)
+        private static async Task<bool> IsReceivedAsync(LegacyTopology topology, RecordingSink sink)
         {
             await Task.Delay(SettlePeriod, TestContext.Current.CancellationToken);
-            await PublishGolden(topology);
-            return await sink.Next(QuietPeriod) != null;
+            await PublishGoldenAsync(topology);
+            return await sink.NextAsync(QuietPeriod) != null;
         }
     }
 }

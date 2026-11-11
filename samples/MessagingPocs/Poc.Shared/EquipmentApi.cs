@@ -68,7 +68,7 @@ public sealed class EquipmentApi
         // category 0 = Laptop (the API takes the enum as a number).
         using HttpResponseMessage response = await http.PostAsJsonAsync(
             "equipment", new { name = $"Laptop from {createdBy}", category = 0, assetTag = tag }, cancellationToken);
-        await EnsureSuccess(response);
+        await EnsureSuccessAsync(response);
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
@@ -78,11 +78,11 @@ public sealed class EquipmentApi
         // Already gone (someone else deleted it first) is fine: the outcome the user wanted.
         if (response.StatusCode != HttpStatusCode.NotFound)
         {
-            await EnsureSuccess(response);
+            await EnsureSuccessAsync(response);
         }
     }
 
-    private static async Task EnsureSuccess(HttpResponseMessage response)
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response)
     {
         if (!response.IsSuccessStatusCode)
         {

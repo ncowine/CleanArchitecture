@@ -28,7 +28,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         }
 
         /// <returns>The next payload, or null when none arrives within <paramref name="timeout"/>.</returns>
-        public async Task<TPayload> Next(TimeSpan timeout)
+        public async Task<TPayload> NextAsync(TimeSpan timeout)
         {
             if (!await available.WaitAsync(timeout).ConfigureAwait(false))
             {

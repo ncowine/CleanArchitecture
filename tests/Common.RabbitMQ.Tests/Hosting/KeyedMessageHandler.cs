@@ -11,7 +11,7 @@ namespace Common.RabbitMQ.Tests.Hosting
     {
         public const string Key = "compat.handler-key";
 
-        public Task Handle(KeyedMessage message, MessageContext context, CancellationToken cancellationToken)
+        public Task HandleAsync(KeyedMessage message, MessageContext context, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
         }

@@ -5,6 +5,6 @@ namespace Messaging
 {
     public interface IMessageHandler<in TMessage>
     {
-        Task Handle(TMessage message, MessageContext context, CancellationToken cancellationToken);
+        Task HandleAsync(TMessage message, MessageContext context, CancellationToken cancellationToken);
     }
 }

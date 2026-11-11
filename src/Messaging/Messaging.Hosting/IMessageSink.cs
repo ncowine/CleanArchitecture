@@ -5,6 +5,6 @@ namespace Messaging.Hosting
 {
     internal interface IMessageSink
     {
-        Task Deliver(object message, MessageContext context, CancellationToken cancellationToken);
+        Task DeliverAsync(object message, MessageContext context, CancellationToken cancellationToken);
     }
 }

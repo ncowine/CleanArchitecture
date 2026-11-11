@@ -33,13 +33,13 @@ namespace Common.RabbitMQ.Tests.Hosting
 
         public HandledMessages Handled => provider.GetRequiredService<HandledMessages>();
 
-        public static Task<TestHost> Start(TestBus bus, string clientName, Action<MessagingBuilder> configure, Action<RabbitMQBusOptions> configureBus = null)
+        public static Task<TestHost> StartAsync(TestBus bus, string clientName, Action<MessagingBuilder> configure, Action<RabbitMQBusOptions> configureBus = null)
         {
-            return Start(bus.Broker.HostName, bus.Broker.Port, bus.Broker, bus.ExchangeName, clientName, configure, configureBus);
+            return StartAsync(bus.Broker.HostName, bus.Broker.Port, bus.Broker, bus.ExchangeName, clientName, configure, configureBus);
         }
 
         /// <summary>Starts a host whose bus points at <paramref name="hostName"/>:<paramref name="port"/>.</summary>
-        public static async Task<TestHost> Start(string hostName, int port, BrokerSettings credentials, string exchangeName, string clientName, Action<MessagingBuilder> configure, Action<RabbitMQBusOptions> configureBus = null)
+        public static async Task<TestHost> StartAsync(string hostName, int port, BrokerSettings credentials, string exchangeName, string clientName, Action<MessagingBuilder> configure, Action<RabbitMQBusOptions> configureBus = null)
         {
             ServiceCollection services = new ServiceCollection();
             services.AddLogging();
@@ -84,7 +84,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             return host;
         }
 
-        public async Task WaitUntilConnected()
+        public async Task WaitUntilConnectedAsync()
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             while (!Bus.IsConsumerConnected || !Bus.IsPublisherConnected)

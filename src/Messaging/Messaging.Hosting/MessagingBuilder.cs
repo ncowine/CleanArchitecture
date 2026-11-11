@@ -89,13 +89,13 @@ namespace Messaging.Hosting
             where THandler : class, IMessageHandler<TMessage>
         {
             Services.TryAddScoped<THandler>();
-            Registry.AddHandler(new HandlerRegistration(typeof(TMessage), typeof(THandler), busNames, Invoke<TMessage, THandler>));
+            Registry.AddHandler(new HandlerRegistration(typeof(TMessage), typeof(THandler), busNames, InvokeAsync<TMessage, THandler>));
         }
 
-        private static Task Invoke<TMessage, THandler>(object handler, object message, MessageContext context, CancellationToken cancellationToken)
+        private static Task InvokeAsync<TMessage, THandler>(object handler, object message, MessageContext context, CancellationToken cancellationToken)
             where THandler : IMessageHandler<TMessage>
         {
-            return ((THandler)handler).Handle((TMessage)message, context, cancellationToken);
+            return ((THandler)handler).HandleAsync((TMessage)message, context, cancellationToken);
         }
 
         private void AddBus(string name)

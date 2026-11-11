@@ -524,7 +524,7 @@ publisher.Publish(new EmployeeSaved { Id = 7, Name = "Ada" });
 ```csharp
 public class EmployeeSavedHandler : IMessageHandler<EmployeeSaved>
 {
-    public async Task Handle(EmployeeSaved message, MessageContext context, CancellationToken cancellationToken)
+    public async Task HandleAsync(EmployeeSaved message, MessageContext context, CancellationToken cancellationToken)
     {
         // runs in its own DI scope per message; throw to trigger retries (shared queues)
     }
@@ -877,7 +877,7 @@ The full reasoning is in the two ADRs. The short version:
 | Messages pile up in `*.dead-letter` | A handler keeps failing, or the body can't be read. | Read the message in the management UI (`x-first-death-reason` says why), fix the cause, then move it back. |
 | `/health` is Unhealthy | A bus is disconnected. | The response lists which bus. Check the broker and the credentials. |
 | A startup error: *Messaging is misconfigured* | A handler names an unknown bus, or a class has no `[Message]`. | The message lists every problem. Fix them in `AddMessaging`. |
-| `PublishRemote` with a routing key throws *does not support routing keys* | A custom `IRabbitMQService` that doesn't implement `IRoutingKeyPublisher`. | Use `RabbitMQService` or `RabbitMQServiceRouter`, or implement the interface. |
+| `PublishRemote` with a routing key throws *does not support routing keys* | A custom `IRabbitMQService`: routing keys need the library's own services. | Use `RabbitMQService` or `RabbitMQServiceRouter`. |
 | The build crashes with *OutOfMemoryException* or hangs | Stale MSBuild worker processes. | Run `dotnet build-server shutdown`, or build with `-nr:false`. |
 | Git Bash turns a vhost of `/` into `C:/Program Files/Git/` | Git Bash path conversion. | Set such environment variables from PowerShell instead. |
 

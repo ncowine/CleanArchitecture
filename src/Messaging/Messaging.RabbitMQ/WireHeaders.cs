@@ -1,6 +1,6 @@
 namespace Messaging.RabbitMQ
 {
-    public static class WireHeaders
+    internal static class WireHeaders
     {
         public const string MessageType = "event-type";
 

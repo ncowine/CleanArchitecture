@@ -15,16 +15,16 @@ namespace Common.RabbitMQ.Tests.Broker
         [Fact]
         public async Task FailingHandler_IsLogged_AndTheMessageIsAckedAndNotRedelivered()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 CoreEndpoint sender = bus.AddCoreEndpoint("compat-sender");
                 CoreEndpoint receiver = bus.AddCoreEndpoint("compat-receiver");
                 receiver.HandlerException = new InvalidOperationException("handler failed");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 sender.PublishRemote(CompatPayloads.Golden());
 
-                LogEntry logged = await receiver.Log.WaitFor(e => e.Level == LogLevel.Error, TestBus.Timeout);
+                LogEntry logged = await receiver.Log.WaitForAsync(e => e.Level == LogLevel.Error, TestBus.Timeout);
                 Assert.NotNull(logged);
                 Assert.Same(receiver.HandlerException, logged.Exception);
                 Assert.Contains("acknowledged and dropped", logged.Message);

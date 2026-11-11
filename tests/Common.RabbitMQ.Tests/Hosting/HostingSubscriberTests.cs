@@ -25,19 +25,19 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task Subscribe_ReceivesMessages_UntilDisposed()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
                 {
                     Received<CompatMessage> received = new Received<CompatMessage>();
                     IDisposable subscription = host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
 
                     legacy.PublishRemote(CompatPayloads.Golden());
-                    CompatMessage message = await received.Next(TestBus.Timeout);
+                    CompatMessage message = await received.NextAsync(TestBus.Timeout);
                     Assert.Equal(42, message?.Id);
                     Assert.Equal("compat", message.Name);
 
@@ -53,21 +53,21 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task Subscribe_Receives_WithNothingRegistered()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
                 {
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
 
                     // The queue is already bound to the exchange: subscribing takes effect at once.
                     Received<CompatMessage> received = new Received<CompatMessage>();
                     host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
                     legacy.PublishRemote(CompatPayloads.Golden());
 
-                    Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
+                    Assert.Equal(42, (await received.NextAsync(TestBus.Timeout))?.Id);
                 }
             }
         }
@@ -100,21 +100,21 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task Subscribe_WithASynchronizationContext_PostsToIt()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
                 {
                     RecordingSynchronizationContext uiContext = new RecordingSynchronizationContext();
                     Received<CompatMessage> received = new Received<CompatMessage>();
                     host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add, uiContext);
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
 
                     legacy.PublishRemote(CompatPayloads.Golden());
 
-                    Assert.NotNull(await received.Next(TestBus.Timeout));
+                    Assert.NotNull(await received.NextAsync(TestBus.Timeout));
                     Assert.Equal(1, uiContext.Posts);
                 }
             }
@@ -123,11 +123,11 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task SeveralSubscribers_AllReceive_InOrder()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
                 {
                     IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
                     string order = "";
@@ -139,8 +139,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                         done.TrySetResult(true);
                         return Task.CompletedTask;
                     });
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
 
                     legacy.PublishRemote(CompatPayloads.Golden());
 
@@ -153,12 +153,12 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task AsyncSubscriberFailure_FailsTheMessage_RetriedOnASharedQueue()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 string service = "svc-" + Guid.NewGuid().ToString("N");
 
-                await using (TestHost host = await TestHost.Start(
+                await using (TestHost host = await TestHost.StartAsync(
                     bus,
                     service,
                     messaging => { },
@@ -176,8 +176,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                         Interlocked.Increment(ref attempts);
                         throw new InvalidOperationException("Subscriber failed on purpose.");
                     });
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
 
                     legacy.PublishRemote(CompatPayloads.Golden());
 
@@ -185,7 +185,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     for (int wait = 0; wait < 100 && dead == null; wait++)
                     {
                         await Task.Delay(100, TestContext.Current.CancellationToken);
-                        dead = await bus.Get(host.Bus.DeadLetterQueueName);
+                        dead = await bus.GetAsync(host.Bus.DeadLetterQueueName);
                     }
 
                     Assert.NotNull(dead);

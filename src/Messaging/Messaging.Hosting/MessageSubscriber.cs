@@ -57,7 +57,7 @@ namespace Messaging.Hosting
             return Add(new MessageSubscription(typeof(TMessage), options, (message, context, token) => handler((TMessage)message, context, token)));
         }
 
-        public async Task Deliver(object message, MessageContext context, CancellationToken cancellationToken)
+        public async Task DeliverAsync(object message, MessageContext context, CancellationToken cancellationToken)
         {
             MessageSubscription[] current;
             if (!Volatile.Read(ref subscriptions).TryGetValue(message.GetType(), out current))
@@ -97,7 +97,7 @@ namespace Messaging.Hosting
             }
         }
 
-        private void StopIfUnused(Type messageType)
+        private void StopReceivingIfUnused(Type messageType)
         {
             if (subscriptions.ContainsKey(messageType) || !receiving.Remove(messageType))
             {
@@ -118,7 +118,7 @@ namespace Messaging.Hosting
         {
             RequireRoutingKey(subscription.Options);
             SubscribeOptions options = subscription.Options;
-            RabbitMQBus bindingBus = options == null ? null : BindingBus(provider, registry, options.Bus, options.Exchange);
+            RabbitMQBus bindingBus = options == null ? null : SelectBindingBus(provider, registry, options.Bus, options.Exchange);
             lock (gate)
             {
                 StartReceiving(subscription.MessageType);
@@ -130,7 +130,7 @@ namespace Messaging.Hosting
                 {
                     try
                     {
-                        StopIfUnused(subscription.MessageType);
+                        StopReceivingIfUnused(subscription.MessageType);
                     }
                     catch (ObjectDisposedException)
                     {
@@ -171,7 +171,7 @@ namespace Messaging.Hosting
 
                 Volatile.Write(ref subscriptions, next);
                 Unbind(subscription.Options);
-                StopIfUnused(subscription.MessageType);
+                StopReceivingIfUnused(subscription.MessageType);
             }
         }
 
@@ -187,16 +187,16 @@ namespace Messaging.Hosting
         {
             if (options != null)
             {
-                BindingBus(provider, registry, options.Bus, options.Exchange).Unbind(options.Exchange, options.RoutingKey);
+                SelectBindingBus(provider, registry, options.Bus, options.Exchange).Unbind(options.Exchange, options.RoutingKey);
             }
         }
 
-        internal static RabbitMQBus BindingBus(IServiceProvider provider, MessagingRegistry registry, string busName, string exchange)
+        internal static RabbitMQBus SelectBindingBus(IServiceProvider provider, MessagingRegistry registry, string busName, string exchange)
         {
             string selected = BusSelection.ForBinding(
                 registry.BusNames,
                 (name, ex) => provider.GetRequiredKeyedService<RabbitMQBus>(name).UsesExchange(ex),
-                registry.GetDefaultBus(),
+                registry.DefaultBus,
                 busName,
                 exchange);
             return provider.GetRequiredKeyedService<RabbitMQBus>(selected);

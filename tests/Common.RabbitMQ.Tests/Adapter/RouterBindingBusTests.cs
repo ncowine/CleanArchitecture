@@ -125,7 +125,7 @@ namespace Common.RabbitMQ.Tests.Adapter
 
         private static string BusFor(RabbitMQServiceRouter router, SubscribeOptions options)
         {
-            MethodInfo method = typeof(RabbitMQServiceRouter).GetMethod("BusForBinding", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo method = typeof(RabbitMQServiceRouter).GetMethod("SelectBindingBus", BindingFlags.Instance | BindingFlags.NonPublic);
             try
             {
                 return (string)method.Invoke(router, new object[] { options });

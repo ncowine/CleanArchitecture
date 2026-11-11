@@ -27,13 +27,13 @@ namespace Common.RabbitMQ.Tests.Broker
         [Fact]
         public async Task CompetingConsumers_EachMessageIsHandledOnce()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 string service = NewServiceName();
                 CoreEndpoint first = bus.AddCoreEndpoint(service, Shared(prefetch: 1));
                 CoreEndpoint second = bus.AddCoreEndpoint(service, Shared(prefetch: 1));
                 ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Current, "compat-current");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 const int count = 20;
                 for (int id = 1; id <= count; id++)
@@ -41,10 +41,10 @@ namespace Common.RabbitMQ.Tests.Broker
                     sender.PublishRemote(new CompatPayload { Id = id, Name = "competing", UpdatedAt = DateTime.UtcNow });
                 }
 
-                await WaitFor(() => first.Received.Count + second.Received.Count >= count);
+                await WaitForAsync(() => first.Received.Count + second.Received.Count >= count);
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
 
-                List<int> ids = (await Drain(first.Received)).Concat(await Drain(second.Received)).Select(p => p.Id).ToList();
+                List<int> ids = (await DrainAsync(first.Received)).Concat(await DrainAsync(second.Received)).Select(p => p.Id).ToList();
                 Assert.Equal(Enumerable.Range(1, count), ids.OrderBy(id => id));
                 Assert.True(first.Received.Count > 0 && second.Received.Count > 0, $"Work was not shared: {first.Received.Count} and {second.Received.Count}.");
             }
@@ -53,12 +53,12 @@ namespace Common.RabbitMQ.Tests.Broker
         [Fact]
         public async Task Messages_WaitInTheQueue_WhileNoInstanceIsRunning()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 string service = NewServiceName();
                 ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Current, "compat-current");
                 CoreEndpoint before = bus.AddCoreEndpoint(service, Shared());
-                await bus.WaitUntilConnected(sender, before);
+                await bus.WaitUntilConnectedAsync(sender, before);
 
                 // The queue and its binding exist now; stop the only instance.
                 before.Dispose();
@@ -66,7 +66,7 @@ namespace Common.RabbitMQ.Tests.Broker
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
 
                 CoreEndpoint after = bus.AddCoreEndpoint(service, Shared());
-                CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await after.Received.Next(TestBus.Timeout));
+                CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await after.Received.NextAsync(TestBus.Timeout));
                 Assert.Equal(0, before.Received.Count);
             }
         }
@@ -76,52 +76,52 @@ namespace Common.RabbitMQ.Tests.Broker
         {
             // No echo drop on shared queues: a service that subscribes to what it publishes handles it (for example,
             // two modules of one process), whichever instance picks it up.
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 CoreEndpoint endpoint = bus.AddCoreEndpoint(NewServiceName(), Shared());
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 endpoint.PublishRemote(CompatPayloads.Golden());
 
-                CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await endpoint.Received.Next(TestBus.Timeout));
+                CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await endpoint.Received.NextAsync(TestBus.Timeout));
             }
         }
 
         [Fact]
         public async Task FailingHandler_IsRetried_UntilItSucceeds()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 CoreEndpoint endpoint = bus.AddCoreEndpoint(NewServiceName(), Shared(maxAttempts: 3));
                 endpoint.HandlerException = new InvalidOperationException("transient");
                 endpoint.FailTimes = 2;
                 ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Current, "compat-current");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 sender.PublishRemote(CompatPayloads.Golden());
 
-                CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await endpoint.Received.Next(TestBus.Timeout));
+                CompatibilityMatrixTests.AssertPayload(CompatPayloads.Golden(), await endpoint.Received.NextAsync(TestBus.Timeout));
                 Assert.Equal(3, endpoint.Attempts);
                 Assert.Equal(2, endpoint.Log.Entries.Count(e => e.Level == LogLevel.Warning && e.Message.Contains("retrying")));
-                Assert.Null(await bus.Get(endpoint.Bus.DeadLetterQueueName));
+                Assert.Null(await bus.GetAsync(endpoint.Bus.DeadLetterQueueName));
             }
         }
 
         [Fact]
         public async Task FailingHandler_IsDeadLettered_AfterMaxAttempts()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 CoreEndpoint endpoint = bus.AddCoreEndpoint(NewServiceName(), Shared(maxAttempts: 3));
                 endpoint.HandlerException = new InvalidOperationException("permanent");
                 ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Current, "compat-current");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 sender.PublishRemote(CompatPayloads.Golden());
 
-                CapturedMessage dead = await WaitForDeadLetter(bus, endpoint);
+                CapturedMessage dead = await WaitForDeadLetterAsync(bus, endpoint);
                 Assert.Equal(3, endpoint.Attempts);
-                LogEntry logged = await endpoint.Log.WaitFor(e => e.Level == LogLevel.Error, TestBus.Timeout);
+                LogEntry logged = await endpoint.Log.WaitForAsync(e => e.Level == LogLevel.Error, TestBus.Timeout);
                 Assert.NotNull(logged);
                 Assert.Same(endpoint.HandlerException, logged.Exception);
                 Assert.Equal(GoldenFile.Read("compat-payload.json"), dead.Body);
@@ -138,15 +138,15 @@ namespace Common.RabbitMQ.Tests.Broker
         [Fact]
         public async Task UndeserializableMessage_IsDeadLettered_WithoutRetrying()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 CoreEndpoint endpoint = bus.AddCoreEndpoint(NewServiceName(), Shared(maxAttempts: 3));
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 byte[] poison = Encoding.UTF8.GetBytes("not json");
-                await bus.PublishRaw(new Dictionary<string, object> { [WireHeaders.MessageType] = CoreEndpoint.WireName }, poison);
+                await bus.PublishRawAsync(new Dictionary<string, object> { [WireHeaders.MessageType] = CoreEndpoint.WireName }, poison);
 
-                Assert.Equal(poison, (await WaitForDeadLetter(bus, endpoint)).Body);
+                Assert.Equal(poison, (await WaitForDeadLetterAsync(bus, endpoint)).Body);
                 Assert.Equal(0, endpoint.Attempts);
             }
         }
@@ -154,18 +154,18 @@ namespace Common.RabbitMQ.Tests.Broker
         [Fact]
         public async Task UnknownMessage_IsDropped_NotDeadLettered()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 CoreEndpoint endpoint = bus.AddCoreEndpoint(NewServiceName(), Shared());
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 // The queue is bound to the whole exchange, so events nothing here handles are normal: not poison.
                 Dictionary<string, object> headers = new Dictionary<string, object> { [WireHeaders.MessageType] = "Something.Else" };
-                await bus.PublishRaw(headers, GoldenFile.Read("compat-payload.json"));
+                await bus.PublishRawAsync(headers, GoldenFile.Read("compat-payload.json"));
 
                 await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
-                Assert.Null(await bus.Get(endpoint.Bus.QueueName));
-                Assert.Null(await bus.Get(endpoint.Bus.DeadLetterQueueName));
+                Assert.Null(await bus.GetAsync(endpoint.Bus.QueueName));
+                Assert.Null(await bus.GetAsync(endpoint.Bus.DeadLetterQueueName));
                 Assert.Equal(0, endpoint.Attempts);
             }
         }
@@ -175,26 +175,26 @@ namespace Common.RabbitMQ.Tests.Broker
         {
             // RabbitMQ 4.x counts deliveries lost with a connection (a crashed process), not requeues. The delivery
             // limit is the guard for a message that takes the whole process down every time it is handled.
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 CoreEndpoint declaring = bus.AddCoreEndpoint(NewServiceName(), options =>
                 {
                     Shared()(options);
                     options.DeliveryLimit = 2;
                 });
-                await bus.WaitUntilConnected(declaring);
+                await bus.WaitUntilConnectedAsync(declaring);
                 declaring.Dispose();
 
-                await bus.PublishRaw(null, GoldenFile.Read("compat-payload.json"));
+                await bus.PublishRawAsync(null, GoldenFile.Read("compat-payload.json"));
 
                 // Keep crashing until the broker stops redelivering; dead-lettering happens asynchronously.
                 int crashes = 0;
-                while (crashes < 5 && await CrashWhileHandling(bus, declaring.Bus.QueueName))
+                while (crashes < 5 && await CrashWhileHandlingAsync(bus, declaring.Bus.QueueName))
                 {
                     crashes++;
                 }
 
-                CapturedMessage dead = await WaitForDeadLetter(bus, declaring);
+                CapturedMessage dead = await WaitForDeadLetterAsync(bus, declaring);
                 Assert.Equal("delivery_limit", dead.Headers["x-first-death-reason"]);
                 Assert.Equal(GoldenFile.Read("compat-payload.json"), dead.Body);
                 Assert.InRange(crashes, 1, 3);
@@ -203,7 +203,7 @@ namespace Common.RabbitMQ.Tests.Broker
 
         /// <summary>Takes one delivery and drops the connection without settling it, as a crashed process would.</summary>
         /// <returns>False when nothing was delivered within a few seconds.</returns>
-        private static async Task<bool> CrashWhileHandling(TestBus bus, string queueName)
+        private static async Task<bool> CrashWhileHandlingAsync(TestBus bus, string queueName)
         {
             using (IConnection connection = await bus.Broker.CreateConnectionFactory().CreateConnectionAsync("compat-crashing"))
             using (IChannel channel = await connection.CreateChannelAsync())
@@ -241,12 +241,12 @@ namespace Common.RabbitMQ.Tests.Broker
             return "svc-" + Guid.NewGuid().ToString("N");
         }
 
-        private static async Task<CapturedMessage> WaitForDeadLetter(TestBus bus, CoreEndpoint endpoint)
+        private static async Task<CapturedMessage> WaitForDeadLetterAsync(TestBus bus, CoreEndpoint endpoint)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             while (true)
             {
-                CapturedMessage dead = await bus.Get(endpoint.Bus.DeadLetterQueueName);
+                CapturedMessage dead = await bus.GetAsync(endpoint.Bus.DeadLetterQueueName);
                 if (dead != null)
                 {
                     return dead;
@@ -257,7 +257,7 @@ namespace Common.RabbitMQ.Tests.Broker
             }
         }
 
-        private static async Task WaitFor(Func<bool> condition)
+        private static async Task WaitForAsync(Func<bool> condition)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             while (!condition())
@@ -267,10 +267,10 @@ namespace Common.RabbitMQ.Tests.Broker
             }
         }
 
-        private static async Task<List<CompatPayload>> Drain(ReceivedPayloads received)
+        private static async Task<List<CompatPayload>> DrainAsync(ReceivedPayloads received)
         {
             List<CompatPayload> payloads = new List<CompatPayload>();
-            for (CompatPayload payload = await received.Next(TimeSpan.Zero); payload != null; payload = await received.Next(TimeSpan.Zero))
+            for (CompatPayload payload = await received.NextAsync(TimeSpan.Zero); payload != null; payload = await received.NextAsync(TimeSpan.Zero))
             {
                 payloads.Add(payload);
             }

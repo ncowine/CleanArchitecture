@@ -18,7 +18,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public async Task AddHandlers_OnUnknownBus_FailsAtStartup()
         {
             InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                StartUnreachable(messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, "Nowhere")));
+                StartUnreachableAsync(messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, "Nowhere")));
 
             Assert.Contains("CompatMessageHandler receives from unknown bus 'Nowhere'", error.Message);
         }
@@ -26,7 +26,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task PublishingAMessageWithoutWireName_Throws()
         {
-            await using (TestHost host = await StartUnreachable(messaging => { }))
+            await using (TestHost host = await StartUnreachableAsync(messaging => { }))
             {
                 IMessagePublisher publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
@@ -35,9 +35,9 @@ namespace Common.RabbitMQ.Tests.Hosting
             }
         }
 
-        private static Task<TestHost> StartUnreachable(Action<MessagingBuilder> configure)
+        private static Task<TestHost> StartUnreachableAsync(Action<MessagingBuilder> configure)
         {
-            return TestHost.Start("127.0.0.1", UnreachablePort, null, "compat.unreachable", "compat-unreachable", configure);
+            return TestHost.StartAsync("127.0.0.1", UnreachablePort, null, "compat.unreachable", "compat-unreachable", configure);
         }
     }
 }

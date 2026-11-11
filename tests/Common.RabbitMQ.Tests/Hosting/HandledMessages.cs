@@ -22,7 +22,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         /// <returns>The next handled message, or null when none arrives within <paramref name="timeout"/>.</returns>
-        public async Task<HandledMessage> Next(TimeSpan timeout)
+        public async Task<HandledMessage> NextAsync(TimeSpan timeout)
         {
             if (!await available.WaitAsync(timeout).ConfigureAwait(false))
             {

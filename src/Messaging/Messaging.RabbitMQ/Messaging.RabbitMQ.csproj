@@ -19,10 +19,11 @@
     <ProjectReference Include="..\Messaging.Abstractions\Messaging.Abstractions.csproj" />
   </ItemGroup>
 
-  <!-- BusSelection: the one rule for which bus binds a routing key, shared by both front doors. -->
+  <!-- Engine internals (BusSelection, MessageSerializer, WireHeaders) shared by both front doors and the tests. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Messaging.Hosting" />
     <InternalsVisibleTo Include="Common.RabbitMQ" />
+    <InternalsVisibleTo Include="Common.RabbitMQ.Tests" />
   </ItemGroup>
 
 </Project>

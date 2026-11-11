@@ -19,22 +19,22 @@ namespace Common.RabbitMQ.Tests.Broker
         [InlineData(CompatBuild.Core)]
         public async Task ConsumerQueue_IsExclusive_AndRemovedWithTheClient(CompatBuild build)
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint endpoint = bus.AddEndpoint(build, "Compat-Topology");
-                await bus.WaitUntilConnected();
+                await bus.WaitUntilConnectedAsync();
 
                 // 404 here would mean the queue name changed; 200 that the queue is no longer exclusive.
-                Assert.Equal(ResourceLocked, await bus.PassiveDeclare(endpoint.QueueName));
+                Assert.Equal(ResourceLocked, await bus.PassiveDeclareAsync(endpoint.QueueName));
 
                 endpoint.Dispose();
 
                 Stopwatch stopwatch = Stopwatch.StartNew();
-                ushort replyCode = await bus.PassiveDeclare(endpoint.QueueName);
+                ushort replyCode = await bus.PassiveDeclareAsync(endpoint.QueueName);
                 while (replyCode != NotFound && stopwatch.Elapsed < TestBus.Timeout)
                 {
                     await Task.Delay(100, TestContext.Current.CancellationToken);
-                    replyCode = await bus.PassiveDeclare(endpoint.QueueName);
+                    replyCode = await bus.PassiveDeclareAsync(endpoint.QueueName);
                 }
 
                 Assert.Equal(NotFound, replyCode);

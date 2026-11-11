@@ -33,7 +33,7 @@ namespace Messaging.Hosting
             {
                 List<RabbitMQBus> targets = buses.Count > 0
                     ? buses.Select(name => provider.GetRequiredKeyedService<RabbitMQBus>(name)).ToList()
-                    : new List<RabbitMQBus> { MessageSubscriber.BindingBus(provider, registry, null, key.Exchange) };
+                    : new List<RabbitMQBus> { MessageSubscriber.SelectBindingBus(provider, registry, null, key.Exchange) };
 
                 if (!string.IsNullOrWhiteSpace(key.Exchange))
                 {

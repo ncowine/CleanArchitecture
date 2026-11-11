@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace Messaging.RabbitMQ
 {
-    public static class MessageSerializer
+    internal static class MessageSerializer
     {
         public const string ContentType = "application/json";
 

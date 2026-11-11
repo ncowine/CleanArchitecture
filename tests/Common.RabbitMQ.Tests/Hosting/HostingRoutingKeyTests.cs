@@ -24,12 +24,12 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task SubscribingWithAKey_Receives_AndDisposingUnbinds()
         {
-            await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
+            await using (TestBus bus = await TestBus.CreateAsync())
+            await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
             {
-                await host.WaitUntilConnected();
+                await host.WaitUntilConnectedAsync();
                 IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
-                Assert.False(await bus.IsRoutable(Key));
+                Assert.False(await bus.IsRoutableAsync(Key));
 
                 Received<CompatMessage> received = new Received<CompatMessage>();
                 string receivedKey = null;
@@ -39,56 +39,56 @@ namespace Common.RabbitMQ.Tests.Hosting
                     received.Add(message);
                     return Task.CompletedTask;
                 }, new SubscribeOptions { RoutingKey = Key });
-                Assert.True(await bus.WaitUntilRoutable(Key, true));
+                Assert.True(await bus.WaitUntilRoutableAsync(Key, true));
 
-                await PublishGolden(bus, Key);
-                Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
+                await PublishGoldenAsync(bus, Key);
+                Assert.Equal(42, (await received.NextAsync(TestBus.Timeout))?.Id);
                 Assert.Equal(Key, receivedKey);
 
                 subscription.Dispose();
-                Assert.True(await bus.WaitUntilRoutable(Key, false));
-                Assert.True(await bus.IsRoutable(bus.ExchangeName));
+                Assert.True(await bus.WaitUntilRoutableAsync(Key, false));
+                Assert.True(await bus.IsRoutableAsync(bus.ExchangeName));
             }
         }
 
         [Fact]
         public async Task TheBinding_StaysUntilTheLastSubscriptionWithTheKeyGoes()
         {
-            await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
+            await using (TestBus bus = await TestBus.CreateAsync())
+            await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
             {
-                await host.WaitUntilConnected();
+                await host.WaitUntilConnectedAsync();
                 IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
 
                 // Two message types sharing one key: one binding.
                 IDisposable first = subscriber.Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { RoutingKey = Key });
                 IDisposable second = subscriber.Subscribe<KeyedMessage>(_ => { }, options: new SubscribeOptions { RoutingKey = Key });
-                Assert.True(await bus.WaitUntilRoutable(Key, true));
+                Assert.True(await bus.WaitUntilRoutableAsync(Key, true));
 
                 first.Dispose();
                 await Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken);
-                Assert.True(await bus.IsRoutable(Key));
+                Assert.True(await bus.IsRoutableAsync(Key));
 
                 second.Dispose();
-                Assert.True(await bus.WaitUntilRoutable(Key, false));
+                Assert.True(await bus.WaitUntilRoutableAsync(Key, false));
             }
         }
 
         [Fact]
         public async Task SubscribingBeforeStart_BindsWhenTheBusConnects()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
                     .AddBus(CompatBus.Name, options => HostingClientTests.Configure(options, bus))
                     .UseDefaultBus(CompatBus.Name))))
                 {
                     client.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { RoutingKey = Key });
-                    Assert.False(await bus.IsRoutable(Key));
+                    Assert.False(await bus.IsRoutableAsync(Key));
 
                     await client.StartAsync(TestContext.Current.CancellationToken);
 
-                    Assert.True(await bus.WaitUntilRoutable(Key, true));
+                    Assert.True(await bus.WaitUntilRoutableAsync(Key, true));
                 }
             }
         }
@@ -96,24 +96,24 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public async Task AHandlersRoutingKey_IsBoundAtStartup()
         {
-            await using (TestBus bus = await TestBus.Create())
-            await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => messaging.AddHandlers(typeof(KeyedMessageHandler).Assembly)))
+            await using (TestBus bus = await TestBus.CreateAsync())
+            await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => messaging.AddHandlers(typeof(KeyedMessageHandler).Assembly)))
             {
-                Assert.True(await bus.WaitUntilRoutable(KeyedMessageHandler.Key, true));
+                Assert.True(await bus.WaitUntilRoutableAsync(KeyedMessageHandler.Key, true));
             }
         }
 
         [Fact]
         public async Task AKeyOnAnExchangeNoBusUses_IsRefused_AndTheBusKeepsReceiving()
         {
-            await using (TestBus bus = await TestBus.Create())
+            await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.Start(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
                 {
-                    await bus.WaitUntilConnected();
-                    await host.WaitUntilConnected();
+                    await bus.WaitUntilConnectedAsync();
+                    await host.WaitUntilConnectedAsync();
                     IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
 
                     Assert.Throws<InvalidOperationException>(() =>
@@ -122,7 +122,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                     Received<CompatMessage> received = new Received<CompatMessage>();
                     subscriber.Subscribe<CompatMessage>(received.Add);
                     legacy.PublishRemote(CompatPayloads.Golden());
-                    Assert.Equal(42, (await received.Next(TestBus.Timeout))?.Id);
+                    Assert.Equal(42, (await received.NextAsync(TestBus.Timeout))?.Id);
                     Assert.True(host.Bus.IsConsumerConnected);
                 }
             }
@@ -141,10 +141,10 @@ namespace Common.RabbitMQ.Tests.Hosting
             }
         }
 
-        private static Task PublishGolden(TestBus bus, string routingKey)
+        private static Task PublishGoldenAsync(TestBus bus, string routingKey)
         {
             Dictionary<string, object> headers = new Dictionary<string, object> { [WireHeaders.MessageType] = "Compat.Events.CompatEvent" };
-            return bus.PublishRaw(headers, GoldenFile.Read("compat-payload.json"), routingKey);
+            return bus.PublishRawAsync(headers, GoldenFile.Read("compat-payload.json"), routingKey);
         }
     }
 }

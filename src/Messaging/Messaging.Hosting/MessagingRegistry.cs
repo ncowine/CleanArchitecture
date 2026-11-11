@@ -23,11 +23,6 @@ namespace Messaging.Hosting
             }
         }
 
-        public string GetDefaultBus()
-        {
-            return DefaultBus;
-        }
-
         public void AddHandler(HandlerRegistration handler)
         {
             handlers.Add(handler);

@@ -16,7 +16,7 @@ namespace Common.RabbitMQ.Tests.Broker
     /// </summary>
     public sealed class BrokerSettings
     {
-        private static readonly Lazy<Task<Exception>> probe = new Lazy<Task<Exception>>(Probe);
+        private static readonly Lazy<Task<Exception>> probe = new Lazy<Task<Exception>>(ProbeAsync);
 
         private BrokerSettings()
         {
@@ -42,7 +42,7 @@ namespace Common.RabbitMQ.Tests.Broker
         private static bool IsRequired => Environment.GetEnvironmentVariable("RABBITMQ_TESTS_REQUIRED") == "1";
 
         /// <summary>Skips the calling test when there is no broker, or fails it when a broker is required.</summary>
-        public static async Task<BrokerSettings> Require()
+        public static async Task<BrokerSettings> RequireAsync()
         {
             Exception error = await probe.Value.ConfigureAwait(false);
             if (error != null)
@@ -90,7 +90,7 @@ namespace Common.RabbitMQ.Tests.Broker
             };
         }
 
-        private static async Task<Exception> Probe()
+        private static async Task<Exception> ProbeAsync()
         {
             try
             {
