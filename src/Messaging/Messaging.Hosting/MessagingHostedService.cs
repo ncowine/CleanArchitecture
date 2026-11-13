@@ -41,7 +41,7 @@ namespace Messaging.Hosting
             foreach (string busName in registry.BusNames)
             {
                 RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>(busName);
-                bus.Start(Array.Empty<MessageRegistration>());
+                bus.Start();
                 started.Add(bus);
             }
 

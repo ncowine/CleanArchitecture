@@ -93,7 +93,7 @@ namespace Messaging.RabbitMQ
                 || options.Subscriptions.Any(s => string.Equals(s.Exchange, exchange, StringComparison.Ordinal));
         }
 
-        public void Start(IEnumerable<MessageRegistration> registrations)
+        public void Start()
         {
             EnsureNotDisposed();
 
@@ -103,11 +103,6 @@ namespace Messaging.RabbitMQ
             }
 
             started = true;
-
-            foreach (MessageRegistration registration in registrations ?? Array.Empty<MessageRegistration>())
-            {
-                this.registrations[registration.WireName] = registration;
-            }
 
             CancellationToken token = cancellation.Token;
 
@@ -490,7 +485,7 @@ namespace Messaging.RabbitMQ
 
                     try
                     {
-                        await dispatcher.DispatchAsync(registration, message, context, args.CancellationToken).ConfigureAwait(false);
+                        await dispatcher.DispatchAsync(message, context, args.CancellationToken).ConfigureAwait(false);
                         return MessageSettlement.Ack;
                     }
                     catch (Exception ex) when (attempt < attempts && !token.IsCancellationRequested)

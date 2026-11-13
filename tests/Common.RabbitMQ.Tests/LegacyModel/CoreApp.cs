@@ -74,7 +74,12 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         public CoreApp Start()
         {
             bus = bus ?? CreateBus();
-            bus.Start(registrations);
+            foreach (MessageRegistration registration in registrations)
+            {
+                bus.Subscribe(registration);
+            }
+
+            bus.Start();
             return this;
         }
 
@@ -84,10 +89,10 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             bus.Enqueue(wireName, message, routingKey);
         }
 
-        public Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
+        public Task DispatchAsync(object message, MessageContext context, CancellationToken cancellationToken)
         {
             contexts.Enqueue(context);
-            recorders[registration.WireName](message);
+            recorders[context.WireName](message);
             return Task.CompletedTask;
         }
 

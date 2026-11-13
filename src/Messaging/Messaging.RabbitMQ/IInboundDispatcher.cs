@@ -5,6 +5,6 @@ namespace Messaging.RabbitMQ
 {
     public interface IInboundDispatcher
     {
-        Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken);
+        Task DispatchAsync(object message, MessageContext context, CancellationToken cancellationToken);
     }
 }

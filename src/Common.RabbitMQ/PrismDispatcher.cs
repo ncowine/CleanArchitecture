@@ -18,11 +18,11 @@ namespace Common.RabbitMQ
             this.registry = registry;
         }
 
-        public Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
+        public Task DispatchAsync(object message, MessageContext context, CancellationToken cancellationToken)
         {
-            if (!registry.TryGet(registration.WireName, out RemoteEventDescriptor descriptor))
+            if (!registry.TryGet(context.WireName, out RemoteEventDescriptor descriptor))
             {
-                throw new InvalidOperationException($"No remote event named '{registration.WireName}'.");
+                throw new InvalidOperationException($"No remote event named '{context.WireName}'.");
             }
 
             descriptor.PublishLocal(eventAggregator, message);

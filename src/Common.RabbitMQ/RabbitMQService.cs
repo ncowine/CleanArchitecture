@@ -74,7 +74,7 @@ namespace Common.RabbitMQ
 
             int subscribedEvents = RemoteEventSubscriptions.AddRunningService(this);
 
-            bus.Start(new List<MessageRegistration>());
+            bus.Start();
 
             logger.LogInformation("[{Bus}] Initialized with {Count} event(s) on {Host}:{Port}{VirtualHost} exchange '{Exchange}'.",
                 config.BusName, subscribedEvents, config.HostName, config.Port, FormatVirtualHost(config.VirtualHost), config.ExchangeName);

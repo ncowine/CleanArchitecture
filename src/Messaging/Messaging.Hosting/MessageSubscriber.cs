@@ -57,7 +57,7 @@ namespace Messaging.Hosting
             return Add(new MessageSubscription(typeof(TMessage), options, (message, context, token) => handler((TMessage)message, context, token)));
         }
 
-        public async Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
+        public async Task DispatchAsync(object message, MessageContext context, CancellationToken cancellationToken)
         {
             MessageSubscription[] current;
             if (!Volatile.Read(ref subscriptions).TryGetValue(message.GetType(), out current))
