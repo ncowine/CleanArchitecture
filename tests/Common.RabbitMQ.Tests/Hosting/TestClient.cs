@@ -59,10 +59,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             }
 
             started = true;
-            foreach (IHostedService hostedService in hostedServices)
-            {
-                await hostedService.StartAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await HostedServices.StartAsync(hostedServices, cancellationToken).ConfigureAwait(false);
         }
 
         public async Task StopAsync(CancellationToken cancellationToken = default)
@@ -73,10 +70,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             }
 
             started = false;
-            foreach (IHostedService hostedService in hostedServices.AsEnumerable().Reverse())
-            {
-                await hostedService.StopAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await HostedServices.StopAsync(hostedServices, cancellationToken).ConfigureAwait(false);
         }
 
         public void Dispose()

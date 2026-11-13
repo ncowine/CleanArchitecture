@@ -9,7 +9,12 @@ namespace Messaging.Hosting
 {
     public static class MessagingServiceCollectionExtensions
     {
-        public static IServiceCollection AddMessaging(this IServiceCollection services, IConfiguration configuration, Action<MessagingBuilder> configure = null)
+        /// <summary>
+        /// Adds the buses in <c>Messaging:Buses</c>, publishing through <see cref="IMessagePublisher"/> and receiving
+        /// through <see cref="IMessageSubscriber"/>. The buses start after every hosted service has started, so subscribe
+        /// in a hosted service's <c>StartAsync</c> or before the host runs.
+        /// </summary>
+        public static IServiceCollection AddMessaging(this IServiceCollection services, IConfiguration configuration)
         {
             if (configuration == null)
             {
@@ -29,7 +34,6 @@ namespace Messaging.Hosting
                 }
 
                 messaging.UseDefaultBus(configuration["Messaging:DefaultBus"]);
-                configure?.Invoke(messaging);
             });
         }
 
@@ -51,7 +55,6 @@ namespace Messaging.Hosting
             services.AddSingleton<IMessagePublisher>(provider => provider.GetRequiredService<MessagePublisher>());
             services.AddSingleton<MessageSubscriber>();
             services.AddSingleton<IMessageSubscriber>(provider => provider.GetRequiredService<MessageSubscriber>());
-            services.AddSingleton<IMessageSink>(provider => provider.GetRequiredService<MessageSubscriber>());
 
             configure(new MessagingBuilder(services, registry));
 
@@ -61,12 +64,11 @@ namespace Messaging.Hosting
 
         internal static RabbitMQBus CreateBus(IServiceProvider provider, string name)
         {
-            MessagingRegistry registry = provider.GetRequiredService<MessagingRegistry>();
             RabbitMQBusOptions options = provider.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get(name);
 
             return new RabbitMQBus(
                 options,
-                new ScopedDispatcher(provider.GetRequiredService<IServiceScopeFactory>(), registry, name),
+                provider.GetRequiredService<MessageSubscriber>(),
                 provider.GetService<ILogger<RabbitMQBus>>());
         }
     }

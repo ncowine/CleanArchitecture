@@ -24,7 +24,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public async Task OnlyTheBaselineHeadersAreSent_ToTheOnlyBus()
         {
             await using (TestBus bus = await TestBus.CreateAsync())
-            await using (TestHost host = await TestHost.StartAsync(bus, "compat-client", messaging => { }))
+            await using (TestHost host = await TestHost.StartAsync(bus, "compat-client"))
             {
                 await host.WaitUntilConnectedAsync();
                 WireCapture capture = await bus.CaptureAsync();
@@ -43,7 +43,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public async Task PublishOptions_RoutingKey_OverridesTheExchangeName()
         {
             await using (TestBus bus = await TestBus.CreateAsync())
-            await using (TestHost host = await TestHost.StartAsync(bus, "compat-client", messaging => { }))
+            await using (TestHost host = await TestHost.StartAsync(bus, "compat-client"))
             {
                 await host.WaitUntilConnectedAsync();
                 WireCapture capture = await bus.CaptureAsync();

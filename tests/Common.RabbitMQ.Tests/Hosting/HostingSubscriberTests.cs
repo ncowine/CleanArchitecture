@@ -29,7 +29,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app"))
                 {
                     Received<CompatMessage> received = new Received<CompatMessage>();
                     IDisposable subscription = host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
@@ -57,7 +57,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app"))
                 {
                     await bus.WaitUntilConnectedAsync();
                     await host.WaitUntilConnectedAsync();
@@ -104,7 +104,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app"))
                 {
                     RecordingSynchronizationContext uiContext = new RecordingSynchronizationContext();
                     Received<CompatMessage> received = new Received<CompatMessage>();
@@ -127,7 +127,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app"))
                 {
                     IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
                     string order = "";
@@ -161,7 +161,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 await using (TestHost host = await TestHost.StartAsync(
                     bus,
                     service,
-                    messaging => { },
+                    null,
                     options =>
                     {
                         options.QueueMode = QueueMode.Shared;

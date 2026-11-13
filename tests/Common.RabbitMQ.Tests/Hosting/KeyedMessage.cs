@@ -2,7 +2,7 @@ using Messaging;
 
 namespace Common.RabbitMQ.Tests.Hosting
 {
-    /// <summary>Received by <see cref="KeyedMessageHandler"/>, whose <see cref="RoutingKeyAttribute"/> binds its key.</summary>
+    /// <summary>A second message type, for subscriptions that share a routing key in <see cref="HostingRoutingKeyTests"/>.</summary>
     [Message("Compat.Events.KeyedMessage")]
     public class KeyedMessage
     {

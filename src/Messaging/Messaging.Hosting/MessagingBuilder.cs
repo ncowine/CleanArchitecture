@@ -1,20 +1,13 @@
 using System;
-using System.Linq;
 using System.Reflection;
-using System.Threading;
-using System.Threading.Tasks;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Messaging.Hosting
 {
-    public sealed class MessagingBuilder
+    internal sealed class MessagingBuilder
     {
-        private static readonly MethodInfo AddHandlerMethod =
-            typeof(MessagingBuilder).GetMethod(nameof(AddHandler), BindingFlags.NonPublic | BindingFlags.Instance);
-
         internal MessagingBuilder(IServiceCollection services, MessagingRegistry registry)
         {
             Services = services;
@@ -63,39 +56,6 @@ namespace Messaging.Hosting
 
             Registry.DefaultBus = name;
             return this;
-        }
-
-        public MessagingBuilder AddHandlers(Assembly assembly, params string[] busNames)
-        {
-            if (assembly == null)
-            {
-                throw new ArgumentNullException(nameof(assembly));
-            }
-
-            foreach (Type handlerType in assembly.GetTypes().Where(t => t.IsClass && !t.IsAbstract && !t.ContainsGenericParameters))
-            {
-                foreach (Type handlerInterface in handlerType.GetInterfaces().Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IMessageHandler<>)))
-                {
-                    AddHandlerMethod
-                        .MakeGenericMethod(handlerInterface.GetGenericArguments()[0], handlerType)
-                        .Invoke(this, new object[] { busNames ?? new string[0] });
-                }
-            }
-
-            return this;
-        }
-
-        private void AddHandler<TMessage, THandler>(string[] busNames)
-            where THandler : class, IMessageHandler<TMessage>
-        {
-            Services.TryAddScoped<THandler>();
-            Registry.AddHandler(new HandlerRegistration(typeof(TMessage), typeof(THandler), busNames, InvokeAsync<TMessage, THandler>));
-        }
-
-        private static Task InvokeAsync<TMessage, THandler>(object handler, object message, MessageContext context, CancellationToken cancellationToken)
-            where THandler : IMessageHandler<TMessage>
-        {
-            return ((THandler)handler).HandleAsync((TMessage)message, context, cancellationToken);
         }
 
         private void AddBus(string name)

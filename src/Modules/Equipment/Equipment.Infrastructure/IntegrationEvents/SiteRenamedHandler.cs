@@ -11,9 +11,10 @@ namespace Equipment.Infrastructure.IntegrationEvents;
 /// </summary>
 /// <remarks>
 /// A repeat is harmless: it just refreshes again. On a shared queue only one API instance gets the message, so with
-/// several instances the others keep the old name until their caches expire.
+/// several instances the others keep the old name until their caches expire. Subscribed by
+/// <see cref="EquipmentSubscriptions"/>.
 /// </remarks>
-public sealed partial class SiteRenamedHandler : IMessageHandler<SiteRenamed>
+public sealed partial class SiteRenamedHandler
 {
     private readonly IReferenceDataCache _referenceData;
     private readonly SiteEquipmentSummaryCache _summaries;

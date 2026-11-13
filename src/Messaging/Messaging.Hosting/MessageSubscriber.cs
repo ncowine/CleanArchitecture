@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Messaging.Hosting
 {
-    internal sealed class MessageSubscriber : IMessageSubscriber, IMessageSink
+    internal sealed class MessageSubscriber : IMessageSubscriber, IInboundDispatcher
     {
         private readonly IServiceProvider provider;
         private readonly MessagingRegistry registry;
@@ -57,7 +57,7 @@ namespace Messaging.Hosting
             return Add(new MessageSubscription(typeof(TMessage), options, (message, context, token) => handler((TMessage)message, context, token)));
         }
 
-        public async Task DeliverAsync(object message, MessageContext context, CancellationToken cancellationToken)
+        public async Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
         {
             MessageSubscription[] current;
             if (!Volatile.Read(ref subscriptions).TryGetValue(message.GetType(), out current))
@@ -75,10 +75,7 @@ namespace Messaging.Hosting
         {
             string wireName = WireNames.Get(messageType);
 
-            Type other = wireNameOwners.TryGetValue(wireName, out Type owner)
-                ? owner
-                : registry.BusNames.SelectMany(registry.GetMessageRegistrations).FirstOrDefault(r => r.WireName == wireName)?.MessageType;
-            if (other != null && other != messageType)
+            if (wireNameOwners.TryGetValue(wireName, out Type other) && other != messageType)
             {
                 throw new InvalidOperationException($"{messageType.Name} and {other.Name} both use the wire name '{wireName}'.");
             }
@@ -107,10 +104,7 @@ namespace Messaging.Hosting
             string wireName = WireNames.Get(messageType);
             foreach (string busName in registry.BusNames)
             {
-                if (!registry.GetMessageRegistrations(busName).Any(r => r.WireName == wireName))
-                {
-                    provider.GetRequiredKeyedService<RabbitMQBus>(busName).Unsubscribe(wireName);
-                }
+                provider.GetRequiredKeyedService<RabbitMQBus>(busName).Unsubscribe(wireName);
             }
         }
 

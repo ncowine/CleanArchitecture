@@ -13,7 +13,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 {
     /// <summary>
     /// A server built with Messaging.Hosting against the legacy builds over a real broker (ADR 0001, delivery plan
-    /// step 3): plain-class contracts, System.Text.Json bodies, and scoped async handlers.
+    /// step 3): plain-class contracts, System.Text.Json bodies, and async subscribers that open a scope per message.
     /// </summary>
     public class HostingCompatibilityTests
     {
@@ -28,7 +28,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 ICompatEndpoint current = bus.AddEndpoint(CompatBuild.Current, "compat-current");
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server"))
                 {
                     await bus.WaitUntilConnectedAsync();
                     await host.WaitUntilConnectedAsync();
@@ -59,7 +59,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 ICompatEndpoint current = bus.AddEndpoint(CompatBuild.Current, "compat-current");
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name)))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", CompatMessageHandler.Subscribe))
                 {
                     await bus.WaitUntilConnectedAsync();
                     await host.WaitUntilConnectedAsync();
@@ -85,36 +85,13 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task AddHandlers_FindsTheAssemblysHandlers_OnTheOnlyBus()
-        {
-            await using (TestBus bus = await TestBus.CreateAsync())
-            {
-                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
-
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly)))
-                {
-                    await bus.WaitUntilConnectedAsync();
-                    await host.WaitUntilConnectedAsync();
-
-                    legacy.PublishRemote(CompatPayloads.Golden());
-
-                    HandledMessage handled = await host.Handled.NextAsync(TestBus.Timeout);
-                    Assert.NotNull(handled);
-                    Assert.Equal(CompatPayloads.Golden().Id, handled.Message.Id);
-                    Assert.Equal(CompatBus.Name, handled.Context.BusName);
-                }
-            }
-        }
-
-        [Fact]
         public async Task HandlerRepublishes_AndDropsItsOwnCopy()
         {
             await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => messaging
-                    .AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name)))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", CompatMessageHandler.Subscribe))
                 {
                     await bus.WaitUntilConnectedAsync();
                     await host.WaitUntilConnectedAsync();
@@ -148,7 +125,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name)))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-server", CompatMessageHandler.Subscribe))
                 {
                     await bus.WaitUntilConnectedAsync();
                     await host.WaitUntilConnectedAsync();

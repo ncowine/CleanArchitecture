@@ -68,6 +68,11 @@ public static class DependencyInjection
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(EquipmentEventsBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
 
+        // Integration events from other applications, received through IMessageSubscriber when messaging is configured.
+        services.AddScoped<EquipmentDisposedHandler>();
+        services.AddScoped<SiteRenamedHandler>();
+        services.AddHostedService<EquipmentSubscriptions>();
+
         return services;
     }
 }

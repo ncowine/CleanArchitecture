@@ -1,15 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using Messaging.RabbitMQ;
 
 namespace Messaging.Hosting
 {
     internal sealed class MessagingRegistry
     {
         private readonly HashSet<string> buses = new HashSet<string>(StringComparer.Ordinal);
-        private readonly List<HandlerRegistration> handlers = new List<HandlerRegistration>();
 
         public IReadOnlyCollection<string> BusNames => buses;
 
@@ -23,94 +19,16 @@ namespace Messaging.Hosting
             }
         }
 
-        public void AddHandler(HandlerRegistration handler)
-        {
-            handlers.Add(handler);
-        }
-
-        public IEnumerable<(RoutingKeyAttribute Key, IReadOnlyCollection<string> Buses)> GetHandlerRoutingKeys()
-        {
-            return handlers
-                .GroupBy(h => h.HandlerType)
-                .SelectMany(g => g.Key.GetCustomAttributes<RoutingKeyAttribute>(inherit: false)
-                    .Select(a => (a, HandlerBuses(g))));
-        }
-
-        private static IReadOnlyCollection<string> HandlerBuses(IEnumerable<HandlerRegistration> registrations)
-        {
-            return registrations.Any(r => r.Buses.Count == 0)
-                ? (IReadOnlyCollection<string>)new string[0]
-                : registrations.SelectMany(r => r.Buses).Distinct(StringComparer.Ordinal).ToList();
-        }
-
-        public IEnumerable<HandlerRegistration> GetHandlers(Type messageType, string busName)
-        {
-            return handlers.Where(h => h.MessageType == messageType && Receives(h.Buses, busName));
-        }
-
-        public IEnumerable<MessageRegistration> GetMessageRegistrations(string busName)
-        {
-            return handlers
-                .Where(h => Receives(h.Buses, busName))
-                .Select(h => h.MessageType)
-                .Distinct()
-                .Select(t => new MessageRegistration(WireNames.Get(t), t));
-        }
-
         public void Validate()
         {
-            List<string> errors = new List<string>();
-
             if (DefaultBus == null && buses.Count > 0)
             {
-                errors.Add("No default bus: set Messaging:DefaultBus in the configuration.");
-            }
-            else if (DefaultBus != null && !buses.Contains(DefaultBus))
-            {
-                errors.Add($"The default bus '{DefaultBus}' is not configured.");
+                throw new InvalidOperationException("Messaging is misconfigured:\nNo default bus: set Messaging:DefaultBus in the configuration.");
             }
 
-            foreach (HandlerRegistration handler in handlers)
+            if (DefaultBus != null && !buses.Contains(DefaultBus))
             {
-                errors.AddRange(UnknownBuses(handler.Buses).Select(b => $"{handler.HandlerType.Name} receives from unknown bus '{b}'."));
-                errors.AddRange(MissingWireName(handler.MessageType));
-            }
-
-            foreach (string busName in buses)
-            {
-                IEnumerable<string> duplicates = GetMessageRegistrations(busName)
-                    .GroupBy(r => r.WireName)
-                    .Where(g => g.Count() > 1)
-                    .Select(g => $"Bus '{busName}' has several message types named '{g.Key}': {string.Join(", ", g.Select(r => r.MessageType.Name))}.");
-                errors.AddRange(duplicates);
-            }
-
-            if (errors.Count > 0)
-            {
-                throw new InvalidOperationException("Messaging is misconfigured:\n" + string.Join("\n", errors.Distinct()));
-            }
-        }
-
-        private static bool Receives(IReadOnlyCollection<string> buses, string busName)
-        {
-            return buses.Count == 0 || buses.Contains(busName, StringComparer.Ordinal);
-        }
-
-        private IEnumerable<string> UnknownBuses(IEnumerable<string> busNames)
-        {
-            return busNames.Where(b => !buses.Contains(b));
-        }
-
-        private static IEnumerable<string> MissingWireName(Type messageType)
-        {
-            try
-            {
-                WireNames.Get(messageType);
-                return Enumerable.Empty<string>();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return new[] { ex.Message };
+                throw new InvalidOperationException($"Messaging is misconfigured:\nThe default bus '{DefaultBus}' is not configured.");
             }
         }
     }

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Server hosting for the core: DI, options, keyed buses, routing, scoped async handlers and System.Text.Json
+    Server hosting for the core: DI, options, keyed buses, routing, IMessagePublisher/IMessageSubscriber and System.Text.Json
     (ADR 0001, section 1). Never loaded by legacy apps. Microsoft.Extensions 8.0 so a net8 client
     can opt in without being forced up.
   -->
