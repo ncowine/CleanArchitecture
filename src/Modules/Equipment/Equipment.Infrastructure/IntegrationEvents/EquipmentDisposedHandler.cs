@@ -13,10 +13,9 @@ namespace Equipment.Infrastructure.IntegrationEvents;
 /// <remarks>
 /// Delivery is at least once. A repeat is harmless: deleting equipment that's already gone returns false and changes
 /// nothing. Throwing fails the message, which the API's shared queue retries and then dead-letters.
-/// The net472 POC sends disposals with the "equipment" routing key, so the attribute binds that key on its exchange.
+/// Subscribed, with the routing key it needs, by <see cref="EquipmentSubscriptions"/>.
 /// </remarks>
-[RoutingKey("equipment", Exchange = "Poc.Net472")]
-public sealed partial class EquipmentDisposedHandler : IMessageHandler<EquipmentDisposed>
+public sealed partial class EquipmentDisposedHandler
 {
     private readonly ISender _sender;
     private readonly ILogger<EquipmentDisposedHandler> _logger;

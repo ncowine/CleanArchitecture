@@ -25,7 +25,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public async Task SubscribingWithAKey_Receives_AndDisposingUnbinds()
         {
             await using (TestBus bus = await TestBus.CreateAsync())
-            await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
+            await using (TestHost host = await TestHost.StartAsync(bus, "compat-app"))
             {
                 await host.WaitUntilConnectedAsync();
                 IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
@@ -55,7 +55,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         public async Task TheBinding_StaysUntilTheLastSubscriptionWithTheKeyGoes()
         {
             await using (TestBus bus = await TestBus.CreateAsync())
-            await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
+            await using (TestHost host = await TestHost.StartAsync(bus, "compat-app"))
             {
                 await host.WaitUntilConnectedAsync();
                 IMessageSubscriber subscriber = host.Services.GetRequiredService<IMessageSubscriber>();
@@ -79,9 +79,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.CreateAsync())
             {
-                using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                    .AddBus(CompatBus.Name, options => HostingClientTests.Configure(options, bus))
-                    .UseDefaultBus(CompatBus.Name))))
+                using (TestClient client = TestClient.Create(services => services.AddTestMessaging(CompatBus.Name, (CompatBus.Name, options => HostingClientTests.Configure(options, bus)))))
                 {
                     client.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { RoutingKey = Key });
                     Assert.False(await bus.IsRoutableAsync(Key));
@@ -94,23 +92,13 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task AHandlersRoutingKey_IsBoundAtStartup()
-        {
-            await using (TestBus bus = await TestBus.CreateAsync())
-            await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => messaging.AddHandlers(typeof(KeyedMessageHandler).Assembly)))
-            {
-                Assert.True(await bus.WaitUntilRoutableAsync(KeyedMessageHandler.Key, true));
-            }
-        }
-
-        [Fact]
         public async Task AKeyOnAnExchangeNoBusUses_IsRefused_AndTheBusKeepsReceiving()
         {
             await using (TestBus bus = await TestBus.CreateAsync())
             {
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
 
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app", messaging => { }))
+                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app"))
                 {
                     await bus.WaitUntilConnectedAsync();
                     await host.WaitUntilConnectedAsync();
@@ -131,9 +119,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void SubscribeOptions_WithoutAKey_IsRefused()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("Only", options => { options.ExchangeName = "only"; options.HostName = "127.0.0.1"; options.Port = 1; })
-                .UseDefaultBus("Only"))))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("Only", ("Only", options => { options.ExchangeName = "only"; options.HostName = "127.0.0.1"; options.Port = 1; }))))
             {
                 IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
 

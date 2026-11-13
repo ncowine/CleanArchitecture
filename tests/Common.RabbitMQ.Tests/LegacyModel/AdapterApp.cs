@@ -32,7 +32,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             };
             configure?.Invoke(config);
 
-            service = new RabbitMQService(eventAggregator, new RemoteEventRegistry(), NullLogger.Instance);
+            service = new RabbitMQService(eventAggregator, NullLogger.Instance);
             service.Init(config);
             ExchangeName = exchangeName;
         }

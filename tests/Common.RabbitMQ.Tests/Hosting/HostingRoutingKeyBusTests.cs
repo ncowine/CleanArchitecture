@@ -41,10 +41,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void TheBusOption_WithAnExchangeThatBusDoesNotUse_IsRefused()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("First", options => Unreachable(options, "first"))
-                .AddBus("Second", options => Unreachable(options, "second"))
-                .UseDefaultBus("First"))))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("First", ("First", options => Unreachable(options, "first")), ("Second", options => Unreachable(options, "second")))))
             {
                 IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
 
@@ -58,9 +55,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void AnExchangeNoBusUses_IsRefused_AndNothingIsLeftReceiving()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("Only", options => Unreachable(options, "only"))
-                .UseDefaultBus("Only"))))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("Only", ("Only", options => Unreachable(options, "only")))))
             {
                 IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
 
@@ -76,10 +71,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void AnExchangeOnSeveralBuses_NeedsTheBusOption()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("First", options => { Unreachable(options, "first"); options.Subscriptions.Add(new SubscriptionOptions { Exchange = "OldApp" }); })
-                .AddBus("Second", options => { Unreachable(options, "second"); options.Subscriptions.Add(new SubscriptionOptions { Exchange = "OldApp" }); })
-                .UseDefaultBus("First"))))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("First", ("First", options => { Unreachable(options, "first"); options.Subscriptions.Add(new SubscriptionOptions { Exchange = "OldApp" }); }), ("Second", options => { Unreachable(options, "second"); options.Subscriptions.Add(new SubscriptionOptions { Exchange = "OldApp" }); }))))
             {
                 IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
 
@@ -94,9 +86,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void AnUnknownBus_IsRefused()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("Only", options => Unreachable(options, "only"))
-                .UseDefaultBus("Only"))))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("Only", ("Only", options => Unreachable(options, "only")))))
             {
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => client.Services.GetRequiredService<IMessageSubscriber>()
                     .Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { Bus = "Mistyped", RoutingKey = Key }));
@@ -107,10 +97,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         /// <summary>Bus First owns <paramref name="first"/>'s exchange and is the default; bus Second owns <paramref name="second"/>'s.</summary>
         private static TestClient TwoBuses(TestBus first, TestBus second)
         {
-            return TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("First", options => HostingClientTests.Configure(options, first))
-                .AddBus("Second", options => HostingClientTests.Configure(options, second))
-                .UseDefaultBus("First")));
+            return TestClient.Create(services => services.AddTestMessaging("First", ("First", options => HostingClientTests.Configure(options, first)), ("Second", options => HostingClientTests.Configure(options, second))));
         }
 
         /// <summary>Subscribes with <paramref name="options"/> and returns the buses each received message came on.</summary>

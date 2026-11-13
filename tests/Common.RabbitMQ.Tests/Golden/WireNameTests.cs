@@ -1,4 +1,4 @@
-using System.Linq;
+using System;
 using Common.Events;
 using Xunit;
 
@@ -17,27 +17,19 @@ namespace Common.RabbitMQ.Tests.Golden
             Assert.Equal("source-id", MessageHeaders.SourceId);
         }
 
-        [Fact]
-        public void CommonEvents_WireNames()
+        [Theory]
+        [InlineData(typeof(EmployeeCacheRefreshed), "Common.Events.EmployeeCacheRefreshed")]
+        [InlineData(typeof(EmployeeSaved), "Common.Events.EmployeeSaved")]
+        [InlineData(typeof(EmployeeUpdated), "Common.Events.EmployeeUpdated")]
+        public void CommonEvents_WireNames(Type eventType, string wireName)
         {
-            RemoteEventRegistry registry = new RemoteEventRegistry(typeof(EmployeeUpdated).Assembly);
-
-            string[] expected =
-            {
-                "Common.Events.EmployeeCacheRefreshed",
-                "Common.Events.EmployeeSaved",
-                "Common.Events.EmployeeUpdated",
-            };
-
-            Assert.Equal(expected, registry.Events.Select(e => e.EventName).OrderBy(n => n, System.StringComparer.Ordinal));
+            Assert.Equal(wireName, new RemoteEventRegistry().FindOrAdd(eventType).EventName);
         }
 
         [Fact]
         public void LocalEvents_AreNotRemote()
         {
-            RemoteEventRegistry registry = new RemoteEventRegistry(typeof(EmployeeSelected).Assembly);
-
-            Assert.False(registry.TryGet(typeof(EmployeeSelected), out RemoteEventDescriptor descriptor));
+            Assert.Null(new RemoteEventRegistry().FindOrAdd(typeof(EmployeeSelected)));
         }
     }
 }

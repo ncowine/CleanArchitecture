@@ -22,7 +22,12 @@ namespace Common.RabbitMQ
         private RabbitMQBus bus;
         private bool disposed;
 
-        public RabbitMQService(IEventAggregator eventAggregator, RemoteEventRegistry registry, ILogger logger)
+        public RabbitMQService(IEventAggregator eventAggregator, ILogger logger)
+            : this(eventAggregator, new RemoteEventRegistry(), logger)
+        {
+        }
+
+        internal RabbitMQService(IEventAggregator eventAggregator, RemoteEventRegistry registry, ILogger logger)
         {
             this.eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
@@ -69,7 +74,7 @@ namespace Common.RabbitMQ
 
             int subscribedEvents = RemoteEventSubscriptions.AddRunningService(this);
 
-            bus.Start(new List<MessageRegistration>());
+            bus.Start();
 
             logger.LogInformation("[{Bus}] Initialized with {Count} event(s) on {Host}:{Port}{VirtualHost} exchange '{Exchange}'.",
                 config.BusName, subscribedEvents, config.HostName, config.Port, FormatVirtualHost(config.VirtualHost), config.ExchangeName);
@@ -248,7 +253,7 @@ namespace Common.RabbitMQ
             }
 
             return registry.FindOrAdd(eventType)
-                ?? throw new ArgumentException($"{eventType.FullName} is a local event. Derive it from RemotePubSubEvent<T>, or add its assembly with RemoteEventRegistry.Add.", nameof(eventType));
+                ?? throw new ArgumentException($"{eventType.FullName} is a local event. Derive it from RemotePubSubEvent<T> to send it to other apps.",nameof(eventType));
         }
 
         private void EnsureInitialized()

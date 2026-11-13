@@ -47,8 +47,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                 Assert.Equal(7, options.DeliveryLimit);
 
                 RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>("Legacy");
-                Assert.Equal("webapi.legacy", bus.QueueName);
-                Assert.Equal("webapi.legacy.dead-letter", bus.DeadLetterQueueName);
+                Assert.Equal("webapi_legacy", bus.QueueName);
+                Assert.Equal("webapi_legacy.dead-letter", bus.DeadLetterQueueName);
             }
         }
 
@@ -65,8 +65,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                 };
 
                 ICompatEndpoint sender = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
-                await using (TestHost first = await TestHost.StartAsync(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
-                await using (TestHost second = await TestHost.StartAsync(bus, service, messaging => messaging.AddHandlers(typeof(CompatMessageHandler).Assembly, CompatBus.Name), shared))
+                await using (TestHost first = await TestHost.StartAsync(bus, service, CompatMessageHandler.Subscribe, shared))
+                await using (TestHost second = await TestHost.StartAsync(bus, service, CompatMessageHandler.Subscribe, shared))
                 {
                     bus.DeleteOnDispose(first.Bus.QueueName, first.Bus.DeadLetterQueueName);
                     await bus.WaitUntilConnectedAsync();

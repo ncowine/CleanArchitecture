@@ -43,8 +43,8 @@ Each app **owns one exchange** and publishes only there; what it receives is dec
 | net472 | `CleanArch`, `Poc.Net472` (own), `Poc.Net8` | the API's events, notes and disposals from both legacy apps |
 | net8 | `CleanArch`, `Poc.Net8` (own), `Poc.Net472` | the same |
 | net10 | `CleanArch`, `Poc.Net472`, `Poc.Net8` | the API's events, and the ten shape events |
-| the API (`cleanarch.api.main`, shared, durable) | `Poc.Net472` | `EquipmentDisposed` only: the one event it handles |
-| `Poc.Api.NoOutbox` (`poc.api.nooutbox.main`, shared, durable) | `Poc.Net472`, `Poc.Net8` | disposals, flags and the ten shape events |
+| the API (`cleanarch.api_main`, shared, durable) | `Poc.Net472` | `EquipmentDisposed` only: the one event it handles |
+| `Poc.Api.NoOutbox` (`poc.api.nooutbox_main`, shared, durable) | `Poc.Net472`, `Poc.Net8` | disposals, flags and the ten shape events |
 
 Every queue binds each exchange **once**, keyed by the exchange's name, which is the routing key its owner publishes
 everything with (the real legacy library does the same). So a queue receives everything on the exchanges it binds, and
@@ -237,8 +237,8 @@ Unchanged: a .NET 8 app that listens only to the API's hub, with presence. The S
 ## An API without the outbox
 
 `Poc.Api.NoOutbox` is a small API that publishes straight to RabbitMQ and subscribes to events. It has no database,
-and it needed no changes to the messaging libraries: it calls the publisher `AddMessaging` registers, and receives
-through an ordinary `IMessageHandler<T>`.
+and it needed no changes to the messaging libraries: it publishes through `IMessagePublisher` and receives through
+`IMessageSubscriber`, both registered by `AddMessaging`.
 
 | Endpoint | Publisher | Responds when | Broker down | Process crashes |
 |---|---|---|---|---|
@@ -254,18 +254,17 @@ they don't change. These events don't come from the real API, so a window shows 
 list from the API.
 
 **Subscribing.** `EquipmentDisposedHandler` receives `EquipmentDisposed` from the net472 app's exchange and logs it,
-wired the way `CleanArch.Api` does it: `AddHandlers` in `Program.cs`, and `Subscriptions` plus `"QueueMode": "Shared"` in
-`appsettings.json`. Its queue, `poc.api.nooutbox.main`, is durable and has a dead-letter queue, so messages wait while
-the API is stopped and a handler that keeps failing doesn't lose them. Run `setup-exchanges.ps1` first if the
+wired the way `CleanArch.Api` does it: subscribed in `Program.cs` with a DI scope per message, and `Subscriptions` plus
+`"QueueMode": "Shared"` in `appsettings.json`. Its queue, `poc.api.nooutbox_main`, is durable and has a dead-letter
+queue, so messages wait while the API is stopped and a subscriber that keeps failing doesn't lose them. Run `setup-exchanges.ps1` first if the
 `Poc.Net472` exchange doesn't exist yet. Click **Dispose of selected** in a net472 window to see it. The real API
 also handles this event, and deletes that equipment if it's running.
 
-**Subscribing without a handler class.** `EquipmentFlagged : RemotePubSubEvent<EquipmentFlag>` is sent by **Flag selected**
-in the net472 window, as `{"Id":"...","Name":"..."}`. It's received with `IMessageSubscriber.Subscribe` in `Program.cs`
-rather than a handler class, to show both styles: a message that arrives before `Subscribe` is called is dropped, so
-subscribe before `app.Run()`. The real API doesn't handle this event.
+**Subscribing without a class.** `EquipmentFlagged : RemotePubSubEvent<EquipmentFlag>` is sent by **Flag selected**
+in the net472 window, as `{"Id":"...","Name":"..."}`. Its callback is inline in `Program.cs`, with no scope, for small
+jobs: a message that arrives before `Subscribe` is called is dropped, so subscribe before `app.Run()`. The real API doesn't handle this event.
 
-**A routing-key pattern.** The flag subscription binds `equipment.#`, a pattern, while `EquipmentDisposedHandler` binds
+**A routing-key pattern.** The flag subscription binds `equipment.#`, a pattern, while the disposal subscription binds
 the exact key `equipment`. Both match what the net472 window sends (`#` matches zero or more words), and the flag
 would still arrive if that app moved to keys such as `equipment.flagged`. The log line shows the key it came with.
 
@@ -298,8 +297,8 @@ Poc.Api.NoOutbox/    an API that publishes straight to RabbitMQ, with no databas
 setup-exchanges.ps1  creates the four exchanges
 ```
 
-On the API side: `src/Modules/Equipment/Equipment.Infrastructure/IntegrationEvents/EquipmentDisposed*.cs`, the
-`AddHandlers` line in `src/Api/CleanArch.Api/Program.cs`, and `Subscriptions` in its `appsettings.Development.json`.
+On the API side: `src/Modules/Equipment/Equipment.Infrastructure/IntegrationEvents/EquipmentDisposed*.cs` and
+`EquipmentSubscriptions.cs`, and `Subscriptions` in `src/Api/CleanArch.Api/appsettings.Development.json`.
 
 ### One solution per app
 
@@ -321,7 +320,7 @@ needed in an app of your own. `Poc.Shared`, `Poc.Legacy.Events` and `Poc.Shapes`
 
 ## Clean-up
 
-The broker keeps the exchanges and the API's durable queues (`cleanarch.api.main`, `.dead-letter`) after everything
+The broker keeps the exchanges and the API's durable queues (`cleanarch.api_main`, `.dead-letter`) after everything
 closes; they're harmless. Delete them in the management UI for a clean broker.
 
 ## How these were checked

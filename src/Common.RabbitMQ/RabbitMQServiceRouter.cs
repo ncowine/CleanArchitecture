@@ -13,16 +13,15 @@ namespace Common.RabbitMQ
     public class RabbitMQServiceRouter : IRabbitMQService, IRoutingKeyPublisher
     {
         private readonly IEventAggregator eventAggregator;
-        private readonly RemoteEventRegistry registry;
+        private readonly RemoteEventRegistry registry = new RemoteEventRegistry();
         private readonly ILogger logger;
         private readonly Dictionary<string, RabbitMQService> buses = new Dictionary<string, RabbitMQService>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, RabbitMQConfig> configs = new Dictionary<string, RabbitMQConfig>(StringComparer.OrdinalIgnoreCase);
         private bool initialized;
 
-        internal RabbitMQServiceRouter(IEventAggregator eventAggregator, RemoteEventRegistry registry, ILogger logger)
+        internal RabbitMQServiceRouter(IEventAggregator eventAggregator, ILogger logger)
         {
             this.eventAggregator = eventAggregator ?? throw new ArgumentNullException(nameof(eventAggregator));
-            this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -33,7 +32,7 @@ namespace Common.RabbitMQ
                 throw new ArgumentNullException(nameof(configuration));
             }
 
-            RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, new RemoteEventRegistry(), logger)
+            RabbitMQServiceRouter router = new RabbitMQServiceRouter(eventAggregator, logger)
             {
                 DefaultBus = configuration["Messaging:DefaultBus"],
             };

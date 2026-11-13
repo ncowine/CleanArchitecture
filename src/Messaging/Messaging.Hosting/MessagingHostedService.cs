@@ -1,70 +1,54 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Messaging.Hosting
 {
-    internal sealed class MessagingHostedService : IHostedService
+    /// <summary>
+    /// Starts the buses once every hosted service has started, so subscriptions made in any hosted service's
+    /// <c>StartAsync</c> are in place first. That matters for a shared queue: it holds messages from while the app was
+    /// stopped, and a message with no subscriber yet is dropped on arrival.
+    /// </summary>
+    internal sealed class MessagingHostedService : IHostedLifecycleService
     {
         private readonly IServiceProvider provider;
         private readonly MessagingRegistry registry;
         private readonly List<RabbitMQBus> started = new List<RabbitMQBus>();
-        private readonly ILogger logger;
 
         public MessagingHostedService(IServiceProvider provider, MessagingRegistry registry)
         {
             this.provider = provider;
             this.registry = registry;
-            logger = provider.GetService<ILogger<MessagingHostedService>>() ?? (ILogger)NullLogger.Instance;
+        }
+
+        public Task StartingAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            registry.Validate();
+            return Task.CompletedTask;
+        }
 
-            foreach ((RoutingKeyAttribute key, IReadOnlyCollection<string> buses) in registry.GetHandlerRoutingKeys())
-            {
-                List<RabbitMQBus> targets = buses.Count > 0
-                    ? buses.Select(name => provider.GetRequiredKeyedService<RabbitMQBus>(name)).ToList()
-                    : new List<RabbitMQBus> { MessageSubscriber.SelectBindingBus(provider, registry, null, key.Exchange) };
-
-                if (!string.IsNullOrWhiteSpace(key.Exchange))
-                {
-                    List<RabbitMQBus> usingExchange = targets.Where(bus => bus.UsesExchange(key.Exchange)).ToList();
-                    if (usingExchange.Count == 0)
-                    {
-                        throw BusSelection.NoBusUses(key.Exchange);
-                    }
-
-                    foreach (RabbitMQBus skipped in targets.Except(usingExchange))
-                    {
-                        logger.LogInformation("[{Bus}] [RoutingKey(\"{RoutingKey}\")] on exchange '{Exchange}' is not bound on this bus: it doesn't use that exchange. It is bound on {Buses}.",
-                            skipped.BusName, key.RoutingKey, key.Exchange, string.Join(", ", usingExchange.Select(bus => bus.BusName)));
-                    }
-
-                    targets = usingExchange;
-                }
-
-                foreach (RabbitMQBus bus in targets)
-                {
-                    bus.Bind(key.Exchange, key.RoutingKey);
-                }
-            }
-
+        public Task StartedAsync(CancellationToken cancellationToken)
+        {
             foreach (string busName in registry.BusNames)
             {
                 RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>(busName);
-                bus.Start(registry.GetMessageRegistrations(busName));
+                bus.Start();
                 started.Add(bus);
             }
 
+            return Task.CompletedTask;
+        }
+
+        public Task StoppingAsync(CancellationToken cancellationToken)
+        {
             return Task.CompletedTask;
         }
 
@@ -76,6 +60,11 @@ namespace Messaging.Hosting
             }
 
             started.Clear();
+            return Task.CompletedTask;
+        }
+
+        public Task StoppedAsync(CancellationToken cancellationToken)
+        {
             return Task.CompletedTask;
         }
     }

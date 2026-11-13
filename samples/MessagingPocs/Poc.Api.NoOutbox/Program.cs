@@ -11,9 +11,9 @@ using Poc.Shapes;
 //   POST /equipment/buffered    IMessagePublisher: buffers in memory and returns, as the legacy apps do.
 //
 //   Receiving:
-//   EquipmentDisposedHandler    A handler class for EquipmentDisposed, from the net472 app's exchange (Subscriptions in
-//                               appsettings.json). Use one for real work: it gets a new DI scope per message.
-//   Subscribe, below            The same without a handler class, for EquipmentFlagged from the net472 app.
+//   EquipmentDisposedHandler    A class for EquipmentDisposed, from the net472 app's exchange (Subscriptions in
+//                               appsettings.json), subscribed below in a new DI scope per message. Use one for real work.
+//   Subscribe, below            The same without a class, for EquipmentFlagged from the net472 app.
 //                               For small jobs that need no scoped services.
 //   LogShape, below             The ten POC shape events (Poc.Shapes) from the legacy apps, logged as they arrive.
 //   Receiving works the same with or without an outbox.
@@ -24,19 +24,27 @@ using Poc.Shapes;
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-// The queue is bound once per message type received: every IMessageHandler<T> AddHandlers finds, and every type passed to
-// Subscribe below.
-builder.Services.AddMessaging(builder.Configuration, messaging => messaging   // Messaging:Buses and Messaging:DefaultBus
-    .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));
+// Messaging:Buses and Messaging:DefaultBus. Every type passed to Subscribe below is received.
+builder.Services.AddMessaging(builder.Configuration);
+builder.Services.AddScoped<EquipmentDisposedHandler>();
 
 WebApplication app = builder.Build();
 
 // ✅ DO subscribe before app.Run(), which starts the bus. A message that arrives with no subscriber is acknowledged and
 //    lost, with no log, and that includes messages waiting in the durable queue from while the API was stopped.
 // ❌ DON'T use scoped services directly here: there's no scope. Create one with app.Services.CreateAsyncScope().
-// An exception fails the message, as in a handler class: it's retried, then dead-lettered.
+// An exception fails the message: it's retried, then dead-lettered.
 IMessageSubscriber subscriber = app.Services.GetRequiredService<IMessageSubscriber>();
-// The net472 app sends flags with the "equipment" routing key. EquipmentDisposedHandler binds that exact key; this
+
+// Real work: a new DI scope per message, so the class can use scoped services such as a DbContext. The net472 app sends
+// disposals with the "equipment" routing key, which this binds on its exchange.
+subscriber.Subscribe<EquipmentDisposed>(async (message, context, cancellationToken) =>
+{
+    await using AsyncServiceScope scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<EquipmentDisposedHandler>().HandleAsync(message, context, cancellationToken);
+}, new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment" });
+
+// The net472 app sends flags with the "equipment" routing key too. The disposal subscription binds that exact key; this
 // subscription binds a pattern instead. On a topic exchange "*" matches one word and "#" zero or more, so
 // "equipment.#" matches "equipment" as well as "equipment.flagged" or "equipment.eu.flagged", if the app ever sends
 // those. A message that matches both bindings still arrives once: a queue gets one copy, however many bindings match.

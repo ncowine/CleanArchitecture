@@ -37,12 +37,6 @@ namespace Messaging.Hosting
             }
 
             string busName = !string.IsNullOrEmpty(options?.Bus) ? options.Bus : registry.DefaultBus;
-            if (busName == null)
-            {
-                throw new InvalidOperationException(
-                    $"Cannot publish {message.GetType().Name}: there is no default bus. Call UseDefaultBus, or set PublishOptions.Bus.");
-            }
-
             if (!registry.BusNames.Contains(busName))
             {
                 throw new InvalidOperationException($"Cannot publish {message.GetType().Name}: bus '{busName}' is not configured for this application.");

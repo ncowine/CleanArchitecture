@@ -62,10 +62,8 @@ builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 if (builder.Configuration.GetSection("Messaging:Buses").Exists())
 {
     // Messaging:Buses and Messaging:DefaultBus.
-    builder.Services.AddMessaging(builder.Configuration, messaging => messaging
-        // Every IMessageHandler<T> in Equipment, e.g. EquipmentDisposed from a legacy desktop app's exchange
-        // (Subscriptions in appsettings), on the API's shared, retried queue.
-        .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));
+    // Modules receive through IMessageSubscriber (Equipment: EquipmentSubscriptions), on the API's shared, retried queue.
+    builder.Services.AddMessaging(builder.Configuration);
 
     // Deliberately no messaging health check on /health: it reports Unhealthy while the broker is down, which would
     // take the API out of service for an outage the bus already absorbs (it buffers events and sends them on reconnect).

@@ -3,14 +3,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using Messaging;
 using Messaging.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Common.RabbitMQ.Tests.Hosting
 {
     /// <summary>
     /// Reports every message to <see cref="HandledMessages"/>. A message named <see cref="Republish"/> is answered with
-    /// one named <see cref="Republished"/>; one named <see cref="Fail"/> throws.
+    /// one named <see cref="Republished"/>; one named <see cref="Fail"/> throws. <see cref="Subscribe"/> runs it the way
+    /// an app runs a class that needs scoped services: a new DI scope per message.
     /// </summary>
-    public sealed class CompatMessageHandler : IMessageHandler<CompatMessage>
+    public sealed class CompatMessageHandler
     {
         public const string Republish = "republish";
         public const string Republished = "republished";
@@ -25,6 +27,17 @@ namespace Common.RabbitMQ.Tests.Hosting
             this.handled = handled;
             this.scope = scope;
             this.publisher = publisher;
+        }
+
+        public static void Subscribe(IServiceProvider services)
+        {
+            services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(async (message, context, cancellationToken) =>
+            {
+                await using (AsyncServiceScope scope = services.CreateAsyncScope())
+                {
+                    await scope.ServiceProvider.GetRequiredService<CompatMessageHandler>().HandleAsync(message, context, cancellationToken);
+                }
+            });
         }
 
         public Task HandleAsync(CompatMessage message, MessageContext context, CancellationToken cancellationToken)

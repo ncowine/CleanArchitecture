@@ -14,7 +14,8 @@ namespace Common.RabbitMQ.Tests.Hosting
 {
     /// <summary>
     /// A server as the API builds it: AddMessaging with one bus on the test exchange, started through its hosted
-    /// services. <see cref="HandledMessages"/> and a scoped <see cref="ScopeMarker"/> are registered for the test handler.
+    /// services. <paramref name="subscribe"/> runs before the host starts, as a hosted service's subscriptions would.
+    /// <see cref="HandledMessages"/>, a scoped <see cref="ScopeMarker"/> and <see cref="CompatMessageHandler"/> are registered.
     /// </summary>
     public sealed class TestHost : IAsyncDisposable
     {
@@ -33,36 +34,32 @@ namespace Common.RabbitMQ.Tests.Hosting
 
         public HandledMessages Handled => provider.GetRequiredService<HandledMessages>();
 
-        public static Task<TestHost> StartAsync(TestBus bus, string clientName, Action<MessagingBuilder> configure, Action<RabbitMQBusOptions> configureBus = null)
+        public static Task<TestHost> StartAsync(TestBus bus, string clientName, Action<IServiceProvider> subscribe = null, Action<RabbitMQBusOptions> configureBus = null)
         {
-            return StartAsync(bus.Broker.HostName, bus.Broker.Port, bus.Broker, bus.ExchangeName, clientName, configure, configureBus);
+            return StartAsync(bus.Broker.HostName, bus.Broker.Port, bus.Broker, bus.ExchangeName, clientName, subscribe, configureBus);
         }
 
         /// <summary>Starts a host whose bus points at <paramref name="hostName"/>:<paramref name="port"/>.</summary>
-        public static async Task<TestHost> StartAsync(string hostName, int port, BrokerSettings credentials, string exchangeName, string clientName, Action<MessagingBuilder> configure, Action<RabbitMQBusOptions> configureBus = null)
+        public static async Task<TestHost> StartAsync(string hostName, int port, BrokerSettings credentials, string exchangeName, string clientName, Action<IServiceProvider> subscribe = null, Action<RabbitMQBusOptions> configureBus = null)
         {
             ServiceCollection services = new ServiceCollection();
             services.AddLogging();
             services.AddSingleton<HandledMessages>();
             services.AddScoped<ScopeMarker>();
-            services.AddMessaging(messaging =>
+            services.AddScoped<CompatMessageHandler>();
+            services.AddTestMessaging(CompatBus.Name, (CompatBus.Name, options =>
             {
-                messaging.AddBus(CompatBus.Name, options =>
-                {
-                    options.HostName = hostName;
-                    options.Port = port;
-                    options.VirtualHost = credentials?.VirtualHost ?? "/";
-                    options.UserName = credentials?.UserName ?? "guest";
-                    options.Password = credentials?.Password ?? "guest";
-                    options.ExchangeName = exchangeName;
-                    options.ClientName = clientName;
-                    options.ReconnectDelay = TimeSpan.FromSeconds(1);
-                    options.OutstandingPollInterval = TimeSpan.FromMilliseconds(20);
-                    configureBus?.Invoke(options);
-                });
-                messaging.UseDefaultBus(CompatBus.Name);
-                configure(messaging);
-            });
+                options.HostName = hostName;
+                options.Port = port;
+                options.VirtualHost = credentials?.VirtualHost ?? "/";
+                options.UserName = credentials?.UserName ?? "guest";
+                options.Password = credentials?.Password ?? "guest";
+                options.ExchangeName = exchangeName;
+                options.ClientName = clientName;
+                options.ReconnectDelay = TimeSpan.FromSeconds(1);
+                options.OutstandingPollInterval = TimeSpan.FromMilliseconds(20);
+                configureBus?.Invoke(options);
+            }));
 
             ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             List<IHostedService> hostedServices = new List<IHostedService>(provider.GetServices<IHostedService>());
@@ -70,10 +67,8 @@ namespace Common.RabbitMQ.Tests.Hosting
 
             try
             {
-                foreach (IHostedService hostedService in hostedServices)
-                {
-                    await hostedService.StartAsync(CancellationToken.None);
-                }
+                subscribe?.Invoke(provider);
+                await HostedServices.StartAsync(hostedServices);
             }
             catch
             {
@@ -100,11 +95,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 
         public async ValueTask DisposeAsync()
         {
-            foreach (IHostedService hostedService in hostedServices)
-            {
-                await hostedService.StopAsync(CancellationToken.None);
-            }
-
+            await HostedServices.StopAsync(hostedServices, CancellationToken.None);
             await provider.DisposeAsync();
         }
     }

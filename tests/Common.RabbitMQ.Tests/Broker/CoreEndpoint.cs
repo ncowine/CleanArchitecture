@@ -36,7 +36,8 @@ namespace Common.RabbitMQ.Tests.Broker
             configure?.Invoke(options);
 
             bus = new RabbitMQBus(options, this, Log);
-            bus.Start(new[] { new MessageRegistration(WireName, typeof(CompatPayload)) });
+            bus.Subscribe(new MessageRegistration(WireName, typeof(CompatPayload)));
+            bus.Start();
         }
 
         public CompatBuild Build => CompatBuild.Core;
@@ -71,7 +72,7 @@ namespace Common.RabbitMQ.Tests.Broker
             bus.Enqueue(WireName, payload);
         }
 
-        public Task DispatchAsync(MessageRegistration registration, object message, MessageContext context, CancellationToken cancellationToken)
+        public Task DispatchAsync(object message, MessageContext context, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref attempts);
 

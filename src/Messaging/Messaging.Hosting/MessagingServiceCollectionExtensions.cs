@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,65 +12,74 @@ namespace Messaging.Hosting
 {
     public static class MessagingServiceCollectionExtensions
     {
-        public static IServiceCollection AddMessaging(this IServiceCollection services, IConfiguration configuration, Action<MessagingBuilder> configure = null)
-        {
-            if (configuration == null)
-            {
-                throw new ArgumentNullException(nameof(configuration));
-            }
-
-            return services.AddMessaging(messaging =>
-            {
-                foreach (IConfigurationSection bus in configuration.GetSection("Messaging:Buses").GetChildren())
-                {
-                    messaging.AddBus(bus.Key, bus);
-                }
-
-                if (messaging.Registry.BusNames.Count == 0)
-                {
-                    throw new InvalidOperationException("Messaging:Buses in the configuration has no buses.");
-                }
-
-                messaging.UseDefaultBus(configuration["Messaging:DefaultBus"]);
-                configure?.Invoke(messaging);
-            });
-        }
-
-        internal static IServiceCollection AddMessaging(this IServiceCollection services, Action<MessagingBuilder> configure)
+        /// <summary>
+        /// Adds the buses in <c>Messaging:Buses</c>, publishing through <see cref="IMessagePublisher"/> and receiving
+        /// through <see cref="IMessageSubscriber"/>. <c>Messaging:DefaultBus</c> is required and must name one of them.
+        /// The buses start after every hosted service has started, so subscribe in a hosted service's <c>StartAsync</c>
+        /// or before the host runs.
+        /// </summary>
+        public static IServiceCollection AddMessaging(this IServiceCollection services, IConfiguration configuration)
         {
             if (services == null)
             {
                 throw new ArgumentNullException(nameof(services));
             }
 
-            if (configure == null)
+            if (configuration == null)
             {
-                throw new ArgumentNullException(nameof(configure));
+                throw new ArgumentNullException(nameof(configuration));
             }
 
-            MessagingRegistry registry = new MessagingRegistry();
+            List<IConfigurationSection> buses = configuration.GetSection("Messaging:Buses").GetChildren().ToList();
+            if (buses.Count == 0)
+            {
+                throw new InvalidOperationException("Messaging:Buses in the configuration has no buses.");
+            }
+
+            string defaultBus = configuration["Messaging:DefaultBus"];
+            if (string.IsNullOrWhiteSpace(defaultBus))
+            {
+                throw new ArgumentException("A default bus is required: set Messaging:DefaultBus in the configuration.", nameof(configuration));
+            }
+
+            if (!buses.Any(bus => string.Equals(bus.Key, defaultBus, StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException($"The default bus '{defaultBus}' is not in Messaging:Buses.");
+            }
+
+            MessagingRegistry registry = new MessagingRegistry(buses.Select(bus => bus.Key), defaultBus);
             services.AddSingleton(registry);
             services.AddSingleton<MessagePublisher>();
             services.AddSingleton<IMessagePublisher>(provider => provider.GetRequiredService<MessagePublisher>());
             services.AddSingleton<MessageSubscriber>();
             services.AddSingleton<IMessageSubscriber>(provider => provider.GetRequiredService<MessageSubscriber>());
-            services.AddSingleton<IMessageSink>(provider => provider.GetRequiredService<MessageSubscriber>());
 
-            configure(new MessagingBuilder(services, registry));
+            foreach (IConfigurationSection bus in buses)
+            {
+                AddBus(services, bus.Key, bus);
+            }
 
             services.AddHostedService<MessagingHostedService>();
             return services;
         }
 
-        internal static RabbitMQBus CreateBus(IServiceProvider provider, string name)
+        private static void AddBus(IServiceCollection services, string name, IConfiguration section)
         {
-            MessagingRegistry registry = provider.GetRequiredService<MessagingRegistry>();
-            RabbitMQBusOptions options = provider.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get(name);
+            services.AddOptions<RabbitMQBusOptions>(name)
+                .Bind(section)
+                .PostConfigure(options =>
+                {
+                    options.BusName = name;
+                    if (string.IsNullOrWhiteSpace(options.ClientName))
+                    {
+                        options.ClientName = Assembly.GetEntryAssembly()?.GetName().Name ?? "messaging";
+                    }
+                });
 
-            return new RabbitMQBus(
-                options,
-                new ScopedDispatcher(provider.GetRequiredService<IServiceScopeFactory>(), registry, name),
-                provider.GetService<ILogger<RabbitMQBus>>());
+            services.AddKeyedSingleton(name, (provider, key) => new RabbitMQBus(
+                provider.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get(name),
+                provider.GetRequiredService<MessageSubscriber>(),
+                provider.GetService<ILogger<RabbitMQBus>>()));
         }
     }
 }
