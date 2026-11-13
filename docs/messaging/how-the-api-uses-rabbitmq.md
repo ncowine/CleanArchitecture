@@ -124,18 +124,17 @@ other projects translate between your code and that engine. It lives in `src/Mes
 
 | Project | Role | Used by |
 | --- | --- | --- |
-| `Messaging.Abstractions` | `[Message]`, `IMessagePublisher`, `IMessageHandler<T>`, `MessageContext`. No dependencies. | Contracts, every app |
+| `Messaging.Abstractions` | `[Message]`, `IMessagePublisher`, `MessageContext`, the options. No dependencies. | Contracts, every app |
 | `Messaging.RabbitMQ` | `RabbitMQBus`, the engine: connect, declare, publish, consume, retry, reconnect. Knows nothing about DI or Prism. | Everything, indirectly |
-| `Messaging.Hosting` | DI registration (`AddMessaging`), handlers, subscribers, for any app on the .NET Generic Host | The API, modern WPF apps |
+| `Messaging.Hosting` | DI registration (`AddMessaging`), `IMessagePublisher` and `IMessageSubscriber`, for any app on the .NET Generic Host | The API, modern WPF apps |
 
-### Bus, handler, subscriber
+### Bus, publisher, subscriber
 
-Three words cover the configuration. All of it happens in one `AddMessaging` call, which adds the buses from
-`Messaging:Buses` and the default from `Messaging:DefaultBus`. There is no way to add a bus in code:
+Three words cover it. The configuration is one `AddMessaging` call, which adds the buses from `Messaging:Buses` and the
+default from `Messaging:DefaultBus`. There is no way to add a bus in code:
 
 ```csharp
-services.AddMessaging(config, messaging => messaging           // one bus per Messaging:Buses entry
-    .AddHandlers(typeof(OrderSavedHandler).Assembly));          // every IMessageHandler<T> in it, on every bus
+services.AddMessaging(config);                                  // one bus per Messaging:Buses entry
 ```
 
 Another app's exchange is a subscription in configuration: `Messaging:Buses:Main:Subscriptions`.
@@ -144,11 +143,11 @@ Another app's exchange is a subscription in configuration: `Messaging:Buses:Main
 - **Publishing** needs no registration: a message goes to the default bus, with the exchange name as the routing key and its wire name in the `event-type` header.
   `Messaging:DefaultBus` names it, and is required even with one bus.
   `PublishOptions.Bus` and `PublishOptions.RoutingKey` override them for one call. The API always uses the default.
-- **Handler**: an `IMessageHandler<T>` class, resolved in its own DI scope for every received message. For servers.
-- **Subscriber**: `IMessageSubscriber.Subscribe<T>(callback)` at runtime, for view models and other code that isn't a
-  DI handler.
+- **Subscriber**: `IMessageSubscriber.Subscribe<T>(callback)`, the only way to receive. A server subscribes in a hosted
+  service's `StartAsync` (the buses start after it) and opens a DI scope per message when the work needs scoped
+  services; Equipment's `EquipmentSubscriptions` does that. A view model subscribes directly.
 
-The API mostly publishes, so it mostly uses the bus. Handlers and subscribers are for receivers.
+The API mostly publishes, so it mostly uses the bus. Subscribers are for receivers.
 
 ### Publishing
 
@@ -231,14 +230,13 @@ RabbitMQ is on **only when `Messaging:Buses:Main` exists in configuration**. Tod
 }
 ```
 
-The host wires it up in `Program.cs`. This is the one place that decides *where* events go (the `AddHandlers` line for
-the one event the API receives is left out here; see the MessagingPocs README):
+The host wires it up in `Program.cs`. This is the one place that decides *where* events go (what the API receives is
+subscribed in Equipment's `EquipmentSubscriptions`; see the MessagingPocs README):
 
 ```csharp
 if (builder.Configuration.GetSection("Messaging:Buses").Exists())
 {
-    builder.Services.AddMessaging(builder.Configuration, messaging => messaging
-        .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));
+    builder.Services.AddMessaging(builder.Configuration);
 }
 ```
 
@@ -296,7 +294,7 @@ on message from queue:
     type = registry[wireName]                        // "Equipment.EquipmentCreated" -> EquipmentCreated
     if unknown or not subscribed: ack and skip       // normal: the queue gets the whole exchange
     message = JSON.deserialize(body, type)
-    run handlers, then sinks (subscribers)
+    run the subscribers for that type, in order
     ack                                              // broker deletes it
 ```
 

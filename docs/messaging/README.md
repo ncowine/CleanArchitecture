@@ -21,7 +21,7 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
 > - `Common.Events` and `Employees.Contracts` are test fixtures here (`tests/Fixtures/`), not messages to use. This
 >   solution's messages go in each module's `*.Contracts` project.
 > - There's no messaging CI workflow here yet, and the build settings are isolated as described in PROVENANCE.md.
-> - **The API publishes only after the commit** ([recipe D](#d-a-server-aspnet-handlers) step 4). The outbox it used
+> - **The API publishes only after the commit** ([recipe D](#d-a-server-aspnet) step 4). The outbox it used
 >   until 2026-11-05 ([ADR 0003](adr/0003-server-publishes-through-the-outbox.md)) was removed to keep things simple.
 >   Equipment's create/update/delete events are the working example (exchange `CleanArch`). Legacy apps are
 >   unchanged. Modern WPF apps only subscribe.
@@ -66,7 +66,7 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
   - **Old WPF apps** use Prism events: `eventAggregator.GetEvent<OrderSaved>().PublishRemote(order)`.
   - **New apps** that want the Prism style use the same adapter (it targets net8.0 too). Otherwise they use plain
     classes and **no Prism at all**: `IMessagePublisher.Publish(order)` and `IMessageSubscriber.Subscribe<OrderSaved>(...)`.
-  - **The server** uses handlers: `IMessagePublisher.Publish(order)` and `IMessageHandler<OrderSaved>`.
+  - **The server** uses the same two: `IMessagePublisher.Publish(order)` and `IMessageSubscriber.Subscribe<OrderSaved>(...)`.
 - **Sending is fire-and-forget.** A message is put in a buffer instantly and delivered in the background, even if
   RabbitMQ is briefly down.
 - **Receiving has two modes.** Desktop apps each get their **own copy** of every message. Server instances **share
@@ -102,7 +102,7 @@ The whole system uses a post office analogy. Each term has the everyday picture 
 | **Echo** | Your own letter coming back to you. | A program receiving the message it just sent. Per-instance queues drop echoes automatically. |
 | **Prism / event aggregator** | The internal intercom inside one app. | The desktop apps' in-process messaging (`IEventAggregator`). "Remote" messaging extends it across apps. |
 | **Contract** | The agreed form layout. | A plain class describing a message's fields, e.g. `Employees.Contracts.EmployeeUpdated`. |
-| **Handler** | The clerk who processes one kind of letter. | A server class `IMessageHandler<T>` that runs when a message of type `T` arrives. |
+| **Subscriber** | The clerk who processes one kind of letter. | A callback given to `IMessageSubscriber.Subscribe<T>` that runs when a message of type `T` arrives. |
 | **Serializer** | The typist who turns a form into text and back. | Converts a message object to JSON bytes and back. Every app uses System.Text.Json, set up to produce the same bytes as Newtonsoft.Json, which apps on the old library still use (since 2026-11-09; legacy apps used Newtonsoft before). Payloads are classes with `{ get; set; }` properties, or primitives: **tuples are rejected**. |
 
 ---
@@ -114,11 +114,11 @@ flowchart TB
     subgraph Apps["Programs"]
         L["Legacy WPF app<br/>(.NET Framework 4.7.2)<br/>Prism events"]
         M["Modern app<br/>(.NET 8+)<br/>plain classes, IMessageSubscriber"]
-        S["Server / WebApi<br/>(.NET 10)<br/>handlers"]
+        S["Server / WebApi<br/>(.NET 10)<br/>subscribers"]
     end
     subgraph FrontDoors["Front doors (translation only)"]
         A["Common.RabbitMQ<br/>legacy adapter"]
-        H["Messaging.Hosting<br/>DI, handlers, JSON"]
+        H["Messaging.Hosting<br/>DI, publisher, subscriber"]
     end
     Core["Messaging.RabbitMQ<br/><b>RabbitMQBus</b> - the only code that talks to RabbitMQ"]
     B[("RabbitMQ broker")]
@@ -131,7 +131,7 @@ flowchart TB
 Two ideas explain almost everything:
 
 1. **One engine, many front doors.** `RabbitMQBus` knows nothing about Prism, dependency injection or your business
-   classes. It moves bytes reliably. The front doors translate "a Prism event" or "a message class with a handler"
+   classes. It moves bytes reliably. The front doors translate "a Prism event" or "a message class with a subscriber"
    into "bytes with a wire name", and back.
 2. **What vs. where.** The **wire name** (`event-type` header) says *what* a message is. The **routing key** says *where*
    it goes. Receivers always identify a message by its wire name, so routing can change freely without breaking anyone.
@@ -144,9 +144,9 @@ Two ideas explain almost everything:
 
 | Project | Target | Depends on | What it is | Who uses it |
 |---|---|---|---|---|
-| `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `IMessageHandler<T>`, `[Message]`, `MessageContext`. | Everything below. |
+| `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `[Message]`, `MessageContext`, `PublishOptions`, `SubscribeOptions`. | Everything below. |
 | `Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | RabbitMQ.Client 7.1.2, Microsoft.Extensions.Logging.Abstractions 8.0, System.Text.Json 8.0.5 (net472, netstandard2.0) | **The engine**: `RabbitMQBus`, its options and the one serializer, `MessageSerializer`. | All front doors. |
-| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | The modern front door for any net8+ app (API, WPF, worker; no ASP.NET dependency): `AddMessaging`, handlers, `IMessageSubscriber`. | The API, modern WPF apps. |
+| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | The modern front door for any net8+ app (API, WPF, worker; no ASP.NET dependency): `AddMessaging`, `IMessagePublisher`, `IMessageSubscriber`. | The API, modern WPF apps. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
 | `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Configuration.Binder, the engine (with System.Text.Json) | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
 | `Common.Events` | net472, net8.0 | Common.RabbitMQ | The demo apps' Prism events (`EmployeeUpdated` and others). | Demo WPF apps. |
@@ -162,7 +162,7 @@ Two ideas explain almost everything:
 | `Common.RabbitMQ.Tests/Golden` | Message bodies are **byte-for-byte** what legacy apps expect (golden JSON files). |
 | `Common.RabbitMQ.Tests/PublicApi` | The legacy adapter's public API has **nothing removed or changed**, only approved additions. |
 | `Common.RabbitMQ.Tests/Broker` | The engine against a real broker: delivery, echo drop, headers, queues, retries, dead letters. |
-| `Common.RabbitMQ.Tests/Hosting` | The server side and modern clients: handlers, JSON, health, routing keys, `IMessageSubscriber`. |
+| `Common.RabbitMQ.Tests/Hosting` | The server side and modern clients: JSON, routing keys, shared queues, `IMessageSubscriber`. |
 | `Common.RabbitMQ.Tests/LegacyModel` | A **model of the real legacy library** and every assumption about it, plus the new code working with it. |
 | `Common.RabbitMQ.Tests/Adapter` | The legacy adapter's newer features: wire names, appsettings.json, routing rules. |
 | `Fixtures/Common.RabbitMQ.Baseline` | A **frozen copy** of the original library, so tests can prove old and new builds talk to each other. |
@@ -213,7 +213,7 @@ In plain words:
 
 **The one thing to know:** if your **process crashes**, messages still in the buffer are lost. Legacy apps accept
 that. The API avoids it by publishing through its outbox with a confirmed publish (see
-[recipe D](#d-a-server-aspnet-handlers) step 4).
+[recipe D](#d-a-server-aspnet) step 4).
 
 ### Receiving
 
@@ -226,8 +226,8 @@ that. The API avoids it by publishing through its outbox with a confirmed publis
 5. It turns the JSON back into an object.
 6. It hands the object to the **dispatcher**, the one step that differs per front door:
    - **Legacy:** `eventAggregator.GetEvent<TheEvent>().Publish(payload)`, so your normal Prism subscribers run.
-   - **Server and modern apps:** each registered handler runs in its **own dependency-injection scope**, then every
-     sink runs. `IMessageSubscriber` is a sink that calls the subscriptions for that message type.
+   - **Server and modern apps:** `IMessageSubscriber` calls the subscriptions for that message type, in order. A
+     subscription that needs scoped services opens its own scope.
 7. It **settles** the message: acknowledges it on success. On failure, see [When things go wrong](#when-things-go-wrong-retries-dead-letters-and-reconnecting).
 
 ---
@@ -277,22 +277,17 @@ flowchart LR
 
   **Which bus**, when an app has several: `SubscribeOptions.Bus` if set. Otherwise the one bus that has `Exchange` as
   its own exchange or in its `Subscriptions`, or the default bus when there's no `Exchange`. The same exchange name on
-  two buses (for example the same app in two vhosts) is ambiguous: subscribing throws and asks for `Bus`. A handler's
-  `[RoutingKey]` goes on those of the buses it receives from (`AddHandlers(assembly, "Legacy")`, every call for that
-  handler combined) that use its exchange, or is placed the same way. A listed bus that doesn't use the exchange is
-  skipped with an Information log at startup.
+  two buses (for example the same app in two vhosts) is ambiguous: subscribing throws and asks for `Bus`.
 
   **Guards (2026-11-10):** a bus or exchange that doesn't match the configuration throws, instead of binding
   somewhere unexpected. Subscribing throws `InvalidOperationException` for a `Bus` that isn't in `Messaging:Buses`, an
   `Exchange` that no bus has as its own exchange or in its `Subscriptions`, or a `Bus` and `Exchange` where that bus
-  doesn't use that exchange. For a handler's `[RoutingKey]`, the app fails at startup. Nothing is left half
-  subscribed. Publishing already throws for an unknown `PublishOptions.Bus` (it has no exchange to check).
+  doesn't use that exchange. Nothing is left half subscribed. Publishing already throws for an unknown `PublishOptions.Bus` (it has no exchange to check).
 
   ```csharp
   SubscribeOptions equipment = new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment" };
   eventAggregator.GetEvent<EquipmentDisposed>().Subscribe(OnDisposed, equipment, ThreadOption.UIThread);   // Prism (Common.RabbitMQ)          
   subscriber.Subscribe<EquipmentDisposed>(OnDisposed, options: equipment);                                // IMessageSubscriber
-  [RoutingKey("equipment", Exchange = "Poc.Net472")]                                                      // on a handler class: bound at startup
   ```
 
   **A key can be a pattern** when subscribing, on a topic exchange (the default): `*` matches exactly one word, `#`
@@ -301,7 +296,7 @@ flowchart LR
 
   ```csharp
   subscriber.Subscribe<EquipmentFlagged>(OnFlagged, options: new SubscribeOptions { Exchange = "Poc.Net472", RoutingKey = "equipment.#" });
-  [RoutingKey("orders.*.saved", Exchange = "AppC")]          // orders.eu.saved, orders.us.saved, not orders.eu.x.saved
+  subscriber.Subscribe<OrderSaved>(OnSaved, options: new SubscribeOptions { Exchange = "AppC", RoutingKey = "orders.*.saved" }); // orders.eu.saved, not orders.eu.x.saved
   ```
 
   A queue gets one copy of a message however many of its bindings match. A pattern means nothing when publishing:
@@ -332,8 +327,8 @@ flowchart LR
 |---|---|
 | RabbitMQ is down or the network drops | The engine keeps checking every `ReconnectDelay` (5 s by default) and reconnects on its own. Outgoing messages wait in the buffer. |
 | Another app's exchange doesn't exist yet | Connecting fails with "Exchange 'X' does not exist yet; waiting for its owner to declare it" and retries until the owner starts. |
-| A handler throws (per-instance queue) | Logged and acknowledged: the message is dropped. That's the legacy behaviour, kept on purpose. |
-| A handler throws (shared queue) | Retried in the same process up to `MaxAttempts` times (3 by default), `RetryDelay` apart (1 s). Then it's moved to the dead-letter queue. |
+| A subscriber throws (per-instance queue) | Logged and acknowledged: the message is dropped. That's the legacy behaviour, kept on purpose. |
+| A subscriber throws (shared queue) | Retried in the same process up to `MaxAttempts` times (3 by default), `RetryDelay` apart (1 s). Then it's moved to the dead-letter queue. |
 | The message body isn't valid JSON (shared queue) | Straight to the dead-letter queue, with no retries, because retrying can't fix it. |
 | A message keeps **crashing the whole process** | RabbitMQ counts deliveries lost with a connection. After `DeliveryLimit` (5) it dead-letters the message itself. |
 
@@ -507,37 +502,57 @@ publisher.Publish(new EmployeeSaved { Id = 7, Name = "Ada" });
   needs `[Message("...")]`. It takes effect at once and never changes the broker's bindings (one per exchange).
 - `Subscribe` returns an `IDisposable`. **Dispose it to unsubscribe.** Subscriptions are strong references (Prism's
   are weak), so a window or view model that goes away before the app ends must dispose its subscriptions. When the last
-  subscriber for a type goes, it is dropped on arrival again, unless a handler still wants the type.
-- **On a durable shared queue, subscribe before starting and stay subscribed.** The queue keeps last run's bindings and
-  messages, and a message for a type nothing has subscribed to yet is dropped; subscribing later logs a warning. The
+  subscriber for a type goes, it is dropped on arrival again.
+- **On a durable shared queue, subscribe before the buses start and stay subscribed.** The queue keeps last run's
+  bindings and messages, and a message for a type nothing has subscribed to yet is dropped; subscribing later logs a
+  warning. The buses start after every hosted service's `StartAsync`, so subscribing there, or before the host runs,
+  is in time. The
   broker can hand a message to an instance with no subscriber left, which drops it. Give all instances the same
   subscriptions.
 - **With a synchronization context** (the UI thread's), the call is posted to it and runs later. Its exceptions go to
   the dispatcher (`Application.DispatcherUnhandledException`), not to the message, so they don't cause retries.
 - **Without one**, or with the async overload `Subscribe<T>((message, context, token) => ...)`, it runs on the
   receiving thread, and an exception fails the message (retried and dead-lettered on shared queues).
-- Subscribers run after the handlers, in the order they subscribed, and only for the exact message type.
+- Subscribers run in the order they subscribed, and only for the exact message type.
 
-### D. A server (ASP.NET, handlers)
+### D. A server (ASP.NET)
 
-**1. Handlers are ordinary classes:**
+A server receives through `IMessageSubscriber`, like any other app; there are no handler classes in the library.
+
+**1. Add messaging in `Program.cs`:**
 
 ```csharp
-public class EmployeeSavedHandler : IMessageHandler<EmployeeSaved>
+builder.Services.AddMessaging(builder.Configuration);   // Messaging:Buses and Messaging:DefaultBus
+```
+
+**2. Subscribe in a hosted service.** Its `StartAsync` runs before the buses start, so a shared queue's waiting
+messages find their subscriber. Work that needs scoped services (a DbContext) opens a scope per message:
+
+```csharp
+internal sealed class EmployeeSubscriptions(IServiceProvider provider, IMessageSubscriber subscriber) : IHostedService
 {
-    public async Task HandleAsync(EmployeeSaved message, MessageContext context, CancellationToken cancellationToken)
+    private IDisposable? saved;
+
+    public Task StartAsync(CancellationToken cancellationToken)
     {
-        // runs in its own DI scope per message; throw to trigger retries (shared queues)
+        saved = subscriber.Subscribe<EmployeeSaved>(async (message, context, token) =>
+        {
+            await using AsyncServiceScope scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<EmployeeSavedHandler>().HandleAsync(message, context, token);
+        });   // throw to fail the message: retried, then dead-lettered (shared queues)
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        saved?.Dispose();
+        return Task.CompletedTask;
     }
 }
 ```
 
-**2. Wire it up in `Program.cs`** (see `src/WebApi/Program.cs`):
-
-```csharp
-builder.Services.AddMessaging(builder.Configuration, messaging => messaging   // Messaging:Buses and Messaging:DefaultBus
-    .AddHandlers(typeof(EmployeeSavedHandler).Assembly));           // every IMessageHandler<T> in it
-```
+`EmployeeSavedHandler` is the app's own class, registered scoped; the name is a convention, not a library type.
+Equipment does exactly this in `EquipmentSubscriptions`.
 
 **3. Publish from anywhere.** Nothing to register: a message goes to the default bus, keyed by the exchange name. The
 default is required, even with one bus: set `Messaging:DefaultBus`, or `AddMessaging` throws. Buses come only from
@@ -552,8 +567,8 @@ publisher.Publish(order, new PublishOptions { Bus = "Partners" });
 **Another app's exchange** is a subscription in configuration, `Messaging:Buses:Main:Subscriptions`, as
 `[ { "Exchange": "AppA" } ]`. There's no way to add one in code.
 
-Configuration mistakes stop the app at startup with a clear list of what's wrong, for example a handler on a bus that
-doesn't exist or a class without `[Message]`.
+Configuration mistakes stop the app at startup, for example a missing or unknown `Messaging:DefaultBus`. A class
+without `[Message]` throws when it is first published or subscribed.
 
 **4. In CleanArchitecture: publish events after the commit.**
 
@@ -602,7 +617,7 @@ The step-by-step version is in
 | `ClientName` | the app's name | Shown in the management UI, sent as app-id, used in queue names. |
 | `QueueMode` | `PerInstance` | `PerInstance` (desktop) or `Shared` (servers). |
 | `SharedQueueName` | `clientname.busname` | Shared queues only. |
-| `MaxAttempts` | `3` | Shared queues only: handler attempts per message before dead-lettering. |
+| `MaxAttempts` | `3` | Shared queues only: attempts per message before dead-lettering. |
 | `RetryDelay` | `00:00:01` | Shared queues only: the wait between attempts. |
 | `DeliveryLimit` | `5` | Shared queues only: the crash guard (see above). |
 | `ReconnectDelay` | `00:00:05` | How often to check the connection and retry. |
@@ -663,7 +678,7 @@ Receivers ignore headers they don't know, so new headers can always be added saf
 | Level | What |
 |---|---|
 | Information | Connected; an unknown event ignored |
-| Warning | Connection lost or failed (every `ReconnectDelay` while the broker is down, with a stack trace); a handler retrying; a publish failed; a message no queue is bound for |
+| Warning | Connection lost or failed (every `ReconnectDelay` while the broker is down, with a stack trace); a subscriber retrying; a publish failed; a message no queue is bound for |
 | Error | A message dead-lettered or dropped |
 
 ---
@@ -857,7 +872,7 @@ The full reasoning is in the two ADRs. The short version:
 | Messages still in the outgoing buffer are lost if the process crashes. | Sending is fire-and-forget. | Legacy apps: accepted. The API: publish through the outbox (recipe D, step 4). |
 | Custom routing keys don't reach legacy apps. | Legacy apps bind the exchange name. | Use the default key for anything legacy apps must receive. |
 | A non-`topic` exchange locks out legacy subscribers. | Legacy apps re-declare exchanges they subscribe to as `topic` (assumption A16). | Keep `topic` where legacy apps subscribe. |
-| Running more than one API instance makes its in-memory cache drift. | A shared queue gives each message to one instance. | Use an external cache, or add per-instance delivery for cache handlers (not built yet). |
+| Running more than one API instance makes its in-memory cache drift. | A shared queue gives each message to one instance. | Use an external cache, or add per-instance delivery for cache subscribers (not built yet). |
 | The legacy model is based on assumptions. | The real legacy library isn't available to this repository. | Check `docs/legacy-baseline-assumptions.md` against the real library. |
 
 ---
@@ -875,9 +890,9 @@ The full reasoning is in the two ADRs. The short version:
 | Log: *The remote certificate is invalid…* (`AuthenticationException`) | With `UseTls`: the broker's certificate doesn't contain the name the app connects to, or this machine doesn't trust the CA. | Fix `HostName` or set `TlsServerName`, or import the CA (see [Connecting over TLS](#5-connecting-over-tls-optional), step c). |
 | With `UseTls`, the connection fails or hangs during connecting | `Port` still points at the plain listener (`5672`). | Set `Port` to the TLS listener, usually `5671`. |
 | An app receives nothing | No matching binding, or a different vhost. | In the management UI, check the queue's bindings and the vhost. Check the routing key the sender used. |
-| Messages pile up in `*.dead-letter` | A handler keeps failing, or the body can't be read. | Read the message in the management UI (`x-first-death-reason` says why), fix the cause, then move it back. |
+| Messages pile up in `*.dead-letter` | A subscriber keeps failing, or the body can't be read. | Read the message in the management UI (`x-first-death-reason` says why), fix the cause, then move it back. |
 | `/health` is Unhealthy | A bus is disconnected. | The response lists which bus. Check the broker and the credentials. |
-| A startup error: *Messaging is misconfigured* | A handler names an unknown bus, or a class has no `[Message]`. | The message lists every problem. Fix them in `AddMessaging`. |
+| A startup error: *Messaging is misconfigured* | `Messaging:DefaultBus` is missing or names a bus not in `Messaging:Buses`. | Fix the configuration. |
 | `PublishRemote` with a routing key throws *does not support routing keys* | A custom `IRabbitMQService`: routing keys need the library's own services. | Use `RabbitMQService` or `RabbitMQServiceRouter`. |
 | The build crashes with *OutOfMemoryException* or hangs | Stale MSBuild worker processes. | Run `dotnet build-server shutdown`, or build with `-nr:false`. |
 | Git Bash turns a vhost of `/` into `C:/Program Files/Git/` | Git Bash path conversion. | Set such environment variables from PowerShell instead. |

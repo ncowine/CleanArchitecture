@@ -87,10 +87,7 @@ RabbitMQ.Client calls RabbitMQBus.OnMessageReceivedAsync for each delivery
 
 dispatcher.DispatchAsync is where the front doors differ (IInboundDispatcher):
   Legacy: PrismDispatcher.DispatchAsync → RemoteEventDescriptor.PublishLocal → GetEvent<T>().Publish(payload)
-  Modern: ScopedDispatcher.DispatchAsync
-            ├─ new DI scope → each handler: HandlerRegistration.Invoke → THandler.HandleAsync(message, context, token)
-            └─ each IMessageSink.DeliverAsync (internal; the subscriber is the only one):
-                 MessageSubscriber   → the IMessageSubscriber.Subscribe callbacks for this type
+  Modern: MessageSubscriber.DispatchAsync → the IMessageSubscriber.Subscribe callbacks for this type, in order
 ```
 
 ## Threads

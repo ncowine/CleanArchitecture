@@ -163,7 +163,7 @@ flowchart TB
     end
     subgraph Msg["src/Messaging (copied, shared with legacy)"]
         AD["Common.RabbitMQ<br/>legacy adapter, API frozen"]
-        H["Messaging.Hosting<br/>DI, handlers"]
+        H["Messaging.Hosting<br/>DI, publisher, subscriber"]
         E["Messaging.RabbitMQ<br/><b>RabbitMQBus</b> — the only code that talks to RabbitMQ"]
         AB["Messaging.Abstractions<br/>[Message], interfaces"]
     end
@@ -176,9 +176,9 @@ flowchart TB
 
 | Project | Target | What it is |
 |---|---|---|
-| `src/Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | `[Message("…")]`, `IMessagePublisher`, `IMessageHandler<T>`, `MessageContext`. No dependencies — message classes reference only this. |
+| `src/Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | `[Message("…")]`, `IMessagePublisher`, `MessageContext`, the options. No dependencies — message classes reference only this. |
 | `src/Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | **The engine**, `RabbitMQBus`: connects, reconnects, declares, publishes, consumes, retries, dead-letters. |
-| `src/Messaging/Messaging.Hosting` | net8.0 | Server-style setup: `AddMessaging`, handlers, `IMessageSubscriber`, System.Text.Json. |
+| `src/Messaging/Messaging.Hosting` | net8.0 | Setup for any net8+ app: `AddMessaging`, `IMessagePublisher`, `IMessageSubscriber`, System.Text.Json. |
 | `src/Common.RabbitMQ` | net472, net8.0 | **The legacy adapter**: the old `PublishRemote` / `IRabbitMQService` API on top of the engine. Public API is additions-only. |
 | `tests/Common.RabbitMQ.Tests` | net472, net8.0 | Golden wire bytes, the legacy public API, real-broker tests. |
 | `tests/Fixtures/*` | | The frozen original library, a model of the real legacy library, and demo events the golden tests need. |
@@ -286,8 +286,7 @@ included), and Equipment's events are dropped.
 if (builder.Configuration.GetSection("Messaging:Buses").Exists())
 {
     // One bus per Messaging:Buses entry, the default from Messaging:DefaultBus. Buses can't be added in code.
-    builder.Services.AddMessaging(builder.Configuration, messaging => messaging
-        .AddHandlers(typeof(EquipmentDisposedHandler).Assembly));
+    builder.Services.AddMessaging(builder.Configuration);
 }
 ```
 
@@ -318,8 +317,8 @@ if (builder.Configuration.GetSection("Messaging:Buses").Exists())
 
 Every setting and its default is in the messaging guide's
 [configuration reference](../docs/messaging/README.md#configuration-reference). Configuration
-mistakes — a handler on a bus that doesn't exist, a class without `[Message]` — stop the API at
-startup with a list of what's wrong.
+mistakes, such as a missing or unknown `Messaging:DefaultBus`, stop the API at startup. A class
+without `[Message]` throws when it's first published or subscribed.
 
 ---
 
@@ -490,27 +489,29 @@ from RabbitMQ's own metrics and the log.
 
 > Not needed yet: build it when the API first has to react to another application.
 
-A handler is an ordinary class, resolved in its **own DI scope per message**:
+Receiving goes through `IMessageSubscriber`, subscribed in a hosted service's `StartAsync` (the buses start after
+every hosted service has started, so a shared queue's waiting messages find their subscriber). Work that needs scoped
+services opens a **DI scope per message**. Equipment's `EquipmentSubscriptions` is the example to copy:
 
 ```csharp
-public sealed class CustomerChangedHandler : IMessageHandler<CustomerChanged>
+subscriber.Subscribe<CustomerChanged>(async (message, context, token) =>
 {
-    public async Task Handle(CustomerChanged message, MessageContext context, CancellationToken cancellationToken)
-    {
-        // throw to fail the message: it is retried, then dead-lettered
-    }
-}
-
-messaging.AddHandlers(typeof(CustomerChangedHandler).Assembly);   // picks up every IMessageHandler<T> in it
+    await using AsyncServiceScope scope = provider.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<CustomerChangedHandler>().HandleAsync(message, context, token);
+    // throw to fail the message: it is retried, then dead-lettered
+});
 ```
 
+`CustomerChangedHandler` is the module's own scoped class; the library has no handler type.
+
 To receive AppB's messages, subscribe to its exchange in configuration: `"Subscriptions": [ { "Exchange": "AppB" } ]`
-under the bus. The queue binds it once, keyed "AppB". A pattern goes on the handler instead: `[RoutingKey("AppB.Events.#", Exchange = "AppB")]`.
+under the bus. The queue binds it once, keyed "AppB". A pattern goes on the subscription:
+`new SubscribeOptions { Exchange = "AppB", RoutingKey = "AppB.Events.#" }`.
 
 On a **shared queue** (the API's):
 
 - each message goes to **one** instance of the API;
-- a handler that throws is retried in the process `MaxAttempts` times (3), `RetryDelay` apart
+- a subscriber that throws is retried in the process `MaxAttempts` times (3), `RetryDelay` apart
   (1 s), then moved to `<queue>.dead-letter`;
 - a body that isn't valid JSON goes straight to the dead-letter queue;
 - a message that keeps **crashing the process** is dead-lettered by the broker after
@@ -521,8 +522,8 @@ Two things to keep in mind:
 - **In-memory state diverges** when there's more than one instance, because each message goes
   to only one of them. State that every instance needs belongs in the database or a shared
   cache.
-- **Handlers aren't mediator requests.** If a handler should run a module's use case, it
-  sends a command through the mediator itself; there's no automatic bridge yet.
+- **Subscribers aren't mediator requests.** If a message should run a module's use case, the
+  scoped class sends a command through the mediator itself, as `EquipmentDisposedHandler` does.
 
 ---
 
@@ -621,7 +622,7 @@ legacy messages are persistent, and whether payload classes use Newtonsoft attri
 | `tests/Common.RabbitMQ.Tests` — `Golden` | Bodies are byte-for-byte what legacy apps expect | No |
 | `…/PublicApi` | The legacy adapter lost nothing; only approved additions | No |
 | `…/Broker` | The engine against a real broker: delivery, echo drop, queues, retries, dead-letters | Yes |
-| `…/Hosting` | `AddMessaging`, handlers, `IMessageSubscriber` (net8 only) | Yes |
+| `…/Hosting` | `AddMessaging`, `IMessagePublisher`, `IMessageSubscriber` (net8 only) | Yes |
 | `…/LegacyModel`, `…/Adapter` | The new code working with the model of the real legacy library | Yes |
 | `tests/CleanArch.Api.IntegrationTests` — `EquipmentIntegrationEventsTests` | The real module and pipeline with a fake publisher: events go out after the commit, and not at all when it fails | No |
 
@@ -818,9 +819,8 @@ src/Messaging/
 ├── Messaging.Abstractions/MessageAttribute.cs          [Message("wire name")]
 ├── Messaging.RabbitMQ/RabbitMQBus.cs                   the engine: Enqueue (buffered)
 ├── Messaging.Hosting/MessagingServiceCollectionExtensions.cs   AddMessaging(configuration): buses from Messaging:Buses
-├── Messaging.Hosting/MessagingBuilder.cs               AddHandlers
 ├── Messaging.Hosting/MessagePublisher.cs               IMessagePublisher
-└── Messaging.Hosting/IMessageSubscriber.cs             for desktop apps
+└── Messaging.Hosting/IMessageSubscriber.cs             the only way to receive
 
 src/Common.RabbitMQ/                   the legacy adapter (public API frozen, additions only)
 
