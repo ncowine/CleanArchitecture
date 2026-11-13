@@ -26,14 +26,15 @@ calls on it, and back.
 **API and modern apps** (`Messaging.Hosting`):
 
 ```
-services.AddMessaging(...)                 MessagingServiceCollectionExtensions.AddMessaging
-  └─ one bus per Messaging:Buses entry     MessagingBuilder.AddBus (internal)
+services.AddMessaging(configuration)       MessagingServiceCollectionExtensions.AddMessaging
+  ├─ checks Messaging:Buses and DefaultBus throws at once: no buses, no default, or a default that isn't a bus
+  └─ one bus per Messaging:Buses entry     AddBus (private)
        ├─ named options for the bus        AddOptions<RabbitMQBusOptions>("Main").Bind(section)
-       └─ the bus itself, created lazily   AddKeyedSingleton("Main", ... CreateBus)
+       └─ the bus itself, created lazily   AddKeyedSingleton("Main", ... new RabbitMQBus)
 host starts
-  └─ MessagingHostedService.StartAsync
-       ├─ registry.Validate()              MessagingRegistry: fails fast on unknown buses, missing wire names, duplicate wire names
-       └─ bus.Start(registrations)         RabbitMQBus.Start: starts the background loops (see Threads)
+  └─ every hosted service's StartAsync     subscribe here (IMessageSubscriber)
+  └─ MessagingHostedService.StartedAsync
+       └─ bus.Start()                      RabbitMQBus.Start: starts the background loops (see Threads)
 ```
 
 Every modern app runs on the .NET Generic Host, which starts the hosted service. (`MessagingClient`, for apps without
@@ -113,7 +114,7 @@ Two places need care:
 | `ConfigureAwait(false)` | Every `await` in the libraries | "Don't come back to the caller's thread after this await." Library code never needs the UI thread, and this stops a WPF app that waits on a task from deadlocking. |
 | `SemaphoreSlim` as a lock | `RabbitMQBus.consumerLock` | C# doesn't allow an `await` inside `lock { }`. `await consumerLock.WaitAsync()` … `Release()` in `finally` is the async version. |
 | Exception filters (`catch … when`) | `KeepConnectedAsync`, `HandleWithRetriesAsync` | The catch only applies when the condition is true. Otherwise the exception passes through untouched. |
-| Keyed services | `MessagingBuilder.AddBus`, `GetRequiredKeyedService<RabbitMQBus>(name)` | Several singletons of one type, told apart by a key: here, the bus name. |
+| Keyed services | `AddMessaging` (`AddKeyedSingleton`), `GetRequiredKeyedService<RabbitMQBus>(name)` | Several singletons of one type, told apart by a key: here, the bus name. |
 | Named options | `AddOptions<RabbitMQBusOptions>(name)`, `IOptionsMonitor<…>.Get(name)` | The same idea for settings: one `RabbitMQBusOptions` per bus. `PostConfigure` fills in the bus name and a default client name after binding. |
 | `Interlocked.Exchange` | `SubscriptionToken.Dispose` | Swaps the unsubscribe action for null in one atomic step, so disposing twice, even from two threads, unsubscribes once. |
 | Copy-on-write + `Volatile` | `MessageSubscriber` | Subscribing builds a **new** dictionary under a lock and swaps it in. Delivery reads the current one without locking, so a slow UI subscriber never blocks a new subscription. |

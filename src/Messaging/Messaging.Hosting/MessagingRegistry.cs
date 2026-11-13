@@ -3,33 +3,17 @@ using System.Collections.Generic;
 
 namespace Messaging.Hosting
 {
+    /// <summary>The configured bus names and the default bus, checked by <see cref="MessagingServiceCollectionExtensions.AddMessaging"/>.</summary>
     internal sealed class MessagingRegistry
     {
-        private readonly HashSet<string> buses = new HashSet<string>(StringComparer.Ordinal);
-
-        public IReadOnlyCollection<string> BusNames => buses;
-
-        public string DefaultBus { get; set; }
-
-        public void AddBus(string name)
+        public MessagingRegistry(IEnumerable<string> busNames, string defaultBus)
         {
-            if (!buses.Add(name))
-            {
-                throw new InvalidOperationException($"Bus '{name}' is already added.");
-            }
+            BusNames = new HashSet<string>(busNames, StringComparer.Ordinal);
+            DefaultBus = defaultBus;
         }
 
-        public void Validate()
-        {
-            if (DefaultBus == null && buses.Count > 0)
-            {
-                throw new InvalidOperationException("Messaging is misconfigured:\nNo default bus: set Messaging:DefaultBus in the configuration.");
-            }
+        public IReadOnlyCollection<string> BusNames { get; }
 
-            if (DefaultBus != null && !buses.Contains(DefaultBus))
-            {
-                throw new InvalidOperationException($"Messaging is misconfigured:\nThe default bus '{DefaultBus}' is not configured.");
-            }
-        }
+        public string DefaultBus { get; }
     }
 }

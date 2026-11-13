@@ -17,6 +17,7 @@ namespace Common.RabbitMQ.Tests.Hosting
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string>
                 {
+                    ["Messaging:DefaultBus"] = "Server",
                     ["Messaging:Buses:Server:ExchangeName"] = "Server",
                     ["Messaging:Buses:Server:ExchangeType"] = "direct",
                     ["Messaging:Buses:Server:Subscriptions:0:Exchange"] = "AppA",
@@ -27,7 +28,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 
             ServiceCollection services = new ServiceCollection();
             services.AddLogging();
-            services.AddMessaging(messaging => messaging.AddBus("Server", configuration.GetSection("Messaging:Buses:Server")));
+            services.AddMessaging(configuration);
 
             using (ServiceProvider provider = services.BuildServiceProvider())
             {

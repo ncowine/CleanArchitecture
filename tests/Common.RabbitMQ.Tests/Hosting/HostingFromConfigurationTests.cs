@@ -53,19 +53,21 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
+        public void ADefaultThatIsNotABus_Throws()
+        {
+            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+                TestClient.Create(services => services.AddMessaging(Load(@"""DefaultBus"": ""Mistyped""," + Buses))));
+
+            Assert.Contains("Mistyped", error.Message);
+        }
+
+        [Fact]
         public void NoBuses_Throws()
         {
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
                 TestClient.Create(services => services.AddMessaging(Load(@"""DefaultBus"": ""Main"""))));
 
             Assert.Contains("Messaging:Buses", error.Message);
-        }
-
-        [Fact]
-        public void ApplicationsCannotAddBusesByHand()
-        {
-            Assert.Null(typeof(MessagingBuilder).GetMethod("AddBus"));
-            Assert.Null(typeof(MessagingBuilder).GetMethod("UseDefaultBus"));
         }
 
         private static IConfiguration Load(string messaging)

@@ -66,9 +66,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 await bus.WaitUntilConnectedAsync();
 
-                using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                    .AddBus(CompatBus.Name, options => Configure(options, bus))
-                    .UseDefaultBus(CompatBus.Name))))
+                using (TestClient client = TestClient.Create(services => services.AddTestMessaging(CompatBus.Name, (CompatBus.Name, options => Configure(options, bus)))))
                 {
                     await client.StartAsync(TestContext.Current.CancellationToken);
 
@@ -87,9 +85,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
                 await bus.WaitUntilConnectedAsync();
 
-                using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                    .AddBus(CompatBus.Name, options => Configure(options, bus))
-                    .UseDefaultBus(CompatBus.Name))))
+                using (TestClient client = TestClient.Create(services => services.AddTestMessaging(CompatBus.Name, (CompatBus.Name, options => Configure(options, bus)))))
                 {
                     Received<CompatMessage> received = new Received<CompatMessage>();
                     client.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add);
@@ -109,24 +105,9 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public void Publishing_WithSeveralBuses_AndNoDefault_Throws()
-        {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("First", Unreachable)
-                .AddBus("Second", Unreachable))))
-            {
-                InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => client.Publisher.Publish(GoldenMessage()));
-                Assert.Contains("no default", error.Message);
-            }
-        }
-
-        [Fact]
         public async Task Publishing_GoesToTheDefaultBus_UnlessTheCallNamesAnother()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("First", Unreachable)
-                .AddBus("Second", Unreachable)
-                .UseDefaultBus("Second"))))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("Second", ("First", Unreachable), ("Second", Unreachable))))
             {
                 await client.StartAsync(TestContext.Current.CancellationToken);
                 RabbitMQBus first = client.Services.GetRequiredKeyedService<RabbitMQBus>("First");
@@ -143,55 +124,10 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void Publishing_ToAnUnknownBus_Throws()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging.AddBus("Only", Unreachable))))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("Only", ("Only", Unreachable))))
             {
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
                     client.Publisher.Publish(GoldenMessage(), new PublishOptions { Bus = "Mistyped" }));
-                Assert.Contains("Mistyped", error.Message);
-            }
-        }
-
-        [Fact]
-        public void UseDefaultBus_Twice_Throws()
-        {
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-                TestClient.Create(services => services.AddMessaging(messaging => messaging
-                    .AddBus("First", Unreachable)
-                    .AddBus("Second", Unreachable)
-                    .UseDefaultBus("First")
-                    .UseDefaultBus("Second"))));
-            Assert.Contains("only one", error.Message);
-        }
-
-        [Fact]
-        public void UseDefaultBus_WithNoValue_Throws()
-        {
-            ArgumentException error = Assert.Throws<ArgumentException>(() =>
-                TestClient.Create(services => services.AddMessaging(messaging => messaging
-                    .AddBus("Only", Unreachable)
-                    .UseDefaultBus(null))));
-            Assert.Contains("Messaging:DefaultBus", error.Message);
-        }
-
-        [Fact]
-        public async Task NoDefaultBus_FailsAtStartup_EvenWithOneBus()
-        {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("Only", Unreachable))))
-            {
-                InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => client.StartAsync(TestContext.Current.CancellationToken));
-                Assert.Contains("No default bus", error.Message);
-            }
-        }
-
-        [Fact]
-        public async Task UnknownDefaultBus_FailsAtStartup()
-        {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("Only", Unreachable)
-                .UseDefaultBus("Mistyped"))))
-            {
-                InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => client.StartAsync(TestContext.Current.CancellationToken));
                 Assert.Contains("Mistyped", error.Message);
             }
         }

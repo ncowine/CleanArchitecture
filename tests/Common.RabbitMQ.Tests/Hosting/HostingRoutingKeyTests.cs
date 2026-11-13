@@ -79,9 +79,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         {
             await using (TestBus bus = await TestBus.CreateAsync())
             {
-                using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                    .AddBus(CompatBus.Name, options => HostingClientTests.Configure(options, bus))
-                    .UseDefaultBus(CompatBus.Name))))
+                using (TestClient client = TestClient.Create(services => services.AddTestMessaging(CompatBus.Name, (CompatBus.Name, options => HostingClientTests.Configure(options, bus)))))
                 {
                     client.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { RoutingKey = Key });
                     Assert.False(await bus.IsRoutableAsync(Key));
@@ -121,9 +119,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void SubscribeOptions_WithoutAKey_IsRefused()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => messaging
-                .AddBus("Only", options => { options.ExchangeName = "only"; options.HostName = "127.0.0.1"; options.Port = 1; })
-                .UseDefaultBus("Only"))))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("Only", ("Only", options => { options.ExchangeName = "only"; options.HostName = "127.0.0.1"; options.Port = 1; }))))
             {
                 IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
 

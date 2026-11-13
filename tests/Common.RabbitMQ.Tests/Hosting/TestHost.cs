@@ -47,23 +47,19 @@ namespace Common.RabbitMQ.Tests.Hosting
             services.AddSingleton<HandledMessages>();
             services.AddScoped<ScopeMarker>();
             services.AddScoped<CompatMessageHandler>();
-            services.AddMessaging(messaging =>
+            services.AddTestMessaging(CompatBus.Name, (CompatBus.Name, options =>
             {
-                messaging.AddBus(CompatBus.Name, options =>
-                {
-                    options.HostName = hostName;
-                    options.Port = port;
-                    options.VirtualHost = credentials?.VirtualHost ?? "/";
-                    options.UserName = credentials?.UserName ?? "guest";
-                    options.Password = credentials?.Password ?? "guest";
-                    options.ExchangeName = exchangeName;
-                    options.ClientName = clientName;
-                    options.ReconnectDelay = TimeSpan.FromSeconds(1);
-                    options.OutstandingPollInterval = TimeSpan.FromMilliseconds(20);
-                    configureBus?.Invoke(options);
-                });
-                messaging.UseDefaultBus(CompatBus.Name);
-            });
+                options.HostName = hostName;
+                options.Port = port;
+                options.VirtualHost = credentials?.VirtualHost ?? "/";
+                options.UserName = credentials?.UserName ?? "guest";
+                options.Password = credentials?.Password ?? "guest";
+                options.ExchangeName = exchangeName;
+                options.ClientName = clientName;
+                options.ReconnectDelay = TimeSpan.FromSeconds(1);
+                options.OutstandingPollInterval = TimeSpan.FromMilliseconds(20);
+                configureBus?.Invoke(options);
+            }));
 
             ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             List<IHostedService> hostedServices = new List<IHostedService>(provider.GetServices<IHostedService>());

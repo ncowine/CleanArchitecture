@@ -27,7 +27,6 @@ namespace Messaging.Hosting
 
         public Task StartingAsync(CancellationToken cancellationToken)
         {
-            registry.Validate();
             return Task.CompletedTask;
         }
 

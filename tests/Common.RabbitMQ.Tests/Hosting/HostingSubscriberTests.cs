@@ -75,7 +75,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void Subscribe_ToAClassWithoutAWireName_Throws()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => { })))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("Only", ("Only", options => { options.HostName = "127.0.0.1"; options.Port = 1; }))))
             {
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
                     client.Services.GetRequiredService<IMessageSubscriber>().Subscribe<HostingSubscriberTests>(_ => { }));
@@ -86,7 +86,7 @@ namespace Common.RabbitMQ.Tests.Hosting
         [Fact]
         public void Subscribe_TwoClassesWithOneWireName_Throws()
         {
-            using (TestClient client = TestClient.Create(services => services.AddMessaging(messaging => { })))
+            using (TestClient client = TestClient.Create(services => services.AddTestMessaging("Only", ("Only", options => { options.HostName = "127.0.0.1"; options.Port = 1; }))))
             {
                 IMessageSubscriber subscriber = client.Services.GetRequiredService<IMessageSubscriber>();
                 subscriber.Subscribe<CompatMessage>(_ => { });

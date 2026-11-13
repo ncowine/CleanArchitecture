@@ -317,7 +317,7 @@ if (builder.Configuration.GetSection("Messaging:Buses").Exists())
 
 Every setting and its default is in the messaging guide's
 [configuration reference](../docs/messaging/README.md#configuration-reference). Configuration
-mistakes, such as a missing or unknown `Messaging:DefaultBus`, stop the API at startup. A class
+mistakes, such as a missing or unknown `Messaging:DefaultBus`, make `AddMessaging` throw. A class
 without `[Message]` throws when it's first published or subscribed.
 
 ---

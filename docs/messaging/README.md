@@ -567,7 +567,7 @@ publisher.Publish(order, new PublishOptions { Bus = "Partners" });
 **Another app's exchange** is a subscription in configuration, `Messaging:Buses:Main:Subscriptions`, as
 `[ { "Exchange": "AppA" } ]`. There's no way to add one in code.
 
-Configuration mistakes stop the app at startup, for example a missing or unknown `Messaging:DefaultBus`. A class
+Configuration mistakes make `AddMessaging` throw, for example no buses or a missing or unknown `Messaging:DefaultBus`. A class
 without `[Message]` throws when it is first published or subscribed.
 
 **4. In CleanArchitecture: publish events after the commit.**
