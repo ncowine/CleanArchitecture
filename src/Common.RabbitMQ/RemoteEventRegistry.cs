@@ -1,38 +1,16 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using Prism.Events;
 
 namespace Common.RabbitMQ
 {
-    public sealed class RemoteEventRegistry
+    /// <summary>
+    /// The remote events an app has used, by type and by wire name. Events are added the first time they are published or
+    /// subscribed to; one registry is shared by every bus of a router, so two events with one wire name are refused.
+    /// </summary>
+    internal sealed class RemoteEventRegistry
     {
         private readonly ConcurrentDictionary<Type, RemoteEventDescriptor> eventsByType = new ConcurrentDictionary<Type, RemoteEventDescriptor>();
         private readonly ConcurrentDictionary<string, RemoteEventDescriptor> eventsByName = new ConcurrentDictionary<string, RemoteEventDescriptor>(StringComparer.Ordinal);
-
-        public RemoteEventRegistry(params Assembly[] assemblies)
-        {
-            foreach (Assembly assembly in assemblies.Distinct())
-            {
-                foreach (Type type in assembly.GetTypes())
-                {
-                    Type payloadType = FindPayloadType(type);
-
-                    if (payloadType == null || type.IsAbstract || type.ContainsGenericParameters)
-                    {
-                        continue;
-                    }
-
-                    RemoteEventDescriptor descriptor = new RemoteEventDescriptor(type, payloadType);
-                    AddWireName(descriptor);
-                    eventsByType[type] = descriptor;
-                }
-            }
-        }
-
-        public IReadOnlyCollection<RemoteEventDescriptor> Events => eventsByType.Values.ToList();
 
         internal RemoteEventDescriptor FindOrAdd(Type eventType)
         {
@@ -52,12 +30,7 @@ namespace Common.RabbitMQ
             return eventsByType.GetOrAdd(eventType, descriptor);
         }
 
-        public bool TryGet(Type eventType, out RemoteEventDescriptor descriptor)
-        {
-            return eventsByType.TryGetValue(eventType, out descriptor);
-        }
-
-        public bool TryGet(string eventName, out RemoteEventDescriptor descriptor)
+        internal bool TryGet(string eventName, out RemoteEventDescriptor descriptor)
         {
             return eventsByName.TryGetValue(eventName, out descriptor);
         }

@@ -164,7 +164,7 @@ Two ideas explain almost everything:
 | `Common.RabbitMQ.Tests/Broker` | The engine against a real broker: delivery, echo drop, headers, queues, retries, dead letters. |
 | `Common.RabbitMQ.Tests/Hosting` | The server side and modern clients: handlers, JSON, health, routing keys, `IMessageSubscriber`. |
 | `Common.RabbitMQ.Tests/LegacyModel` | A **model of the real legacy library** and every assumption about it, plus the new code working with it. |
-| `Common.RabbitMQ.Tests/Adapter` | The legacy adapter's newer features: events by assembly, appsettings.json, routing rules. |
+| `Common.RabbitMQ.Tests/Adapter` | The legacy adapter's newer features: wire names, appsettings.json, routing rules. |
 | `Fixtures/Common.RabbitMQ.Baseline` | A **frozen copy** of the original library, so tests can prove old and new builds talk to each other. |
 | `Fixtures/LegacyModel` | The legacy model and example event projects (`AppA.Events`, `AppB.Events`, `Shared.Events`). |
 
@@ -173,7 +173,7 @@ Two ideas explain almost everything:
 | Document | Read it when |
 |---|---|
 | [`adr/0001-decouple-messaging-from-prism.md`](adr/0001-decouple-messaging-from-prism.md) | You want to know **why** the layers exist, and the compatibility rules. |
-| [`adr/0002-exchange-per-owner-and-configurable-routing.md`](adr/0002-exchange-per-owner-and-configurable-routing.md) | You want the topology: exchange per app, routing keys, events found by assembly, modern clients. |
+| [`adr/0002-exchange-per-owner-and-configurable-routing.md`](adr/0002-exchange-per-owner-and-configurable-routing.md) | You want the topology: exchange per app, routing keys, how events are found, modern clients. |
 | [`adr/0003-server-publishes-through-the-outbox.md`](adr/0003-server-publishes-through-the-outbox.md) | Superseded 2026-11-05. The outbox design the API used before it published after the commit. |
 | [`legacy-baseline-assumptions.md`](legacy-baseline-assumptions.md) | You're checking this code against the real legacy library. |
 
@@ -434,7 +434,8 @@ routing key adds that key's binding while it lasts. A
 subscriber held weakly gives no signal when it is collected, so that one is noticed at the next message. A message that
 arrives while nothing is subscribed is missed.
 `PublishRemote` and `PublishRemoteOnly` exist only on `RemotePubSubEvent<T>`, so calling them on a local event doesn't
-compile. `RemoteEventRegistry.Add` is gone. `[RemoteEvent("bus")]` is gone too, so remove it when you take this version.
+compile. `RemoteEventRegistry` is no longer public, and `[RemoteEvent("bus")]` is gone, so remove both when you take
+this version.
 
 **Logging.** The logger is passed in, and it's required. Any `ILogger` works:
 
@@ -443,7 +444,7 @@ router = RabbitMQServiceRouter.FromConfiguration(eventAggregator, configuration,
 router = RabbitMQServiceRouter.FromConfiguration(eventAggregator, configuration, NullLogger.Instance);  // no logging
 ```
 
-A `RabbitMQService` built on its own takes it as its third constructor argument. Nothing is written to Trace any more,
+A `RabbitMQService` built on its own takes it too: `new RabbitMQService(eventAggregator, logger)`. Nothing is written to Trace any more,
 and there's no `Log` event: an app that used either passes a logger instead.
 
 ### B. A modern app that keeps the Prism style (.NET 8 or later)

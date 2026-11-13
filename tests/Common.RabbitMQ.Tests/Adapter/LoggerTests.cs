@@ -17,7 +17,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         {
             RecordingLogger logger = new RecordingLogger();
 
-            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), new RemoteEventRegistry(), logger) { DefaultBus = "Main" })
+            using (RabbitMQServiceRouter router = new RabbitMQServiceRouter(new EventAggregator(), logger) { DefaultBus = "Main" })
             {
                 router.AddBus(new RabbitMQConfig { BusName = "Main", ExchangeName = "logger-test", ClientName = "logger-test", Port = 1 });
                 router.Init();
@@ -42,7 +42,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         public void ALogger_IsRequired()
         {
             // No silent fallback: an app that wants no logging says so with NullLogger.Instance.
-            Assert.Throws<ArgumentNullException>(() => new RabbitMQService(new EventAggregator(), new RemoteEventRegistry(), null));
+            Assert.Throws<ArgumentNullException>(() => new RabbitMQService(new EventAggregator(), null));
             Assert.Throws<ArgumentNullException>(() => RabbitMQServiceRouter.FromConfiguration(new EventAggregator(), new ConfigurationBuilder().Build(), null));
         }
     }

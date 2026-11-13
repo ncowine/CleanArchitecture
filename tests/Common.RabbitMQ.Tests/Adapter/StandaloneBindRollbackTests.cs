@@ -20,8 +20,8 @@ namespace Common.RabbitMQ.Tests.Adapter
         public void ARefusedBind_IsUndoneOnTheServicesThatAlreadyBound()
         {
             EventAggregator events = new EventAggregator();
-            using (RabbitMQService first = new RabbitMQService(events, new RemoteEventRegistry(), NullLogger.Instance))
-            using (RabbitMQService second = new RabbitMQService(events, new RemoteEventRegistry(), NullLogger.Instance))
+            using (RabbitMQService first = new RabbitMQService(events, NullLogger.Instance))
+            using (RabbitMQService second = new RabbitMQService(events, NullLogger.Instance))
             {
                 first.Init(Config("first", "shared"));
                 second.Init(Config("second"));

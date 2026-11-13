@@ -48,7 +48,7 @@ namespace Common.RabbitMQ.Tests.Adapter
                 Received<Order> received = new Received<Order>();
                 eventAggregator.GetEvent<SubscribedBeforeInit>().Subscribe(received.Add, ThreadOption.PublisherThread, keepSubscriberReferenceAlive: true);
 
-                using (RabbitMQService service = new RabbitMQService(eventAggregator, new RemoteEventRegistry(), NullLogger.Instance))
+                using (RabbitMQService service = new RabbitMQService(eventAggregator, NullLogger.Instance))
                 {
                     service.Init(topology.Broker.CreateCurrentConfig("Main", topology.Exchange(App), App));
                     AdapterApp sender = topology.StartAdapter(App, null);
@@ -68,7 +68,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void PublishRemote_OnARemoteEvent_NeedsNoRegistration()
         {
-            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), new RemoteEventRegistry(), NullLogger.Instance))
+            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), NullLogger.Instance))
             {
                 service.Init(new RabbitMQConfig { BusName = "Main", ExchangeName = "binding-tests", ClientName = "binding-tests", HostName = "127.0.0.1", Port = 1 });
                 RabbitMQServiceProvider.Current = service;

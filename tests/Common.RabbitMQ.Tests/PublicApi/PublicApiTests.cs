@@ -41,13 +41,20 @@ namespace Common.RabbitMQ.Tests.PublicApi
             // The router is built only by FromConfiguration: buses and the default come from the Messaging section (2026-11-07).
             "ctor Common.RabbitMQ.RabbitMQServiceRouter(Prism.Events.IEventAggregator, Common.RabbitMQ.RemoteEventRegistry)",
             "method Common.RabbitMQ.RabbitMQServiceRouter.AddBus(Common.RabbitMQ.RabbitMQConfig) : Common.RabbitMQ.RabbitMQService",
+
+            // Events are found when first used; nothing passed assemblies to scan, so the registry is internal (2026-11-13).
+            "sealed class Common.RabbitMQ.RemoteEventRegistry",
+            "ctor Common.RabbitMQ.RemoteEventRegistry(System.Reflection.Assembly[])",
+            "property Common.RabbitMQ.RemoteEventRegistry.Events : System.Collections.Generic.IReadOnlyCollection<Common.RabbitMQ.RemoteEventDescriptor> { get; }",
+            "method Common.RabbitMQ.RemoteEventRegistry.TryGet(System.Type, out Common.RabbitMQ.RemoteEventDescriptor) : System.Boolean",
+            "method Common.RabbitMQ.RemoteEventRegistry.TryGet(System.String, out Common.RabbitMQ.RemoteEventDescriptor) : System.Boolean",
         };
 
         /// <summary>Public API added after the baseline, each for a reason recorded in ADR 0002.</summary>
         private static readonly string[] ApprovedAdditions =
         {
             // Logging through an injected ILogger instead of the Log event (ADR 0001, amended 2026-11-03 and 2026-11-07).
-            "ctor Common.RabbitMQ.RabbitMQService(Prism.Events.IEventAggregator, Common.RabbitMQ.RemoteEventRegistry, Microsoft.Extensions.Logging.ILogger)",
+            "ctor Common.RabbitMQ.RabbitMQService(Prism.Events.IEventAggregator, Microsoft.Extensions.Logging.ILogger)",
 
             // The publisher picks the bus: a default from configuration, or a named one (ADR 0002, update 2026-11-04).
             "ctor Common.RabbitMQ.RemoteEventDescriptor(System.Type, System.Type)",
@@ -138,7 +145,7 @@ namespace Common.RabbitMQ.Tests.PublicApi
             // Guards the reader itself: an empty result would make the comparisons pass for anything.
             HashSet<string> api = PublicApiReader.Read(typeof(RabbitMQService).Assembly);
 
-            Assert.Contains("ctor Common.RabbitMQ.RabbitMQService(Prism.Events.IEventAggregator, Common.RabbitMQ.RemoteEventRegistry, Microsoft.Extensions.Logging.ILogger)", api);
+            Assert.Contains("ctor Common.RabbitMQ.RabbitMQService(Prism.Events.IEventAggregator, Microsoft.Extensions.Logging.ILogger)", api);
             Assert.Contains("method Common.RabbitMQ.RabbitMQService.Publish(System.Type, System.Object) : System.Void", api);
             Assert.Contains("implements Common.RabbitMQ.RabbitMQService : Common.RabbitMQ.IRabbitMQService", api);
         }
