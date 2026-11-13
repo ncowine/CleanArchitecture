@@ -367,7 +367,7 @@ bottom: the tiles say whether anything is wrong right now, and the log says why.
 | Tile | Healthy | Unhealthy |
 |---|---|---|
 | **Broker reachable** | Up | Down: Prometheus cannot scrape RabbitMQ, so the broker, its host or the `rabbitmq_prometheus` plugin is gone. No application can publish or receive. *Not scraped* means the `rabbitmq` job is missing from `prometheus.yml` |
-| **Dead-lettered** | 0 | Anything above zero: messages the API received but never handled — every attempt failed, or the body was unreadable. Nothing retries them. Read them in the management UI (`:15672` → Queues → `cleanarch.api.main.dead-letter`), fix the cause, then move them back or purge |
+| **Dead-lettered** | 0 | Anything above zero: messages the API received but never handled — every attempt failed, or the body was unreadable. Nothing retries them. Read them in the management UI (`:15672` → Queues → `cleanarch.api_main.dead-letter`), fix the cause, then move them back or purge |
 | **Waiting to be handled** | near 0 | Climbing: handlers are slower than arrivals, or the consumer is disconnected |
 
 **Connection & dead-letter log** is the *why* behind the tiles: connections lost and regained,

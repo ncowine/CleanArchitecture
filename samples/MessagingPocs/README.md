@@ -43,8 +43,8 @@ Each app **owns one exchange** and publishes only there; what it receives is dec
 | net472 | `CleanArch`, `Poc.Net472` (own), `Poc.Net8` | the API's events, notes and disposals from both legacy apps |
 | net8 | `CleanArch`, `Poc.Net8` (own), `Poc.Net472` | the same |
 | net10 | `CleanArch`, `Poc.Net472`, `Poc.Net8` | the API's events, and the ten shape events |
-| the API (`cleanarch.api.main`, shared, durable) | `Poc.Net472` | `EquipmentDisposed` only: the one event it handles |
-| `Poc.Api.NoOutbox` (`poc.api.nooutbox.main`, shared, durable) | `Poc.Net472`, `Poc.Net8` | disposals, flags and the ten shape events |
+| the API (`cleanarch.api_main`, shared, durable) | `Poc.Net472` | `EquipmentDisposed` only: the one event it handles |
+| `Poc.Api.NoOutbox` (`poc.api.nooutbox_main`, shared, durable) | `Poc.Net472`, `Poc.Net8` | disposals, flags and the ten shape events |
 
 Every queue binds each exchange **once**, keyed by the exchange's name, which is the routing key its owner publishes
 everything with (the real legacy library does the same). So a queue receives everything on the exchanges it binds, and
@@ -255,7 +255,7 @@ list from the API.
 
 **Subscribing.** `EquipmentDisposedHandler` receives `EquipmentDisposed` from the net472 app's exchange and logs it,
 wired the way `CleanArch.Api` does it: subscribed in `Program.cs` with a DI scope per message, and `Subscriptions` plus
-`"QueueMode": "Shared"` in `appsettings.json`. Its queue, `poc.api.nooutbox.main`, is durable and has a dead-letter
+`"QueueMode": "Shared"` in `appsettings.json`. Its queue, `poc.api.nooutbox_main`, is durable and has a dead-letter
 queue, so messages wait while the API is stopped and a subscriber that keeps failing doesn't lose them. Run `setup-exchanges.ps1` first if the
 `Poc.Net472` exchange doesn't exist yet. Click **Dispose of selected** in a net472 window to see it. The real API
 also handles this event, and deletes that equipment if it's running.
@@ -320,7 +320,7 @@ needed in an app of your own. `Poc.Shared`, `Poc.Legacy.Events` and `Poc.Shapes`
 
 ## Clean-up
 
-The broker keeps the exchanges and the API's durable queues (`cleanarch.api.main`, `.dead-letter`) after everything
+The broker keeps the exchanges and the API's durable queues (`cleanarch.api_main`, `.dead-letter`) after everything
 closes; they're harmless. Delete them in the management UI for a clean broker.
 
 ## How these were checked

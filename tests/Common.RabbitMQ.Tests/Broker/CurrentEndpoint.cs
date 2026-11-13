@@ -16,7 +16,7 @@ namespace Common.RabbitMQ.Tests.Broker
             service = new RabbitMQService(eventAggregator, NullLogger.Instance);
             eventAggregator.GetEvent<CompatEvent>().Subscribe(Received.Add, ThreadOption.PublisherThread, keepSubscriberReferenceAlive: true);
             service.Init(broker.CreateCurrentConfig(CompatBus.Name, exchangeName, clientName));
-            queueName = $"{clientName}.{CompatBus.Name}.{Environment.UserName}.{service.InstanceId}".ToLowerInvariant();
+            queueName = $"{clientName}_{CompatBus.Name}_{Environment.UserName}_{service.InstanceId}".ToLowerInvariant();
         }
 
         public CompatBuild Build => CompatBuild.Current;

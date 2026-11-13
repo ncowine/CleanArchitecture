@@ -47,8 +47,8 @@ namespace Common.RabbitMQ.Tests.Hosting
                 Assert.Equal(7, options.DeliveryLimit);
 
                 RabbitMQBus bus = provider.GetRequiredKeyedService<RabbitMQBus>("Legacy");
-                Assert.Equal("webapi.legacy", bus.QueueName);
-                Assert.Equal("webapi.legacy.dead-letter", bus.DeadLetterQueueName);
+                Assert.Equal("webapi_legacy", bus.QueueName);
+                Assert.Equal("webapi_legacy.dead-letter", bus.DeadLetterQueueName);
             }
         }
 

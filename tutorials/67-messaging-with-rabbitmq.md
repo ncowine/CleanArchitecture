@@ -310,7 +310,7 @@ if (builder.Configuration.GetSection("Messaging:Buses").Exists())
 - **`ExchangeName: CleanArch`** is part of the contract: subscribers bind to it by name. The API
   declares it the first time it connects.
 - **`QueueMode: Shared`** because the API is a server. The API doesn't receive messages yet, so
-  its queue (`cleanarch.api.main`, plus `.dead-letter`) has no bindings; it's ready for
+  its queue (`cleanarch.api_main`, plus `.dead-letter`) has no bindings; it's ready for
   [chapter 13](#13-receiving-messages-in-the-api).
 - `guest` only works from the broker's own machine. Real environments need a real account with
   permission to declare exchanges and queues.

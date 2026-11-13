@@ -312,7 +312,7 @@ flowchart LR
 | | Per-instance queue (desktop apps) | Shared queue (servers) |
 |---|---|---|
 | How many | One per running program | One per service, shared by all its running copies |
-| Name | `clientname.busname.<windows user>.<random id>` | `clientname.busname`, plus `clientname.busname.dead-letter` |
+| Name | `clientname_busname_<windows user>_<random id>` | `clientname_busname`, plus `clientname_busname.dead-letter` |
 | Lifetime | Deleted when the program exits | Durable: survives restarts; messages wait while nothing runs |
 | Who gets a message | **Every** running copy | **One** running copy (the work is shared) |
 | Your own messages | Dropped (no echo) | Handled like any other message |
@@ -616,7 +616,7 @@ The step-by-step version is in
 | `Subscriptions` | *(none)* | Other apps' exchanges, by `Exchange`. Each is bound with the exchange name; other keys are bound by subscribing with `SubscribeOptions`. |
 | `ClientName` | the app's name | Shown in the management UI, sent as app-id, used in queue names. |
 | `QueueMode` | `PerInstance` | `PerInstance` (desktop) or `Shared` (servers). |
-| `SharedQueueName` | `clientname.busname` | Shared queues only. |
+| `SharedQueueName` | `clientname_busname` | Shared queues only. |
 | `MaxAttempts` | `3` | Shared queues only: attempts per message before dead-lettering. |
 | `RetryDelay` | `00:00:01` | Shared queues only: the wait between attempts. |
 | `DeliveryLimit` | `5` | Shared queues only: the crash guard (see above). |

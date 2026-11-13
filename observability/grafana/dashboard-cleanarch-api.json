@@ -3793,7 +3793,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rabbitmq_queue_messages{queue=\"cleanarch.api.main.dead-letter\"}) or vector(0)"
+          "expr": "sum(rabbitmq_queue_messages{queue=\"cleanarch.api_main.dead-letter\"}) or vector(0)"
         }
       ]
     },
@@ -3853,7 +3853,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rabbitmq_queue_messages_ready{queue=\"cleanarch.api.main\"}) or vector(0)"
+          "expr": "sum(rabbitmq_queue_messages_ready{queue=\"cleanarch.api_main\"}) or vector(0)"
         }
       ]
     },
