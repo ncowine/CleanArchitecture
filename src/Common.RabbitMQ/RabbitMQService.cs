@@ -1,9 +1,5 @@
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
-using Messaging;
 using Messaging.RabbitMQ;
 using Microsoft.Extensions.Logging;
 using Prism.Events;
@@ -16,16 +12,10 @@ namespace Common.RabbitMQ
         private readonly RemoteEventRegistry registry;
         private readonly ILogger logger;
         private readonly string instanceId = Guid.NewGuid().ToString("N");
-        private readonly ConcurrentDictionary<string, bool> registeredEvents = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
 
         private RabbitMQConfig config;
         private RabbitMQBus bus;
         private bool disposed;
-
-        public RabbitMQService(IEventAggregator eventAggregator, ILogger logger)
-            : this(eventAggregator, new RemoteEventRegistry(), logger)
-        {
-        }
 
         internal RabbitMQService(IEventAggregator eventAggregator, RemoteEventRegistry registry, ILogger logger)
         {
@@ -34,19 +24,17 @@ namespace Common.RabbitMQ
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public string BusName => config?.BusName;
+        internal string BusName => config?.BusName;
 
-        internal Func<SubscribeOptions, string> SelectBindingBus { get; set; }
-
-        public string InstanceId => instanceId;
+        internal string InstanceId => instanceId;
 
         public bool IsConsumerConnected => bus != null && bus.IsConsumerConnected;
 
-        public bool IsPublisherConnected => bus != null && bus.IsPublisherConnected;
+        internal bool IsPublisherConnected => bus != null && bus.IsPublisherConnected;
 
-        public int OutstandingCount => bus?.OutstandingCount ?? 0;
+        internal int OutstandingCount => bus?.OutstandingCount ?? 0;
 
-        public void Init(RabbitMQConfig config)
+        internal void Init(RabbitMQConfig config)
         {
             if (config == null)
             {
@@ -71,9 +59,10 @@ namespace Common.RabbitMQ
             this.config = config;
 
             bus = new RabbitMQBus(CreateBusOptions(config), new PrismDispatcher(eventAggregator, registry), logger);
+        }
 
-            int subscribedEvents = RemoteEventSubscriptions.AddRunningService(this);
-
+        internal void Start(int subscribedEvents)
+        {
             bus.Start();
 
             logger.LogInformation("[{Bus}] Initialized with {Count} event(s) on {Host}:{Port}{VirtualHost} exchange '{Exchange}'.",
@@ -84,11 +73,11 @@ namespace Common.RabbitMQ
         {
             EnsureInitialized();
 
-            RemoteEventDescriptor descriptor = GetRequiredDescriptor(eventType);
-            bus.Enqueue(descriptor.EventName, payload);
+            RemoteEventMetadata metadata = GetRequiredMetadata(eventType);
+            bus.Publish(metadata.EventName, payload);
         }
 
-        public void Publish(Type eventType, object payload, string routingKey)
+        void IRoutingKeyPublisher.Publish(Type eventType, object payload, string routingKey)
         {
             EnsureInitialized();
 
@@ -97,28 +86,8 @@ namespace Common.RabbitMQ
                 throw new ArgumentException("A routing key is required.", nameof(routingKey));
             }
 
-            RemoteEventDescriptor descriptor = GetRequiredDescriptor(eventType);
-            bus.Enqueue(descriptor.EventName, payload, routingKey);
-        }
-
-        public Task RegisterQueue(Type eventType)
-        {
-            EnsureInitialized();
-
-            RemoteEventDescriptor descriptor = GetRequiredDescriptor(eventType);
-            registeredEvents[descriptor.EventName] = true;
-            bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType));
-            return Task.CompletedTask;
-        }
-
-        public Task UnregisterQueue(Type eventType)
-        {
-            EnsureInitialized();
-
-            RemoteEventDescriptor descriptor = GetRequiredDescriptor(eventType);
-            registeredEvents.TryRemove(descriptor.EventName, out _);
-            bus.Unsubscribe(descriptor.EventName);
-            return Task.CompletedTask;
+            RemoteEventMetadata metadata = GetRequiredMetadata(eventType);
+            bus.Publish(metadata.EventName, payload, routingKey);
         }
 
         public void Dispose()
@@ -129,93 +98,27 @@ namespace Common.RabbitMQ
             }
 
             disposed = true;
-            RemoteEventSubscriptions.RemoveRunningService(this);
             bus?.Dispose();
         }
 
-        internal bool StartReceiving(IRemoteEvent remoteEvent)
+        internal void StartReceiving(RemoteEventMetadata metadata)
         {
-            RemoteEventDescriptor descriptor = FindDescriptorOnOwnAggregator(remoteEvent);
-            if (descriptor == null)
-            {
-                return false;
-            }
-
-            bus.Subscribe(new MessageRegistration(descriptor.EventName, descriptor.PayloadType));
-            return true;
+            bus.StartReceiving(new MessageRegistration(metadata.EventName, metadata.PayloadType));
         }
 
-        internal void Bind(IRemoteEvent remoteEvent, SubscribeOptions options)
+        internal void StopReceiving(RemoteEventMetadata metadata)
         {
-            if (FindDescriptorOnOwnAggregator(remoteEvent) != null && IsBindingBusFor(options))
-            {
-                bus.Bind(options.Exchange, options.RoutingKey);
-            }
+            bus.StopReceiving(metadata.EventName);
         }
 
-        internal void BindOrLog(IRemoteEvent remoteEvent, SubscribeOptions options)
+        internal void BindRoutingKey(string exchange, string routingKey)
         {
-            try
-            {
-                Bind(remoteEvent, options);
-            }
-            catch (InvalidOperationException ex)
-            {
-                logger.LogError(ex, "[{Bus}] Routing key '{RoutingKey}' is not bound: {Error}", config.BusName, options.RoutingKey, ex.Message);
-            }
+            bus.BindRoutingKey(exchange, routingKey);
         }
 
-        internal void Unbind(IRemoteEvent remoteEvent, SubscribeOptions options)
+        internal void UnbindRoutingKey(string exchange, string routingKey)
         {
-            if (FindDescriptorOnOwnAggregator(remoteEvent) == null)
-            {
-                return;
-            }
-
-            bool mine;
-            try
-            {
-                mine = IsBindingBusFor(options);
-            }
-            catch (InvalidOperationException)
-            {
-                return;
-            }
-
-            if (mine)
-            {
-                bus.Unbind(options.Exchange, options.RoutingKey);
-            }
-        }
-
-        private bool IsBindingBusFor(SubscribeOptions options)
-        {
-            if (SelectBindingBus != null)
-            {
-                return SelectBindingBus(options) == config.BusName;
-            }
-
-            if (!string.IsNullOrWhiteSpace(options.Bus) && options.Bus != config.BusName)
-            {
-                throw new InvalidOperationException($"Cannot bind a routing key on bus '{options.Bus}': it is not configured for this application.");
-            }
-
-            return true;
-        }
-
-        internal void StopReceiving(IRemoteEvent remoteEvent)
-        {
-            RemoteEventDescriptor descriptor = FindDescriptorOnOwnAggregator(remoteEvent);
-            if (descriptor != null && !registeredEvents.ContainsKey(descriptor.EventName))
-            {
-                bus.Unsubscribe(descriptor.EventName);
-            }
-        }
-
-        private RemoteEventDescriptor FindDescriptorOnOwnAggregator(IRemoteEvent remoteEvent)
-        {
-            RemoteEventDescriptor descriptor = registry.FindOrAdd(remoteEvent.GetType());
-            return ReferenceEquals(descriptor?.GetEvent(eventAggregator), remoteEvent) ? descriptor : null;
+            bus.UnbindRoutingKey(exchange, routingKey);
         }
 
         private RabbitMQBusOptions CreateBusOptions(RabbitMQConfig config)
@@ -245,7 +148,7 @@ namespace Common.RabbitMQ
             };
         }
 
-        private RemoteEventDescriptor GetRequiredDescriptor(Type eventType)
+        private RemoteEventMetadata GetRequiredMetadata(Type eventType)
         {
             if (eventType == null)
             {

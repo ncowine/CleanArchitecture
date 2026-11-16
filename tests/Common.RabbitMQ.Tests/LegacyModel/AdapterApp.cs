@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using Common.RabbitMQ.Tests.Broker;
 using Prism.Events;
@@ -13,9 +12,10 @@ namespace Common.RabbitMQ.Tests.LegacyModel
     public sealed class AdapterApp : IDisposable
     {
         private readonly EventAggregator eventAggregator = new EventAggregator();
+        private readonly RabbitMQServiceRouter router;
         private readonly RabbitMQService service;
 
-        public AdapterApp(BrokerSettings broker, string exchangeName, string clientName, Action<RabbitMQConfig> configure)
+        internal AdapterApp(BrokerSettings broker, string exchangeName, string clientName, Action<RabbitMQConfig> configure)
         {
             RabbitMQConfig config = new RabbitMQConfig
             {
@@ -32,8 +32,8 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             };
             configure?.Invoke(config);
 
-            service = new RabbitMQService(eventAggregator, NullLogger.Instance);
-            service.Init(config);
+            router = OneBusRouter.Start(eventAggregator, config);
+            service = router.GetRequiredBus(config.BusName);
             ExchangeName = exchangeName;
         }
 
@@ -71,13 +71,13 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         public void PublishRemoteTo<TEvent, TPayload>(string routingKey, TPayload payload)
             where TEvent : RemotePubSubEvent<TPayload>, new()
         {
-            service.Publish(typeof(TEvent), payload, routingKey);
+            ((IRoutingKeyPublisher)service).Publish(typeof(TEvent), payload, routingKey);
             eventAggregator.GetEvent<TEvent>().Publish(payload);
         }
 
         public void Dispose()
         {
-            service.Dispose();
+            router.Dispose();
         }
     }
 }

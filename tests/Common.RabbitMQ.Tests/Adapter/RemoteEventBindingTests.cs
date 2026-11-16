@@ -48,9 +48,9 @@ namespace Common.RabbitMQ.Tests.Adapter
                 Received<Order> received = new Received<Order>();
                 eventAggregator.GetEvent<SubscribedBeforeInit>().Subscribe(received.Add, ThreadOption.PublisherThread, keepSubscriberReferenceAlive: true);
 
-                using (RabbitMQService service = new RabbitMQService(eventAggregator, NullLogger.Instance))
+                using (RabbitMQServiceRouter router = OneBusRouter.Start(eventAggregator, topology.Broker.CreateCurrentConfig("Main", topology.Exchange(App), App)))
                 {
-                    service.Init(topology.Broker.CreateCurrentConfig("Main", topology.Exchange(App), App));
+                    RabbitMQService service = router.GetRequiredBus("Main");
                     AdapterApp sender = topology.StartAdapter(App, null);
                     await topology.WaitUntilConnectedAsync(sender);
                     for (int i = 0; i < 100 && !service.IsConsumerConnected; i++)
@@ -68,10 +68,10 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void PublishRemote_OnARemoteEvent_NeedsNoRegistration()
         {
-            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), NullLogger.Instance))
+            using (RabbitMQServiceRouter router = OneBusRouter.Start(new EventAggregator(), new RabbitMQConfig { BusName = "Main", ExchangeName = "binding-tests", ClientName = "binding-tests", HostName = "127.0.0.1", Port = 1 }))
             {
-                service.Init(new RabbitMQConfig { BusName = "Main", ExchangeName = "binding-tests", ClientName = "binding-tests", HostName = "127.0.0.1", Port = 1 });
-                RabbitMQServiceProvider.Current = service;
+                RabbitMQService service = router.GetRequiredBus("Main");
+                RabbitMQServiceProvider.Current = router;
 
                 new EventAggregator().GetEvent<NeverSubscribed>().PublishRemote(new Order { Id = 1 });
 

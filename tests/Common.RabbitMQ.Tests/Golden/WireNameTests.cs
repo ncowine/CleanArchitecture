@@ -1,5 +1,6 @@
 using System;
 using Common.Events;
+using Messaging.RabbitMQ;
 using Xunit;
 
 namespace Common.RabbitMQ.Tests.Golden
@@ -13,8 +14,8 @@ namespace Common.RabbitMQ.Tests.Golden
         [Fact]
         public void HeaderNames()
         {
-            Assert.Equal("event-type", MessageHeaders.EventType);
-            Assert.Equal("source-id", MessageHeaders.SourceId);
+            Assert.Equal("event-type", WireHeaders.MessageType);
+            Assert.Equal("source-id", WireHeaders.SourceId);
         }
 
         [Theory]

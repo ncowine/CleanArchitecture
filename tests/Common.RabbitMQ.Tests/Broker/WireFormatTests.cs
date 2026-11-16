@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Common.RabbitMQ.Tests.Golden;
 using Compat.Events;
+using Messaging.RabbitMQ;
 using Xunit;
 
 namespace Common.RabbitMQ.Tests.Broker
@@ -34,8 +35,8 @@ namespace Common.RabbitMQ.Tests.Broker
                 Assert.Equal(bus.ExchangeName, message.Exchange);
                 // The baseline routes by event name; every other build, like the real legacy library, by exchange name.
                 Assert.Equal(build == CompatBuild.Baseline ? WireName : bus.ExchangeName, message.RoutingKey);
-                Assert.Equal(WireName, message.Headers[MessageHeaders.EventType]);
-                Assert.Equal(sender.InstanceId, message.Headers[MessageHeaders.SourceId]);
+                Assert.Equal(WireName, message.Headers[WireHeaders.MessageType]);
+                Assert.Equal(sender.InstanceId, message.Headers[WireHeaders.SourceId]);
                 Assert.Equal("application/json", message.ContentType);
                 Assert.Equal("compat-sender", message.AppId);
                 Assert.False(string.IsNullOrEmpty(message.MessageId));
@@ -50,8 +51,8 @@ namespace Common.RabbitMQ.Tests.Broker
         {
             Dictionary<string, object> headers = new Dictionary<string, object>
             {
-                [MessageHeaders.EventType] = WireName,
-                [MessageHeaders.SourceId] = "another-application",
+                [WireHeaders.MessageType] = WireName,
+                [WireHeaders.SourceId] = "another-application",
             };
 
             await ReceivesGoldenMessageAsync(build, headers);

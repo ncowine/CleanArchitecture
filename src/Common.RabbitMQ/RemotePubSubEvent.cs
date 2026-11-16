@@ -46,14 +46,14 @@ namespace Common.RabbitMQ
         public override void Unsubscribe(SubscriptionToken token)
         {
             base.Unsubscribe(token);
-            UnbindEndedKeys();
+            UnbindUnsubscribedKeys();
             RemoteEventSubscriptions.StopReceivingIfUnused(this);
         }
 
         public override void Unsubscribe(Action<TPayload> subscriber)
         {
             base.Unsubscribe(subscriber);
-            UnbindEndedKeys();
+            UnbindUnsubscribedKeys();
             RemoteEventSubscriptions.StopReceivingIfUnused(this);
         }
 
@@ -62,7 +62,7 @@ namespace Common.RabbitMQ
             base.Publish(payload);
             if (!keyed.IsEmpty)
             {
-                UnbindEndedKeys();
+                UnbindUnsubscribedKeys();
             }
 
             if (Subscriptions.Count == 0)
@@ -71,10 +71,10 @@ namespace Common.RabbitMQ
             }
         }
 
-        private void UnbindEndedKeys()
+        private void UnbindUnsubscribedKeys()
         {
             Prune();
-            foreach (SubscribeOptions options in keyed.RemoveEnded(Subscriptions))
+            foreach (SubscribeOptions options in keyed.RemoveUnsubscribedKeys(Subscriptions))
             {
                 RemoteEventSubscriptions.Unbind(this, options);
             }

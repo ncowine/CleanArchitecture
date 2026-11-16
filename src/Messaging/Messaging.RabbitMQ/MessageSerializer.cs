@@ -10,7 +10,7 @@ namespace Messaging.RabbitMQ
     {
         public const string ContentType = "application/json";
 
-        private static readonly JsonSerializerOptions options = CreateOptions();
+        private static readonly JsonSerializerOptions options = CreateJsonOptions();
 
         public static byte[] Serialize(object message)
         {
@@ -24,7 +24,7 @@ namespace Messaging.RabbitMQ
             return JsonSerializer.Deserialize(body, type, options);
         }
 
-        public static void EnsureNoTuples(Type payloadType)
+        public static void ThrowIfContainsTuple(Type payloadType)
         {
             if (payloadType == null)
             {
@@ -35,9 +35,7 @@ namespace Messaging.RabbitMQ
             if (tuple != null)
             {
                 string where = tuple == payloadType ? "is" : "contains";
-                throw new InvalidOperationException(
-                    $"{payloadType.FullName} {where} a tuple ({tuple.Name}). Tuple items are fields, which System.Text.Json " +
-                    "doesn't serialize, so they would arrive empty. Use a class with { get; set; } properties.");
+                throw new InvalidOperationException($"{payloadType.FullName} {where} a tuple ({tuple.Name}).");
             }
         }
 
@@ -98,7 +96,7 @@ namespace Messaging.RabbitMQ
             return name.StartsWith("System.ValueTuple`", StringComparison.Ordinal) || name.StartsWith("System.Tuple`", StringComparison.Ordinal);
         }
 
-        private static JsonSerializerOptions CreateOptions()
+        private static JsonSerializerOptions CreateJsonOptions()
         {
             JsonSerializerOptions jsonOptions = new JsonSerializerOptions
             {

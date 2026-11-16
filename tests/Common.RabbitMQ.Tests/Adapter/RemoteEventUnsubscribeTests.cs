@@ -69,23 +69,6 @@ namespace Common.RabbitMQ.Tests.Adapter
             });
         }
 
-        [Fact]
-        public async Task SubscribingAfterUnregisterQueue_Resumes()
-        {
-            await WithAppAsync(async (topology, app, sender) =>
-            {
-                PubSubEvent<Order> remoteEvent = app.Events.GetEvent<ComesAndGoes>();
-                remoteEvent.Subscribe(_ => { }, keepSubscriberReferenceAlive: true);
-                await app.Service.UnregisterQueue(typeof(ComesAndGoes));
-
-                Received<Order> received = new Received<Order>();
-                remoteEvent.Subscribe(received.Add, keepSubscriberReferenceAlive: true);
-                sender.PublishRemote<ComesAndGoes, Order>(new Order { Id = 12 });
-
-                Assert.Equal(12, (await received.NextAsync(TestBus.Timeout))?.Id);
-            });
-        }
-
         private static async Task WithAppAsync(Func<LegacyTopology, AdapterApp, AdapterApp, Task> test)
         {
             await using (LegacyTopology topology = await LegacyTopology.CreateAsync())

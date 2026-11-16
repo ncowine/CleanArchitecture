@@ -24,27 +24,18 @@ namespace Messaging.Hosting
             this.registry = registry;
         }
 
-        public IDisposable Subscribe<TMessage>(Action<TMessage> handler, SynchronizationContext synchronizationContext = null, SubscribeOptions options = null)
+        public IDisposable Subscribe<TMessage>(Action<TMessage> handler, SubscribeOptions options = null)
         {
             if (handler == null)
             {
                 throw new ArgumentNullException(nameof(handler));
             }
 
-            if (synchronizationContext == null)
+            return AddSubscription(typeof(TMessage), options, (message, context, token) =>
             {
-                return Add(new MessageSubscription(typeof(TMessage), options, (message, context, token) =>
-                {
-                    handler((TMessage)message);
-                    return Task.CompletedTask;
-                }));
-            }
-
-            return Add(new MessageSubscription(typeof(TMessage), options, (message, context, token) =>
-            {
-                synchronizationContext.Post(state => handler((TMessage)state), message);
+                handler((TMessage)message);
                 return Task.CompletedTask;
-            }));
+            });
         }
 
         public IDisposable Subscribe<TMessage>(Func<TMessage, MessageContext, CancellationToken, Task> handler, SubscribeOptions options = null)
@@ -54,7 +45,7 @@ namespace Messaging.Hosting
                 throw new ArgumentNullException(nameof(handler));
             }
 
-            return Add(new MessageSubscription(typeof(TMessage), options, (message, context, token) => handler((TMessage)message, context, token)));
+            return AddSubscription(typeof(TMessage), options, (message, context, token) => handler((TMessage)message, context, token));
         }
 
         public async Task DispatchAsync(object message, MessageContext context, CancellationToken cancellationToken)
@@ -73,7 +64,7 @@ namespace Messaging.Hosting
 
         private void StartReceiving(Type messageType)
         {
-            string wireName = WireNames.Get(messageType);
+            string wireName = WireNames.GetWireName(messageType);
 
             if (wireNameOwners.TryGetValue(wireName, out Type other) && other != messageType)
             {
@@ -90,7 +81,7 @@ namespace Messaging.Hosting
             MessageRegistration registration = new MessageRegistration(wireName, messageType);
             foreach (string busName in registry.BusNames)
             {
-                provider.GetRequiredKeyedService<RabbitMQBus>(busName).Subscribe(registration);
+                provider.GetRequiredKeyedService<RabbitMQBus>(busName).StartReceiving(registration);
             }
         }
 
@@ -101,24 +92,24 @@ namespace Messaging.Hosting
                 return;
             }
 
-            string wireName = WireNames.Get(messageType);
+            string wireName = WireNames.GetWireName(messageType);
             foreach (string busName in registry.BusNames)
             {
-                provider.GetRequiredKeyedService<RabbitMQBus>(busName).Unsubscribe(wireName);
+                provider.GetRequiredKeyedService<RabbitMQBus>(busName).StopReceiving(wireName);
             }
         }
 
-        private IDisposable Add(MessageSubscription subscription)
+        private IDisposable AddSubscription(Type messageType, SubscribeOptions options, Func<object, MessageContext, CancellationToken, Task> invoke)
         {
-            RequireRoutingKey(subscription.Options);
-            SubscribeOptions options = subscription.Options;
-            RabbitMQBus bindingBus = options == null ? null : SelectBindingBus(provider, registry, options.Bus, options.Exchange);
+            ThrowIfNoRoutingKey(options);
+            RabbitMQBus bindingBus = options == null ? null : GetBusForRoutingKey(provider, registry, options.Bus, options.Exchange);
+            MessageSubscription subscription = new MessageSubscription(messageType, options, bindingBus, invoke);
             lock (gate)
             {
                 StartReceiving(subscription.MessageType);
                 try
                 {
-                    bindingBus?.Bind(options.Exchange, options.RoutingKey);
+                    bindingBus?.BindRoutingKey(options.Exchange, options.RoutingKey);
                 }
                 catch
                 {
@@ -140,10 +131,10 @@ namespace Messaging.Hosting
                 Volatile.Write(ref subscriptions, next);
             }
 
-            return new SubscriptionToken(() => Remove(subscription));
+            return new SubscriptionToken(() => RemoveSubscription(subscription));
         }
 
-        private void Remove(MessageSubscription subscription)
+        private void RemoveSubscription(MessageSubscription subscription)
         {
             lock (gate)
             {
@@ -164,30 +155,22 @@ namespace Messaging.Hosting
                 }
 
                 Volatile.Write(ref subscriptions, next);
-                Unbind(subscription.Options);
+                subscription.BindingBus?.UnbindRoutingKey(subscription.Options.Exchange, subscription.Options.RoutingKey);
                 StopReceivingIfUnused(subscription.MessageType);
             }
         }
 
-        private static void RequireRoutingKey(SubscribeOptions options)
+        private static void ThrowIfNoRoutingKey(SubscribeOptions options)
         {
             if (options != null && string.IsNullOrWhiteSpace(options.RoutingKey))
             {
-                throw new ArgumentException("SubscribeOptions needs a RoutingKey.", nameof(options));
+                throw new ArgumentException("A routing key is required.", nameof(options));
             }
         }
 
-        private void Unbind(SubscribeOptions options)
+        internal static RabbitMQBus GetBusForRoutingKey(IServiceProvider provider, MessagingRegistry registry, string busName, string exchange)
         {
-            if (options != null)
-            {
-                SelectBindingBus(provider, registry, options.Bus, options.Exchange).Unbind(options.Exchange, options.RoutingKey);
-            }
-        }
-
-        internal static RabbitMQBus SelectBindingBus(IServiceProvider provider, MessagingRegistry registry, string busName, string exchange)
-        {
-            string selected = BusSelection.ForBinding(
+            string selected = BusSelection.GetBusNameForRoutingKey(
                 registry.BusNames,
                 (name, ex) => provider.GetRequiredKeyedService<RabbitMQBus>(name).UsesExchange(ex),
                 registry.DefaultBus,

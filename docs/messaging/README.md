@@ -64,9 +64,9 @@ code confidently.** If you're in a hurry, read [the 5-minute version](#the-5-min
   reconnects, sends, receives, retries and dead-letters. Everything else in the repository is a thin "front door"
   that translates between how an app thinks and the engine:
   - **Old WPF apps** use Prism events: `eventAggregator.GetEvent<OrderSaved>().PublishRemote(order)`.
-  - **New apps** that want the Prism style use the same adapter (it targets net8.0 too). Otherwise they use plain
-    classes and **no Prism at all**: `IMessagePublisher.Publish(order)` and `IMessageSubscriber.Subscribe<OrderSaved>(...)`.
-  - **The server** uses the same two: `IMessagePublisher.Publish(order)` and `IMessageSubscriber.Subscribe<OrderSaved>(...)`.
+  - **New desktop apps** use the same adapter (it targets net8.0 too), until they move to SignalR.
+  - **The server** uses plain classes and **no Prism at all**: `IMessagePublisher.Publish(order)` and
+    `IMessageSubscriber.Subscribe<OrderSaved>(...)`.
 - **Sending is fire-and-forget.** A message is put in a buffer instantly and delivered in the background, even if
   RabbitMQ is briefly down.
 - **Receiving has two modes.** Desktop apps each get their **own copy** of every message. Server instances **share
@@ -113,7 +113,7 @@ The whole system uses a post office analogy. Each term has the everyday picture 
 flowchart TB
     subgraph Apps["Programs"]
         L["Legacy WPF app<br/>(.NET Framework 4.7.2)<br/>Prism events"]
-        M["Modern app<br/>(.NET 8+)<br/>plain classes, IMessageSubscriber"]
+        M["New desktop app<br/>(.NET 8+)<br/>Prism events"]
         S["Server / WebApi<br/>(.NET 10)<br/>subscribers"]
     end
     subgraph FrontDoors["Front doors (translation only)"]
@@ -123,7 +123,7 @@ flowchart TB
     Core["Messaging.RabbitMQ<br/><b>RabbitMQBus</b> - the only code that talks to RabbitMQ"]
     B[("RabbitMQ broker")]
     L --> A --> Core
-    M --> H
+    M --> A
     S --> H --> Core
     Core <--> B
 ```
@@ -146,9 +146,9 @@ Two ideas explain almost everything:
 |---|---|---|---|---|
 | `Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | nothing | Interfaces and small types: `IMessagePublisher`, `[Message]`, `MessageContext`, `PublishOptions`, `SubscribeOptions`. | Everything below. |
 | `Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | RabbitMQ.Client 7.1.2, Microsoft.Extensions.Logging.Abstractions 8.0, System.Text.Json 8.0.5 (net472, netstandard2.0) | **The engine**: `RabbitMQBus`, its options and the one serializer, `MessageSerializer`. | All front doors. |
-| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | The modern front door for any net8+ app (API, WPF, worker; no ASP.NET dependency): `AddMessaging`, `IMessagePublisher`, `IMessageSubscriber`. | The API, modern WPF apps. |
+| `Messaging/Messaging.Hosting` | net8.0 | Microsoft.Extensions 8.0 | The modern front door for the API (no ASP.NET dependency): `AddMessaging`, `IMessagePublisher`, `IMessageSubscriber`. | The API. |
 | `Contracts/Employees.Contracts` | netstandard2.0 | Messaging.Abstractions | Plain message classes with legacy-compatible wire names. | The API, modern apps. |
-| `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Configuration.Binder, the engine (with System.Text.Json) | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API is frozen: additions only. | Legacy WPF apps, the net8 app's Legacy bus. |
+| `Common.RabbitMQ` | net472, net8.0 | Prism.Core, Configuration.Binder, the engine (with System.Text.Json) | **Legacy adapter.** Keeps the old API (`PublishRemote`, `RabbitMQService`, `IRabbitMQService`) working on top of the engine. Its public API keeps what this repository uses; the wire format is frozen. | Legacy WPF apps, the net8 app's Legacy bus. |
 | `Common.Events` | net472, net8.0 | Common.RabbitMQ | The demo apps' Prism events (`EmployeeUpdated` and others). | Demo WPF apps. |
 | `WpfApp.Net472` | net472 | the above | Demo legacy desktop app. | You, to try things. |
 | `WpfApp.Net8` | net8.0-windows | the above | Demo modern desktop app. It uses **both** styles side by side: Prism events on its Legacy bus, plain classes on its Modern bus. | You, and as the reference for migrating apps that keep Prism. |
@@ -191,7 +191,7 @@ sequenceDiagram
     participant Buffer as Outgoing buffer
     participant Broker as RabbitMQ
     App->>FrontDoor: PublishRemote / Publish
-    FrontDoor->>Bus: Enqueue(wire name, message, routing key)
+    FrontDoor->>Bus: Publish(wire name, message, routing key)
     Bus->>Bus: serialize to JSON now
     Bus->>Buffer: add
     Bus-->>App: returns immediately
@@ -326,7 +326,7 @@ flowchart LR
 | Situation | What happens |
 |---|---|
 | RabbitMQ is down or the network drops | The engine keeps checking every `ReconnectDelay` (5 s by default) and reconnects on its own. Outgoing messages wait in the buffer. |
-| Another app's exchange doesn't exist yet | Connecting fails with "Exchange 'X' does not exist yet; waiting for its owner to declare it" and retries until the owner starts. |
+| Another app's exchange doesn't exist yet | Connecting fails with "Exchange 'X' does not exist." and retries until the owner starts. |
 | A subscriber throws (per-instance queue) | Logged and acknowledged: the message is dropped. That's the legacy behaviour, kept on purpose. |
 | A subscriber throws (shared queue) | Retried in the same process up to `MaxAttempts` times (3 by default), `RetryDelay` apart (1 s). Then it's moved to the dead-letter queue. |
 | The message body isn't valid JSON (shared queue) | Straight to the dead-letter queue, with no retries, because retrying can't fix it. |
@@ -439,7 +439,7 @@ router = RabbitMQServiceRouter.FromConfiguration(eventAggregator, configuration,
 router = RabbitMQServiceRouter.FromConfiguration(eventAggregator, configuration, NullLogger.Instance);  // no logging
 ```
 
-A `RabbitMQService` built on its own takes it too: `new RabbitMQService(eventAggregator, logger)`. Nothing is written to Trace any more,
+Buses come only from the router; there's no public way to build a `RabbitMQService` on its own. Nothing is written to Trace any more,
 and there's no `Log` event: an app that used either passes a logger instead.
 
 ### B. A modern app that keeps the Prism style (.NET 8 or later)
@@ -450,70 +450,15 @@ Use `Common.RabbitMQ`, exactly as in recipe A. It targets net8.0 too, so a net8 
 `samples/MessagingPocs/Poc.Legacy.Events/FromApi` does.
 
 There used to be a third way, `Messaging.Prism`: plain classes raised as `MessageEvent<T>` through `Messaging.Hosting`.
-It was removed on 2026-11-10. An app picks `Common.RabbitMQ` for the Prism style or `Messaging.Hosting` (recipe C)
-for plain classes.
+It was removed on 2026-11-10. A desktop app uses `Common.RabbitMQ`; `Messaging.Hosting` is for the API (recipe D).
 
-### C. A modern WPF app without Prism (.NET 8)
+### C. A desktop app without Prism
 
-Write messages as plain classes with a wire name (`[Message("...")]`), and use no Prism, no event aggregator and no DryIoc. See
-`src/WpfApp.Modern`.
-
-**1. Start the .NET Generic Host in `App.xaml.cs`.** It gives you DI, `appsettings.json` and logging, and starts
-messaging:
-
-```csharp
-protected override async void OnStartup(StartupEventArgs e)
-{
-    base.OnStartup(e);
-    HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
-    {
-        Args = e.Args,
-        ContentRootPath = AppContext.BaseDirectory,       // find appsettings.json next to the exe
-    });
-
-    builder.Services.AddMessaging(builder.Configuration);   // Messaging:Buses and Messaging:DefaultBus
-    builder.Services.AddSingleton<MainWindowViewModel>();
-    builder.Services.AddSingleton<MainWindow>();
-
-    host = builder.Build();
-    MainWindow window = host.Services.GetRequiredService<MainWindow>();   // subscribe first...
-    await host.StartAsync();                                               // ...then connect
-    window.Show();
-}
-```
-
-Stop it in `OnExit` with `Task.Run(() => host.StopAsync()).GetAwaiter().GetResult()`, so the UI thread can't deadlock.
-
-**2. Send and receive in the view model:**
-
-```csharp
-public MainWindowViewModel(IMessagePublisher publisher, IMessageSubscriber subscriber)
-{
-    // Runs on the UI thread, like Prism's ThreadOption.UIThread.
-    subscription = subscriber.Subscribe<EmployeeSaved>(OnSaved, SynchronizationContext.Current);
-}
-
-publisher.Publish(new EmployeeSaved { Id = 7, Name = "Ada" });
-```
-
-**Things to know about `IMessageSubscriber`:**
-
-- **Subscribing is what stops a type being dropped on arrival**, so nothing has to be registered. The message class
-  needs `[Message("...")]`. It takes effect at once and never changes the broker's bindings (one per exchange).
-- `Subscribe` returns an `IDisposable`. **Dispose it to unsubscribe.** Subscriptions are strong references (Prism's
-  are weak), so a window or view model that goes away before the app ends must dispose its subscriptions. When the last
-  subscriber for a type goes, it is dropped on arrival again.
-- **On a durable shared queue, subscribe before the buses start and stay subscribed.** The queue keeps last run's
-  bindings and messages, and a message for a type nothing has subscribed to yet is dropped; subscribing later logs a
-  warning. The buses start after every hosted service's `StartAsync`, so subscribing there, or before the host runs,
-  is in time. The
-  broker can hand a message to an instance with no subscriber left, which drops it. Give all instances the same
-  subscriptions.
-- **With a synchronization context** (the UI thread's), the call is posted to it and runs later. Its exceptions go to
-  the dispatcher (`Application.DispatcherUnhandledException`), not to the message, so they don't cause retries.
-- **Without one**, or with the async overload `Subscribe<T>((message, context, token) => ...)`, it runs on the
-  receiving thread, and an exception fails the message (retried and dead-lettered on shared queues).
-- Subscribers run in the order they subscribed, and only for the exact message type.
+Use `Common.RabbitMQ` (recipes A and B). Prism's `EventAggregator` works on its own, without `PrismApplication`, so
+an app on the .NET Generic Host creates one on the UI thread and passes it to
+`RabbitMQServiceRouter.FromConfiguration`, as `samples/MessagingPocs/Poc.Net10` does. Desktop apps stay on the adapter
+until RabbitMQ leaves the desktop, then take the API's events over SignalR. `Messaging.Hosting` is for the API only:
+its `IMessageSubscriber` took a `SynchronizationContext` for desktop callers until 2026-11-16.
 
 ### D. A server (ASP.NET)
 
@@ -553,6 +498,21 @@ internal sealed class EmployeeSubscriptions(IServiceProvider provider, IMessageS
 
 `EmployeeSavedHandler` is the app's own class, registered scoped; the name is a convention, not a library type.
 Equipment does exactly this in `EquipmentSubscriptions`.
+
+**Things to know about `IMessageSubscriber`:**
+
+- **Subscribing is what stops a type being dropped on arrival**, so nothing has to be registered. The message class
+  needs `[Message("...")]`. It takes effect at once and never changes the broker's bindings (one per exchange).
+- `Subscribe` returns an `IDisposable`. **Dispose it to unsubscribe.** Subscriptions are strong references (Prism's
+  are weak). When the last subscriber for a type goes, it is dropped on arrival again.
+- **On a durable shared queue, subscribe before the buses start and stay subscribed.** The queue keeps last run's
+  bindings and messages, and a message for a type nothing has subscribed to yet is dropped; subscribing later logs a
+  warning. The buses start after every hosted service's `StartAsync`, so subscribing there, or before the host runs,
+  is in time. The
+  broker can hand a message to an instance with no subscriber left, which drops it. Give all instances the same
+  subscriptions.
+- It runs on the receiving thread, and an exception fails the message (retried and dead-lettered on shared queues).
+- Subscribers run in the order they subscribed, and only for the exact message type.
 
 **3. Publish from anywhere.** Nothing to register: a message goes to the default bus, keyed by the exchange name. The
 default is required, even with one bus: set `Messaging:DefaultBus`, or `AddMessaging` throws. Buses come only from
@@ -594,8 +554,8 @@ The step-by-step version is in
 |---|---|
 | An existing .NET Framework WPF app | Recipe A. Change the registration lines and add appsettings.json, nothing else. |
 | A migrated .NET 8 WPF app that keeps Prism | Recipe B. Plain classes, but the familiar Prism style. |
-| A new .NET 8 WPF app, or one dropping Prism | Recipe C, like `WpfApp.Modern`. |
-| A server, or code that should be free of Prism | Recipe D. |
+| A new .NET 8+ WPF app | Recipe B or C (`Common.RabbitMQ`), or SignalR from the API. |
+| A server | Recipe D. |
 | A .NET 8 app that must still talk to legacy apps | Both A and B side by side, like `WpfApp.Net8`. |
 
 ---
@@ -857,8 +817,8 @@ job fails, its test results are uploaded as an artifact.
 
 The full reasoning is in the two ADRs. The short version:
 
-- **Legacy apps must not need code changes.** Legacy adapter changes are additive only, and the wire format is frozen
-  (golden tests, frozen baseline, public API test).
+- **The wire format is frozen** (golden tests, frozen baseline). The adapter's public API keeps what this repository
+  uses; anything else may be removed, and the public API test lists each removal.
 - **Each third-party dependency lives in exactly one layer.** Prism is only in the legacy adapter. RabbitMQ.Client and System.Text.Json are only in the engine (Newtonsoft only in the tests' baseline). Contracts depend on nothing.
 - **Versions are shared with the legacy apps:** RabbitMQ.Client 7.1.2, Prism.Core 8.1.97 (and Newtonsoft.Json 12.0.3 for the tests' baseline),
   pinned in `Directory.Packages.props`. The Prism-free demo app adds CommunityToolkit.Mvvm 8.4.2 and
@@ -882,7 +842,7 @@ The full reasoning is in the two ADRs. The short version:
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Tests show as **skipped** | No broker reachable. | Start RabbitMQ, or set `RABBITMQ_HOST`. Use `RABBITMQ_TESTS_REQUIRED=1` to make this an error. |
-| Log: *Exchange 'X' does not exist yet; waiting for its owner* | The app that owns exchange X hasn't started. | Start the owner. The subscriber connects on its own afterwards. |
+| Log: *Exchange 'X' does not exist.* | The app that owns exchange X hasn't started. | Start the owner. The subscriber connects on its own afterwards. |
 | Log: *PRECONDITION_FAILED ... inequivalent arg 'type'* | Two apps declared the same exchange with different types. | Make them agree. Usually that means keeping `topic`. |
 | Log: *Queue 'X' already exists with different settings* | A shared-queue setting such as `DeliveryLimit` changed after the queue was created. Queue settings can't change. | Put the setting back, or delete the queue so it's created again (its messages are lost). |
 | Log: *Deferred outbox message …* | The API couldn't reach the broker. | Nothing to do once the broker is back: the message goes out on the next poll, without using an attempt. |

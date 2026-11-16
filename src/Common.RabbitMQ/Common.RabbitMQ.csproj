@@ -1,8 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Legacy adapter: the Prism API over the Messaging.RabbitMQ core (ADR 0001, section 1). Public API frozen, apart from the approved changes in PublicApiTests. -->
   <PropertyGroup>
-    <!-- netstandard2.0 so shared event assemblies can derive from RemotePubSubEvent<T>. -->
     <TargetFrameworks>net472;netstandard2.0;net8.0</TargetFrameworks>
   </PropertyGroup>
 
@@ -15,7 +13,6 @@
     <ProjectReference Include="..\Messaging\Messaging.RabbitMQ\Messaging.RabbitMQ.csproj" />
   </ItemGroup>
 
-  <!-- The router is built only by FromConfiguration; the tests build it by hand. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Common.RabbitMQ.Tests" />
   </ItemGroup>

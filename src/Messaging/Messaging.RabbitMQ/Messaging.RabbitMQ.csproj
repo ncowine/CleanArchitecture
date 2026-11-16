@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The transport core. Depends on RabbitMQ.Client, the logging abstractions and System.Text.Json only (ADR 0001, sections 1 and 7). -->
   <PropertyGroup>
     <TargetFrameworks>net472;netstandard2.0;net8.0</TargetFrameworks>
   </PropertyGroup>
@@ -10,7 +9,6 @@
     <PackageReference Include="RabbitMQ.Client" />
   </ItemGroup>
 
-  <!-- The one serializer (SystemTextJsonMessageSerializer). Part of the framework on net8. -->
   <ItemGroup Condition="'$(TargetFramework)' != 'net8.0'">
     <PackageReference Include="System.Text.Json" />
   </ItemGroup>
@@ -19,7 +17,6 @@
     <ProjectReference Include="..\Messaging.Abstractions\Messaging.Abstractions.csproj" />
   </ItemGroup>
 
-  <!-- Engine internals (BusSelection, MessageSerializer, WireHeaders) shared by both front doors and the tests. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Messaging.Hosting" />
     <InternalsVisibleTo Include="Common.RabbitMQ" />

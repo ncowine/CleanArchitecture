@@ -12,12 +12,6 @@ namespace Messaging.Hosting
 {
     public static class MessagingServiceCollectionExtensions
     {
-        /// <summary>
-        /// Adds the buses in <c>Messaging:Buses</c>, publishing through <see cref="IMessagePublisher"/> and receiving
-        /// through <see cref="IMessageSubscriber"/>. <c>Messaging:DefaultBus</c> is required and must name one of them.
-        /// The buses start after every hosted service has started, so subscribe in a hosted service's <c>StartAsync</c>
-        /// or before the host runs.
-        /// </summary>
         public static IServiceCollection AddMessaging(this IServiceCollection services, IConfiguration configuration)
         {
             if (services == null)
@@ -33,21 +27,22 @@ namespace Messaging.Hosting
             List<IConfigurationSection> buses = configuration.GetSection("Messaging:Buses").GetChildren().ToList();
             if (buses.Count == 0)
             {
-                throw new InvalidOperationException("Messaging:Buses in the configuration has no buses.");
+                throw new InvalidOperationException("No buses in Messaging:Buses.");
             }
 
             string defaultBus = configuration["Messaging:DefaultBus"];
             if (string.IsNullOrWhiteSpace(defaultBus))
             {
-                throw new ArgumentException("A default bus is required: set Messaging:DefaultBus in the configuration.", nameof(configuration));
+                throw new ArgumentException("No Messaging:DefaultBus configured.", nameof(configuration));
             }
 
             if (!buses.Any(bus => string.Equals(bus.Key, defaultBus, StringComparison.Ordinal)))
             {
-                throw new InvalidOperationException($"The default bus '{defaultBus}' is not in Messaging:Buses.");
+                throw new InvalidOperationException($"Default bus '{defaultBus}' is not in Messaging:Buses.");
             }
 
             MessagingRegistry registry = new MessagingRegistry(buses.Select(bus => bus.Key), defaultBus);
+            services.AddLogging();
             services.AddSingleton(registry);
             services.AddSingleton<MessagePublisher>();
             services.AddSingleton<IMessagePublisher>(provider => provider.GetRequiredService<MessagePublisher>());
@@ -79,7 +74,7 @@ namespace Messaging.Hosting
             services.AddKeyedSingleton(name, (provider, key) => new RabbitMQBus(
                 provider.GetRequiredService<IOptionsMonitor<RabbitMQBusOptions>>().Get(name),
                 provider.GetRequiredService<MessageSubscriber>(),
-                provider.GetService<ILogger<RabbitMQBus>>()));
+                provider.GetRequiredService<ILogger<RabbitMQBus>>()));
         }
     }
 }

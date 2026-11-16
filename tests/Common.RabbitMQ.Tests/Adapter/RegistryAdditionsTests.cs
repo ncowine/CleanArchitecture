@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using AppA.Events;
 using Common.Events;
+using Common.RabbitMQ.Tests.Broker;
 using Messaging;
 using Prism.Events;
 using Xunit;
@@ -26,16 +27,16 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void WireName_IsTheFullTypeName_UnlessAMessageAttributeNamesIt()
         {
-            Assert.Equal("Common.RabbitMQ.Tests.Adapter.OrderPlaced", new RemoteEventDescriptor(typeof(OrderPlaced), typeof(Order)).EventName);
-            Assert.Equal("AppA.Events.OrderSaved", new RemoteEventDescriptor(typeof(LegacyModel.RemoteOrderSaved), typeof(Order)).EventName);
+            Assert.Equal("Common.RabbitMQ.Tests.Adapter.OrderPlaced", new RemoteEventMetadata(typeof(OrderPlaced), typeof(Order)).EventName);
+            Assert.Equal("AppA.Events.OrderSaved", new RemoteEventMetadata(typeof(LegacyModel.RemoteOrderSaved), typeof(Order)).EventName);
         }
 
         [Fact]
         public void APlainEvent_StaysLocal()
         {
-            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), NullLogger.Instance))
+            using (RabbitMQServiceRouter router = OneBusRouter.Start(new EventAggregator(), UnreachableConfig("Main")))
             {
-                service.Init(UnreachableConfig("Main"));
+                RabbitMQService service = router.GetRequiredBus("Main");
 
                 Assert.Throws<ArgumentException>(() => service.Publish(typeof(OrderSaved), new Order()));
                 Assert.Equal(0, service.OutstandingCount);
@@ -45,9 +46,9 @@ namespace Common.RabbitMQ.Tests.Adapter
         [Fact]
         public void TwoEventsWithOneWireName_AreRefused()
         {
-            using (RabbitMQService service = new RabbitMQService(new EventAggregator(), NullLogger.Instance))
+            using (RabbitMQServiceRouter router = OneBusRouter.Start(new EventAggregator(), UnreachableConfig("Main")))
             {
-                service.Init(UnreachableConfig("Main"));
+                RabbitMQService service = router.GetRequiredBus("Main");
                 service.Publish(typeof(OrderPlaced), new Order());
 
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => service.Publish(typeof(SameWireName), new Order()));

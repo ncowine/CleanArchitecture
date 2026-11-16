@@ -31,7 +31,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 Received<Order> received = next.Record<Order>(WireName);
                 RabbitMQBus bus = next.CreateBus();
 
-                bus.Subscribe(new MessageRegistration(WireName, typeof(Order)));
+                bus.StartReceiving(new MessageRegistration(WireName, typeof(Order)));
                 next.Start();
 
                 Assert.Equal(42, (await received.NextAsync(TestBus.Timeout))?.Id);
@@ -66,9 +66,9 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 topology.DeleteOnDispose(service, service + ".dead-letter");
                 RabbitMQBus bus = app.CreateBus(logger);
 
-                bus.Subscribe(new MessageRegistration("Before.Start", typeof(Order)));
+                bus.StartReceiving(new MessageRegistration("Before.Start", typeof(Order)));
                 app.Start();
-                bus.Subscribe(new MessageRegistration("After.Start", typeof(Order)));
+                bus.StartReceiving(new MessageRegistration("After.Start", typeof(Order)));
 
                 LogEntry[] warnings = logger.Entries.Where(e => e.Message.Contains("after the bus started")).ToArray();
                 Assert.Single(warnings);

@@ -1,21 +1,21 @@
 using System;
 using Compat.Events;
 using Prism.Events;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Common.RabbitMQ.Tests.Broker
 {
     public sealed class CurrentEndpoint : ICompatEndpoint
     {
         private readonly EventAggregator eventAggregator = new EventAggregator();
+        private readonly RabbitMQServiceRouter router;
         private readonly RabbitMQService service;
         private readonly string queueName;
 
         public CurrentEndpoint(BrokerSettings broker, string exchangeName, string clientName)
         {
-            service = new RabbitMQService(eventAggregator, NullLogger.Instance);
             eventAggregator.GetEvent<CompatEvent>().Subscribe(Received.Add, ThreadOption.PublisherThread, keepSubscriberReferenceAlive: true);
-            service.Init(broker.CreateCurrentConfig(CompatBus.Name, exchangeName, clientName));
+            router = OneBusRouter.Start(eventAggregator, broker.CreateCurrentConfig(CompatBus.Name, exchangeName, clientName));
+            service = router.GetRequiredBus(CompatBus.Name);
             queueName = $"{clientName}_{CompatBus.Name}_{Environment.UserName}_{service.InstanceId}".ToLowerInvariant();
         }
 
@@ -38,7 +38,7 @@ namespace Common.RabbitMQ.Tests.Broker
 
         public void Dispose()
         {
-            service.Dispose();
+            router.Dispose();
         }
     }
 }

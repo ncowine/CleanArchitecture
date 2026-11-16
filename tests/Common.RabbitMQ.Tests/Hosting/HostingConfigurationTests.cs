@@ -19,7 +19,7 @@ namespace Common.RabbitMQ.Tests.Hosting
                 IMessagePublisher publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
                 System.InvalidOperationException error = Assert.Throws<System.InvalidOperationException>(() => publisher.Publish(new UnnamedMessage()));
-                Assert.Contains("[Message(", error.Message);
+                Assert.Contains("[Message]", error.Message);
             }
         }
     }

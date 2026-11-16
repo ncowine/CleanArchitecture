@@ -73,7 +73,7 @@ namespace Common.RabbitMQ.Tests.Broker
             };
         }
 
-        public RabbitMQConfig CreateCurrentConfig(string busName, string exchangeName, string clientName)
+        internal RabbitMQConfig CreateCurrentConfig(string busName, string exchangeName, string clientName)
         {
             return new RabbitMQConfig
             {

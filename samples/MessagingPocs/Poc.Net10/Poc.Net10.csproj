@@ -1,12 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    A modern WPF app: .NET 10, no Prism, the modern event format ([Message] classes, Messaging.Hosting). It accepts
-    events from the API, over RabbitMQ or SignalR (Events:Transport in appsettings.json), and changes data through
-    the API over HTTP. It never publishes. Over RabbitMQ it also receives the ten POC shape events (Poc.Shapes) from
-    the legacy apps, as plain [Message] classes.
-
-    Note what it does NOT reference: Common.RabbitMQ or Poc.Legacy.Events. It can't name a legacy app's Prism event.
+    A new WPF app: .NET 10 and the Generic Host. It accepts events from the API, over RabbitMQ or SignalR
+    (Events:Transport in appsettings.json), and changes data through the API over HTTP. It never publishes.
+    A desktop app reaches RabbitMQ through the legacy adapter (Common.RabbitMQ) and its RemotePubSubEvent<T> classes
+    (Poc.Legacy.Events), as the net472 and net8 apps do; Messaging.Hosting is for the API only. Over RabbitMQ it also
+    receives the ten POC shape events from the legacy apps. SignalR is where desktop apps are heading.
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -21,8 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Poc.Shared\Poc.Shared.csproj" />
-    <ProjectReference Include="..\Poc.Shapes\Poc.Shapes.csproj" />
-    <ProjectReference Include="..\..\..\src\Messaging\Messaging.Hosting\Messaging.Hosting.csproj" />
+    <ProjectReference Include="..\Poc.Legacy.Events\Poc.Legacy.Events.csproj" />
+    <ProjectReference Include="..\..\..\src\Common.RabbitMQ\Common.RabbitMQ.csproj" />
   </ItemGroup>
 
   <ItemGroup>

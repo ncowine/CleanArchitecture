@@ -65,7 +65,7 @@ flowchart TB
     B["RabbitMQBus buffer<br/>sent in the background, retried while the broker is down"]
     MQ{{"RabbitMQ broker<br/>exchange CleanArch, routing key = CleanArch"}}
     R1["net472 / net8 POC · legacy Prism app<br/>PubSubEvent&lt;T&gt; named after the wire name"]
-    R2["net10 POC · modern WPF<br/>IMessageSubscriber, UI thread"]
+    R2["net10 POC · new WPF app<br/>Common.RabbitMQ, or SignalR"]
     R3["Any other app<br/>binds its own queue"]
     E --> B
     B -- publish --> MQ
@@ -126,7 +126,7 @@ other projects translate between your code and that engine. It lives in `src/Mes
 | --- | --- | --- |
 | `Messaging.Abstractions` | `[Message]`, `IMessagePublisher`, `MessageContext`, the options. No dependencies. | Contracts, every app |
 | `Messaging.RabbitMQ` | `RabbitMQBus`, the engine: connect, declare, publish, consume, retry, reconnect. Knows nothing about DI or Prism. | Everything, indirectly |
-| `Messaging.Hosting` | DI registration (`AddMessaging`), `IMessagePublisher` and `IMessageSubscriber`, for any app on the .NET Generic Host | The API, modern WPF apps |
+| `Messaging.Hosting` | DI registration (`AddMessaging`), `IMessagePublisher` and `IMessageSubscriber`, for the API | The API |
 
 ### Bus, publisher, subscriber
 
@@ -145,7 +145,7 @@ Another app's exchange is a subscription in configuration: `Messaging:Buses:Main
   `PublishOptions.Bus` and `PublishOptions.RoutingKey` override them for one call. The API always uses the default.
 - **Subscriber**: `IMessageSubscriber.Subscribe<T>(callback)`, the only way to receive. A server subscribes in a hosted
   service's `StartAsync` (the buses start after it) and opens a DI scope per message when the work needs scoped
-  services; Equipment's `EquipmentSubscriptions` does that. A view model subscribes directly.
+  services; Equipment's `EquipmentSubscriptions` does that.
 
 The API mostly publishes, so it mostly uses the bus. Subscribers are for receivers.
 
@@ -266,9 +266,8 @@ keep the password out of `appsettings.json` (environment variable or secret stor
 
 A receiving app **binds its own queue to the API's exchange, `CleanArch`**, and registers the message classes it
 wants. The API knows nothing about it. The working examples are in
-[`samples/MessagingPocs`](../../samples/MessagingPocs/README.md): `Poc.Net10` (modern, below as Option A) and
-`Poc.Net472` / `Poc.Net8` (legacy Prism apps, which receive the API's events as `RemotePubSubEvent<T>` classes named after
-the wire names). That README also covers the one event the API receives, from the net472 app.
+[`samples/MessagingPocs`](../../samples/MessagingPocs/README.md): `Poc.Net472`, `Poc.Net8` and `Poc.Net10`, which
+all receive the API's events as `RemotePubSubEvent<T>` classes named after the wire names. That README also covers the one event the API receives, from the net472 app.
 
 ### What the receiver configures
 
@@ -298,25 +297,12 @@ on message from queue:
     ack                                              // broker deletes it
 ```
 
-### Option A: plain .NET app (`Poc.Net10`)
+### A desktop app (`Common.RabbitMQ`)
 
-The Generic Host runs messaging as a hosted service, and view models subscribe with `IMessageSubscriber`:
-
-```csharp
-// App startup
-builder.Services.AddMessaging(builder.Configuration);   // Messaging:Buses and Messaging:DefaultBus
-
-// View model, created on the UI thread
-_ui = SynchronizationContext.Current;
-_subscriptions.Add(subscriber.Subscribe<EquipmentCreated>(List.Apply, _ui));  // runs on the UI thread
-
-// Dispose
-foreach (var s in _subscriptions) s.Dispose();   // strong references: always unsubscribe
-```
-
-### Option B: .NET 8 or later app that keeps Prism (`Common.RabbitMQ`)
-
-The legacy adapter targets net8.0 too. Declare each API event as a `RemotePubSubEvent` whose namespace and name make
+Every desktop app, legacy or new, receives through the legacy adapter until RabbitMQ leaves the desktop (then it takes
+the API's events over SignalR). `Messaging.Hosting` is for the API only. The adapter targets net8.0 too, and a
+Generic Host app such as `Poc.Net10` creates Prism's `EventAggregator` on the UI thread without `PrismApplication`.
+Declare each API event as a `RemotePubSubEvent` whose namespace and name make
 the API's wire name, with the API's class as the payload (`Poc.Legacy.Events/FromApi`):
 
 ```csharp
@@ -327,11 +313,10 @@ eventAggregator.GetEvent<EquipmentCreated>()
     .Subscribe(List.Apply, ThreadOption.UIThread);
 ```
 
-### Rules both options share
+### Rules
 
 - **Register what you receive.** Subscribing to a class that isn't registered compiles and runs, and never fires.
-- **Update the UI on the UI thread.** Messages arrive on a RabbitMQ thread. Pass the UI `SynchronizationContext`
-  (Option A) or `ThreadOption.UIThread` (Option B).
+- **Update the UI on the UI thread.** Messages arrive on a RabbitMQ thread. Subscribe with `ThreadOption.UIThread`.
 - **Subscribe before starting.** A message that arrives before anyone subscribed is received and dropped.
 - **Reload when the connection comes back.** A desktop app's queue is per-instance and is deleted when its connection
   drops. Events sent while it was disconnected are gone, so reload the list from the API on reconnect.

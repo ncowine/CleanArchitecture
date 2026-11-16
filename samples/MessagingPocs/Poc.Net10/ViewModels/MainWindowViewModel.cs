@@ -3,11 +3,10 @@ using System.Net.Http;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Equipment.Messages;
-using Messaging.Hosting;
-using Messaging.RabbitMQ;
-using Poc.Shapes;
+using Common.RabbitMQ;
+using Poc.Legacy.Events.Shapes;
 using Poc.Shared;
+using Prism.Events;
 
 namespace Poc.Net10.ViewModels;
 
@@ -16,10 +15,10 @@ namespace Poc.Net10.ViewModels;
 /// </summary>
 public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 {
-    private readonly List<IDisposable> subscriptions = [];
     private readonly SynchronizationContext ui;
     private readonly EquipmentApi api;
     private DispatcherTimer? connectionWatch;
+    private ShapeEventsLog? shapes;
     private bool wasConnected;
 
     [ObservableProperty]
@@ -48,27 +47,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public ObservableCollection<string> Log { get; } = [];
 
     /// <summary>RabbitMQ: subscribe now; the connection watch loads once the bus is connected.</summary>
-    public void ListenOverRabbitMq(IMessageSubscriber subscriber, RabbitMQBus bus, BusLog busLog)
+    public void ListenOverRabbitMq(IEventAggregator events, RabbitMQService bus, BusLog busLog)
     {
         Title += " · RabbitMQ";
 
-        // ✅ DO pass the UI's SynchronizationContext, so each handler runs on the UI thread.
-        // ✅ DO keep and dispose the subscriptions: they're strong references, unlike Prism's.
-        subscriptions.Add(subscriber.Subscribe<EquipmentCreated>(List.Apply, ui));
-        subscriptions.Add(subscriber.Subscribe<EquipmentUpdated>(List.Apply, ui));
-        subscriptions.Add(subscriber.Subscribe<EquipmentDeleted>(List.Apply, ui));
+        // From the API: classes named after the API's events (Poc.Legacy.Events/FromApi), with its Equipment.Messages
+        // classes as payloads.
+        // ✅ DO subscribe with METHOD GROUPS on a long-lived object, and ThreadOption.UIThread to touch bound collections.
+        // ❌ DON'T subscribe with a lambda that captures a local: Prism keeps a WEAK reference.
+        events.GetEvent<Equipment.EquipmentCreated>().Subscribe(List.Apply, ThreadOption.UIThread);
+        events.GetEvent<Equipment.EquipmentUpdated>().Subscribe(List.Apply, ThreadOption.UIThread);
+        events.GetEvent<Equipment.EquipmentDeleted>().Subscribe(List.Apply, ThreadOption.UIThread);
 
-        // The ten POC shape events, sent by the legacy apps in the legacy format and read here as plain classes.
-        subscriptions.Add(subscriber.Subscribe<StatusChanged>(LogShape, ui));
-        subscriptions.Add(subscriber.Subscribe<MaintenanceScheduled>(LogShape, ui));
-        subscriptions.Add(subscriber.Subscribe<CostRecorded>(LogShape, ui));
-        subscriptions.Add(subscriber.Subscribe<WarrantyChecked>(LogShape, ui));
-        subscriptions.Add(subscriber.Subscribe<TagsChanged>(LogShape, ui));
-        subscriptions.Add(subscriber.Subscribe<LocationMoved>(LogShape, ui));
-        subscriptions.Add(subscriber.Subscribe<AttributesChanged>(LogShape, ui));
-        subscriptions.Add(subscriber.Subscribe<UsageReported>(LogShape, ui));
-        subscriptions.Add(subscriber.Subscribe<BatchCounted>(LogShape, ui));
-        subscriptions.Add(subscriber.Subscribe<AuditRequested>(LogShape, ui));
+        // The ten POC shape events, sent by the legacy apps. Kept in a field: Prism holds them weakly.
+        shapes = new ShapeEventsLog(events, AddLog);
 
         busLog.Written += message => ui.Post(state => AddLog($"[bus] {message}"), null);
 
@@ -102,12 +94,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         connectionWatch?.Stop();
-        foreach (IDisposable subscription in subscriptions)
-        {
-            subscription.Dispose();
-        }
-
-        subscriptions.Clear();
     }
 
     [RelayCommand]
@@ -123,7 +109,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private Task ReloadAsync() => List.LoadAsync();
 
-    private async Task CheckConnectionAsync(RabbitMQBus bus)
+    private async Task CheckConnectionAsync(RabbitMQService bus)
     {
         bool connected = bus.IsConsumerConnected;
         if (connected == wasConnected)
@@ -156,11 +142,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             AddLog($"request failed: {ex.Message}");
         }
-    }
-
-    private void LogShape<TMessage>(TMessage message)
-    {
-        AddLog($"{typeof(TMessage).Name}: {message}");
     }
 
     private void AddLog(string line)

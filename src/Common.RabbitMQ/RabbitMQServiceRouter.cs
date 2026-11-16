@@ -17,6 +17,8 @@ namespace Common.RabbitMQ
         private readonly ILogger logger;
         private readonly Dictionary<string, RabbitMQService> buses = new Dictionary<string, RabbitMQService>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, RabbitMQConfig> configs = new Dictionary<string, RabbitMQConfig>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<(IRemoteEvent Event, SubscribeOptions Options, RabbitMQService Bus)> boundKeys =
+            new List<(IRemoteEvent Event, SubscribeOptions Options, RabbitMQService Bus)>();
         private bool initialized;
 
         internal RabbitMQServiceRouter(IEventAggregator eventAggregator, ILogger logger)
@@ -52,9 +54,7 @@ namespace Common.RabbitMQ
             return router;
         }
 
-        public string DefaultBus { get; internal set; }
-
-        public IReadOnlyCollection<RabbitMQService> Buses => buses.Values;
+        internal string DefaultBus { get; set; }
 
         internal RabbitMQService AddBus(RabbitMQConfig config)
         {
@@ -80,7 +80,7 @@ namespace Common.RabbitMQ
             return service;
         }
 
-        public RabbitMQService GetBus(string busName)
+        internal RabbitMQService GetBus(string busName)
         {
             return buses.TryGetValue(busName, out RabbitMQService service) ? service : null;
         }
@@ -116,14 +116,87 @@ namespace Common.RabbitMQ
 
             foreach (KeyValuePair<string, RabbitMQService> pair in buses)
             {
-                pair.Value.SelectBindingBus = SelectBindingBus;
                 pair.Value.Init(configs[pair.Key]);
+            }
+
+            int subscribedEvents = RemoteEventSubscriptions.AttachRouter(this);
+
+            foreach (RabbitMQService service in buses.Values)
+            {
+                service.Start(subscribedEvents);
             }
         }
 
-        internal string SelectBindingBus(SubscribeOptions options)
+        internal bool StartReceiving(IRemoteEvent remoteEvent)
         {
-            return BusSelection.ForBinding(buses.Keys, (name, exchange) => UsesExchange(configs[name], exchange), DefaultBus, options.Bus, options.Exchange);
+            RemoteEventMetadata metadata = FindRemoteEventMetadata(remoteEvent);
+            if (metadata == null)
+            {
+                return false;
+            }
+
+            foreach (RabbitMQService service in buses.Values)
+            {
+                service.StartReceiving(metadata);
+            }
+
+            return true;
+        }
+
+        internal void StopReceiving(IRemoteEvent remoteEvent)
+        {
+            RemoteEventMetadata metadata = FindRemoteEventMetadata(remoteEvent);
+            if (metadata == null)
+            {
+                return;
+            }
+
+            foreach (RabbitMQService service in buses.Values)
+            {
+                service.StopReceiving(metadata);
+            }
+        }
+
+        internal void BindRoutingKey(IRemoteEvent remoteEvent, SubscribeOptions options)
+        {
+            if (FindRemoteEventMetadata(remoteEvent) == null)
+            {
+                return;
+            }
+
+            RabbitMQService service = buses[GetBusNameForRoutingKey(options)];
+            service.BindRoutingKey(options.Exchange, options.RoutingKey);
+            boundKeys.Add((remoteEvent, options, service));
+        }
+
+        internal void BindRoutingKeyOnInit(IRemoteEvent remoteEvent, SubscribeOptions options)
+        {
+            try
+            {
+                BindRoutingKey(remoteEvent, options);
+            }
+            catch (InvalidOperationException ex)
+            {
+                logger.LogError(ex, "Routing key '{RoutingKey}' is not bound: {Error}", options.RoutingKey, ex.Message);
+            }
+        }
+
+        internal void UnbindRoutingKey(IRemoteEvent remoteEvent, SubscribeOptions options)
+        {
+            int index = boundKeys.FindIndex(k => ReferenceEquals(k.Event, remoteEvent) && ReferenceEquals(k.Options, options));
+            if (index < 0)
+            {
+                return;
+            }
+
+            RabbitMQService service = boundKeys[index].Bus;
+            boundKeys.RemoveAt(index);
+            service.UnbindRoutingKey(options.Exchange, options.RoutingKey);
+        }
+
+        internal string GetBusNameForRoutingKey(SubscribeOptions options)
+        {
+            return BusSelection.GetBusNameForRoutingKey(buses.Keys, (name, exchange) => UsesExchange(configs[name], exchange), DefaultBus, options.Bus, options.Exchange);
         }
 
         private static bool UsesExchange(RabbitMQConfig config, string exchange)
@@ -136,17 +209,24 @@ namespace Common.RabbitMQ
             GetRequiredDefaultBus(eventType).Publish(eventType, payload);
         }
 
-        public void Publish(Type eventType, object payload, string routingKey)
+        void IRoutingKeyPublisher.Publish(Type eventType, object payload, string routingKey)
         {
-            GetRequiredDefaultBus(eventType).Publish(eventType, payload, routingKey);
+            ((IRoutingKeyPublisher)GetRequiredDefaultBus(eventType)).Publish(eventType, payload, routingKey);
         }
 
         public void Dispose()
         {
+            RemoteEventSubscriptions.DetachRouter(this);
             foreach (RabbitMQService service in buses.Values)
             {
                 service.Dispose();
             }
+        }
+
+        private RemoteEventMetadata FindRemoteEventMetadata(IRemoteEvent remoteEvent)
+        {
+            RemoteEventMetadata metadata = registry.FindOrAdd(remoteEvent.GetType());
+            return ReferenceEquals(metadata?.GetEvent(eventAggregator), remoteEvent) ? metadata : null;
         }
 
         private RabbitMQService GetRequiredDefaultBus(Type eventType)

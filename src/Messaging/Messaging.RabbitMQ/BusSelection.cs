@@ -6,7 +6,7 @@ namespace Messaging.RabbitMQ
 {
     internal static class BusSelection
     {
-        public static string ForBinding(IEnumerable<string> busNames, Func<string, string, bool> usesExchange, string defaultBus, string bus, string exchange)
+        public static string GetBusNameForRoutingKey(IEnumerable<string> busNames, Func<string, string, bool> usesExchange, string defaultBus, string bus, string exchange)
         {
             bool hasExchange = !string.IsNullOrWhiteSpace(exchange);
 
@@ -14,12 +14,12 @@ namespace Messaging.RabbitMQ
             {
                 if (!busNames.Contains(bus, StringComparer.Ordinal))
                 {
-                    throw new InvalidOperationException($"Cannot bind a routing key on bus '{bus}': it is not configured for this application.");
+                    throw new InvalidOperationException($"Bus '{bus}' is not configured.");
                 }
 
                 if (hasExchange && !usesExchange(bus, exchange))
                 {
-                    throw NotUsedBy(bus, exchange);
+                    throw ExchangeNotOnBusError(bus, exchange);
                 }
 
                 return bus;
@@ -35,28 +35,25 @@ namespace Messaging.RabbitMQ
 
                 if (matches.Count > 1)
                 {
-                    throw new InvalidOperationException(
-                        $"Exchange '{exchange}' is on several buses ({string.Join(", ", matches)}): set SubscribeOptions.Bus to say which.");
+                    throw new InvalidOperationException($"Exchange '{exchange}' is on several buses: {string.Join(", ", matches)}.");
                 }
 
-                throw NoBusUses(exchange);
+                throw NoBusForExchangeError(exchange);
             }
 
             return !string.IsNullOrWhiteSpace(defaultBus)
                 ? defaultBus
-                : throw new InvalidOperationException("A routing key is bound on the default bus, and there is none: set Messaging:DefaultBus in the configuration.");
+                : throw new InvalidOperationException("No Messaging:DefaultBus configured.");
         }
 
-        public static InvalidOperationException NotUsedBy(string bus, string exchange)
+        public static InvalidOperationException ExchangeNotOnBusError(string bus, string exchange)
         {
-            return new InvalidOperationException(
-                $"Cannot bind a routing key on exchange '{exchange}': bus '{bus}' doesn't use it. Add it to Messaging:Buses:{bus}:Subscriptions, or check the name.");
+            return new InvalidOperationException($"Bus '{bus}' does not subscribe to exchange '{exchange}'.");
         }
 
-        public static InvalidOperationException NoBusUses(string exchange)
+        public static InvalidOperationException NoBusForExchangeError(string exchange)
         {
-            return new InvalidOperationException(
-                $"Cannot bind a routing key on exchange '{exchange}': no bus uses it. Add it to a bus's Subscriptions in Messaging:Buses, or check the name.");
+            return new InvalidOperationException($"No bus subscribes to exchange '{exchange}'.");
         }
     }
 }

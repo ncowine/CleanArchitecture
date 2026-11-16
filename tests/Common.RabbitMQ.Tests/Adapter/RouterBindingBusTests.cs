@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using System;
-using System.Reflection;
 using Messaging;
 using Prism.Events;
 using Xunit;
@@ -8,8 +7,8 @@ using Xunit;
 namespace Common.RabbitMQ.Tests.Adapter
 {
     /// <summary>
-    /// Which of the router's buses a subscription's routing key is bound on. The rule is internal, so it is called through
-    /// reflection; <c>HostingRoutingKeyBusTests</c> checks the same rule on the broker for the modern library.
+    /// Which of the router's buses a subscription's routing key is bound on (<see cref="RabbitMQServiceRouter.GetBusNameForRoutingKey"/>).
+    /// <c>HostingRoutingKeyBusTests</c> checks the same rule on the broker for the modern library.
     /// </summary>
     public class RouterBindingBusTests
     {
@@ -64,7 +63,7 @@ namespace Common.RabbitMQ.Tests.Adapter
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
                     BusFor(router, new SubscribeOptions { Exchange = "elsewhere", RoutingKey = "k" }));
                 Assert.Contains("'elsewhere'", error.Message);
-                Assert.Contains("no bus uses it", error.Message);
+                Assert.Contains("No bus subscribes", error.Message);
             }
         }
 
@@ -74,7 +73,7 @@ namespace Common.RabbitMQ.Tests.Adapter
             using (RabbitMQServiceRouter router = Router())
             {
                 InvalidOperationException ambiguous = Assert.Throws<InvalidOperationException>(() => BusFor(router, new SubscribeOptions { Exchange = "OldApp", RoutingKey = "k" }));
-                Assert.Contains("SubscribeOptions.Bus", ambiguous.Message);
+                Assert.Contains("several buses", ambiguous.Message);
 
                 InvalidOperationException unknown = Assert.Throws<InvalidOperationException>(() => BusFor(router, new SubscribeOptions { Bus = "Mistyped", RoutingKey = "k" }));
                 Assert.Contains("Mistyped", unknown.Message);
@@ -125,15 +124,7 @@ namespace Common.RabbitMQ.Tests.Adapter
 
         private static string BusFor(RabbitMQServiceRouter router, SubscribeOptions options)
         {
-            MethodInfo method = typeof(RabbitMQServiceRouter).GetMethod("SelectBindingBus", BindingFlags.Instance | BindingFlags.NonPublic);
-            try
-            {
-                return (string)method.Invoke(router, new object[] { options });
-            }
-            catch (TargetInvocationException ex) when (ex.InnerException != null)
-            {
-                throw ex.InnerException;
-            }
+            return router.GetBusNameForRoutingKey(options);
         }
     }
 }

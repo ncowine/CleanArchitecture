@@ -3,20 +3,16 @@ using System.Collections.Concurrent;
 
 namespace Common.RabbitMQ
 {
-    /// <summary>
-    /// The remote events an app has used, by type and by wire name. Events are added the first time they are published or
-    /// subscribed to; one registry is shared by every bus of a router, so two events with one wire name are refused.
-    /// </summary>
     internal sealed class RemoteEventRegistry
     {
-        private readonly ConcurrentDictionary<Type, RemoteEventDescriptor> eventsByType = new ConcurrentDictionary<Type, RemoteEventDescriptor>();
-        private readonly ConcurrentDictionary<string, RemoteEventDescriptor> eventsByName = new ConcurrentDictionary<string, RemoteEventDescriptor>(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<Type, RemoteEventMetadata> eventsByType = new ConcurrentDictionary<Type, RemoteEventMetadata>();
+        private readonly ConcurrentDictionary<string, RemoteEventMetadata> eventsByName = new ConcurrentDictionary<string, RemoteEventMetadata>(StringComparer.Ordinal);
 
-        internal RemoteEventDescriptor FindOrAdd(Type eventType)
+        internal RemoteEventMetadata FindOrAdd(Type eventType)
         {
-            if (eventsByType.TryGetValue(eventType, out RemoteEventDescriptor descriptor))
+            if (eventsByType.TryGetValue(eventType, out RemoteEventMetadata metadata))
             {
-                return descriptor;
+                return metadata;
             }
 
             Type payloadType = FindPayloadType(eventType);
@@ -25,14 +21,14 @@ namespace Common.RabbitMQ
                 return null;
             }
 
-            descriptor = new RemoteEventDescriptor(eventType, payloadType);
-            AddWireName(descriptor);
-            return eventsByType.GetOrAdd(eventType, descriptor);
+            metadata = new RemoteEventMetadata(eventType, payloadType);
+            AddWireName(metadata);
+            return eventsByType.GetOrAdd(eventType, metadata);
         }
 
-        internal bool TryGet(string eventName, out RemoteEventDescriptor descriptor)
+        internal bool TryGet(string eventName, out RemoteEventMetadata metadata)
         {
-            return eventsByName.TryGetValue(eventName, out descriptor);
+            return eventsByName.TryGetValue(eventName, out metadata);
         }
 
         private static Type FindPayloadType(Type eventType)
@@ -48,13 +44,13 @@ namespace Common.RabbitMQ
             return null;
         }
 
-        private void AddWireName(RemoteEventDescriptor descriptor)
+        private void AddWireName(RemoteEventMetadata metadata)
         {
-            RemoteEventDescriptor existing = eventsByName.GetOrAdd(descriptor.EventName, descriptor);
-            if (existing.EventType != descriptor.EventType)
+            RemoteEventMetadata existing = eventsByName.GetOrAdd(metadata.EventName, metadata);
+            if (existing.EventType != metadata.EventType)
             {
                 throw new InvalidOperationException(
-                    $"{existing.EventType.FullName} and {descriptor.EventType.FullName} both have the wire name '{descriptor.EventName}'. Give one a different [Message] name.");
+                    $"{existing.EventType.FullName} and {metadata.EventType.FullName} both have the wire name '{metadata.EventName}'. Give one a different [Message] name.");
             }
         }
     }
