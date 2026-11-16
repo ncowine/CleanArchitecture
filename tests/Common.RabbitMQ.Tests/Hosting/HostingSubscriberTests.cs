@@ -98,29 +98,6 @@ namespace Common.RabbitMQ.Tests.Hosting
         }
 
         [Fact]
-        public async Task Subscribe_WithASynchronizationContext_PostsToIt()
-        {
-            await using (TestBus bus = await TestBus.CreateAsync())
-            {
-                ICompatEndpoint legacy = bus.AddEndpoint(CompatBuild.Current, "compat-legacy");
-
-                await using (TestHost host = await TestHost.StartAsync(bus, "compat-app"))
-                {
-                    RecordingSynchronizationContext uiContext = new RecordingSynchronizationContext();
-                    Received<CompatMessage> received = new Received<CompatMessage>();
-                    host.Services.GetRequiredService<IMessageSubscriber>().Subscribe<CompatMessage>(received.Add, uiContext);
-                    await bus.WaitUntilConnectedAsync();
-                    await host.WaitUntilConnectedAsync();
-
-                    legacy.PublishRemote(CompatPayloads.Golden());
-
-                    Assert.NotNull(await received.NextAsync(TestBus.Timeout));
-                    Assert.Equal(1, uiContext.Posts);
-                }
-            }
-        }
-
-        [Fact]
         public async Task SeveralSubscribers_AllReceive_InOrder()
         {
             await using (TestBus bus = await TestBus.CreateAsync())

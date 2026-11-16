@@ -7,7 +7,7 @@ namespace Common.RabbitMQ
     {
         private static readonly object gate = new object();
         private static readonly HashSet<IRemoteEvent> subscribed = new HashSet<IRemoteEvent>();
-        private static readonly List<RabbitMQService> running = new List<RabbitMQService>();
+        private static readonly List<RabbitMQServiceRouter> attachedRouters = new List<RabbitMQServiceRouter>();
         private static readonly List<(IRemoteEvent Event, SubscribeOptions Options)> boundKeys = new List<(IRemoteEvent Event, SubscribeOptions Options)>();
 
         public static void StartReceiving(IRemoteEvent remoteEvent)
@@ -16,9 +16,9 @@ namespace Common.RabbitMQ
             {
                 subscribed.Add(remoteEvent);
 
-                foreach (RabbitMQService service in running)
+                foreach (RabbitMQServiceRouter router in attachedRouters)
                 {
-                    service.StartReceiving(remoteEvent);
+                    router.StartReceiving(remoteEvent);
                 }
             }
         }
@@ -34,27 +34,27 @@ namespace Common.RabbitMQ
 
                 subscribed.Remove(remoteEvent);
 
-                foreach (RabbitMQService service in running)
+                foreach (RabbitMQServiceRouter router in attachedRouters)
                 {
-                    service.StopReceiving(remoteEvent);
+                    router.StopReceiving(remoteEvent);
                 }
             }
         }
 
-        public static int AddRunningService(RabbitMQService service)
+        public static int AttachRouter(RabbitMQServiceRouter router)
         {
             lock (gate)
             {
-                running.Add(service);
+                attachedRouters.Add(router);
                 foreach ((IRemoteEvent remoteEvent, SubscribeOptions options) in boundKeys)
                 {
-                    service.BindOrLog(remoteEvent, options);
+                    router.BindRoutingKeyOnInit(remoteEvent, options);
                 }
 
                 int count = 0;
                 foreach (IRemoteEvent remoteEvent in subscribed)
                 {
-                    if (service.StartReceiving(remoteEvent))
+                    if (router.StartReceiving(remoteEvent))
                     {
                         count++;
                     }
@@ -68,20 +68,20 @@ namespace Common.RabbitMQ
         {
             lock (gate)
             {
-                List<RabbitMQService> bound = new List<RabbitMQService>();
+                List<RabbitMQServiceRouter> bound = new List<RabbitMQServiceRouter>();
                 try
                 {
-                    foreach (RabbitMQService service in running)
+                    foreach (RabbitMQServiceRouter router in attachedRouters)
                     {
-                        service.Bind(remoteEvent, options);
-                        bound.Add(service);
+                        router.BindRoutingKey(remoteEvent, options);
+                        bound.Add(router);
                     }
                 }
                 catch
                 {
-                    foreach (RabbitMQService service in bound)
+                    foreach (RabbitMQServiceRouter router in bound)
                     {
-                        service.Unbind(remoteEvent, options);
+                        router.UnbindRoutingKey(remoteEvent, options);
                     }
 
                     throw;
@@ -102,18 +102,18 @@ namespace Common.RabbitMQ
                 }
 
                 boundKeys.RemoveAt(index);
-                foreach (RabbitMQService service in running)
+                foreach (RabbitMQServiceRouter router in attachedRouters)
                 {
-                    service.Unbind(remoteEvent, options);
+                    router.UnbindRoutingKey(remoteEvent, options);
                 }
             }
         }
 
-        public static void RemoveRunningService(RabbitMQService service)
+        public static void DetachRouter(RabbitMQServiceRouter router)
         {
             lock (gate)
             {
-                running.Remove(service);
+                attachedRouters.Remove(router);
             }
         }
     }

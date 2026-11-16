@@ -39,7 +39,7 @@ You don't need to know RabbitMQ; [chapter 3](#3-five-ideas-you-need) covers the 
 | 11 | [Step 4 — Send it after the commit](#11-step-4--send-it-after-the-commit) | Collect in the handler, publish once committed |
 | 12 | [Step 5 — See it working](#12-step-5--see-it-working) | Health, the management UI |
 | 13 | [Receiving messages in the API](#13-receiving-messages-in-the-api) | Handlers, shared queues, retries |
-| 14 | [Modern WPF apps: subscribe only](#14-modern-wpf-apps-subscribe-only) | `IMessageSubscriber` |
+| 14 | [Modern WPF apps: subscribe only](#14-modern-wpf-apps-subscribe-only) | `Common.RabbitMQ`, then SignalR |
 | 15 | [Legacy apps: what they keep](#15-legacy-apps-what-they-keep) | And how the API reaches them |
 | 16 | [Testing](#16-testing) | What's covered, and how to test your own |
 | 17 | [The traps](#17-the-traps) | Seven ways to lose an afternoon |
@@ -80,7 +80,7 @@ every day.
 |---|---|---|---|
 | **Publishes?** | Yes, to each other, as today | Yes — **only after the commit** | **No** |
 | **Subscribes?** | Yes, as today | When it needs to ([chapter 13](#13-receiving-messages-in-the-api)) | Yes |
-| **Library** | `Common.RabbitMQ` (the legacy adapter) | `Messaging.Hosting` | `Messaging.Hosting` (`IMessageSubscriber`) |
+| **Library** | `Common.RabbitMQ` (the legacy adapter) | `Messaging.Hosting` | `Common.RabbitMQ`, later SignalR |
 | **If the app crashes with unsent messages** | Lost. Accepted: users live with it, and these apps will be retired | Lost too, the same trade-off. Receivers reload from the API when it matters | Nothing to lose: they don't send |
 | **What changes for them** | **Nothing.** Not the code, not the config, not the behaviour | New code goes here | New code goes here |
 
@@ -158,19 +158,19 @@ change since.
 flowchart TB
     subgraph Apps["Programs"]
         L["Legacy WPF app<br/>net472, Prism events"]
-        W["Modern WPF app<br/>net8, subscribes only"]
+        W["Modern WPF app<br/>net8+, subscribes only"]
         A["CleanArch.Api<br/>net10"]
     end
     subgraph Msg["src/Messaging (copied, shared with legacy)"]
-        AD["Common.RabbitMQ<br/>legacy adapter, API frozen"]
+        AD["Common.RabbitMQ<br/>legacy adapter, wire format frozen"]
         H["Messaging.Hosting<br/>DI, publisher, subscriber"]
         E["Messaging.RabbitMQ<br/><b>RabbitMQBus</b> — the only code that talks to RabbitMQ"]
         AB["Messaging.Abstractions<br/>[Message], interfaces"]
     end
     B[("RabbitMQ broker")]
     L --> AD --> E
-    W --> H --> E
-    A --> H
+    W --> AD
+    A --> H --> E
     E <--> B
 ```
 
@@ -178,8 +178,8 @@ flowchart TB
 |---|---|---|
 | `src/Messaging/Messaging.Abstractions` | net472, netstandard2.0, net8.0 | `[Message("…")]`, `IMessagePublisher`, `MessageContext`, the options. No dependencies — message classes reference only this. |
 | `src/Messaging/Messaging.RabbitMQ` | net472, netstandard2.0, net8.0 | **The engine**, `RabbitMQBus`: connects, reconnects, declares, publishes, consumes, retries, dead-letters. |
-| `src/Messaging/Messaging.Hosting` | net8.0 | Setup for any net8+ app: `AddMessaging`, `IMessagePublisher`, `IMessageSubscriber`, System.Text.Json. |
-| `src/Common.RabbitMQ` | net472, net8.0 | **The legacy adapter**: the old `PublishRemote` / `IRabbitMQService` API on top of the engine. Public API is additions-only. |
+| `src/Messaging/Messaging.Hosting` | net8.0 | Setup for the API: `AddMessaging`, `IMessagePublisher`, `IMessageSubscriber`, System.Text.Json. |
+| `src/Common.RabbitMQ` | net472, net8.0 | **The legacy adapter**: the old `PublishRemote` / `IRabbitMQService` API on top of the engine. Public API keeps what this repository uses. |
 | `tests/Common.RabbitMQ.Tests` | net472, net8.0 | Golden wire bytes, the legacy public API, real-broker tests. |
 | `tests/Fixtures/*` | | The frozen original library, a model of the real legacy library, and demo events the golden tests need. |
 
@@ -529,26 +529,26 @@ Two things to keep in mind:
 
 ## 14. Modern WPF apps: subscribe only
 
-A modern desktop app uses the .NET Generic Host, `Messaging.Hosting` and the same plain message
-classes as the API. It never resolves `IMessagePublisher`, so it never publishes. Full walk-through:
-recipe C in the [messaging guide](../docs/messaging/README.md#c-a-modern-wpf-app-without-prism-net-8).
+A modern desktop app (.NET 8 or later) reaches RabbitMQ through the same legacy adapter,
+`Common.RabbitMQ`, until RabbitMQ leaves the desktop; then it takes the API's events over SignalR.
+`Messaging.Hosting` is for the API only. To receive the API's events, it declares a
+`RemotePubSubEvent<T>` named after each one, with the API's class as the payload
+(`samples/MessagingPocs/Poc.Legacy.Events/FromApi`). It never calls `PublishRemote`. Full walk-through:
+recipes B and C in the [messaging guide](../docs/messaging/README.md#c-a-desktop-app-without-prism).
 
-> **Runnable comparison.** [`samples/MessagingPocs`](../samples/MessagingPocs/README.md) has three
-> small WPF apps side by side — RabbitMQ through Prism's `IEventAggregator`, RabbitMQ without it,
-> and **SignalR from the API** — with the right approach and the pitfalls commented in the code.
-> For apps whose events all come from the API, SignalR is the simpler default: no broker account or
-> broker access on each desktop.
+> **Runnable comparison.** [`samples/MessagingPocs`](../samples/MessagingPocs/README.md) has
+> WPF apps on .NET Framework 4.7.2, .NET 8 and .NET 10 on the adapter, and **SignalR from the API**,
+> with the right approach and the pitfalls commented in the code. For apps whose events all come
+> from the API, SignalR is the simpler default: no broker account or broker access on each desktop.
 
 ```csharp
-// App.xaml.cs
-builder.Services.AddMessaging(builder.Configuration);   // Messaging:Buses and Messaging:DefaultBus
+// App.xaml.cs, on the UI thread
+IEventAggregator events = new EventAggregator();
+router = RabbitMQServiceRouter.FromConfiguration(events, configuration, logger);
+router.Init();
 
-// A view model
-public MainWindowViewModel(IMessageSubscriber subscriber)
-{
-    // Posted to the UI thread, like Prism's ThreadOption.UIThread.
-    _subscription = subscriber.Subscribe<EquipmentCreated>(OnCreated, SynchronizationContext.Current);
-}
+// A view model: posted to the UI thread
+events.GetEvent<Equipment.EquipmentCreated>().Subscribe(OnCreated, ThreadOption.UIThread);
 ```
 
 - **Its config** points `ExchangeName` at the app's own name, and a `Subscriptions` entry at
@@ -558,10 +558,8 @@ public MainWindowViewModel(IMessageSubscriber subscriber)
 - **Per-instance queue** (the default): every running copy gets every message, and the queue
   disappears when the app closes. Messages sent while it was closed aren't waiting for it —
   on start-up, load current state from the API, then apply events on top.
-- **Dispose the subscription** when a window or view model goes away. Subscriptions are strong
-  references, unlike Prism's weak ones.
-- An exception in a UI-thread subscriber goes to `Application.DispatcherUnhandledException`,
-  not back to the message.
+- **Subscribe with method groups** on a long-lived object: Prism holds subscriptions weakly, so a
+  capturing lambda stops at the next garbage collection.
 - Each app keeps one idle publisher connection. Harmless; not worth an option unless the broker's
   connection count ever becomes a concern.
 
@@ -570,9 +568,9 @@ public MainWindowViewModel(IMessageSubscriber subscriber)
 ## 15. Legacy apps: what they keep
 
 **Everything.** Their code, their Prism events, their buffered publishing,
-and what happens when they close or crash. The adapter (`src/Common.RabbitMQ`) keeps the old
-public API; a test fails if anything is removed or changed, and each addition has to be
-listed with a reason.
+and what happens when they close or crash. The adapter (`src/Common.RabbitMQ`) keeps the parts of
+the old public API that this repository uses; a test fails on any public change that isn't
+listed, with a reason, as an approved addition or removal.
 
 What the adapter *added* — events found by assembly instead of an attribute on each one,
 `PublishOptions`, `SubscribeOptions` and `Subscriptions` in appsettings.json — is opt-in, and none of it
@@ -737,7 +735,7 @@ When connecting a new event:
 | An event goes out but a legacy app never sees it | Wrong wire name; a custom routing key; or it's on an exchange the app doesn't bind | Compare `event-type` with the legacy type's full name; check the queue's bindings in the management UI |
 | A legacy app receives it but fields are empty | Property names or types don't match the legacy payload | Match them exactly, including case |
 | A modern app receives nothing | Not subscribed to the API's exchange; nothing calls `Subscribe` for the type; or the app wasn't running when it was sent | Check `Subscriptions` and the `Subscribe` call; load state on start-up |
-| Log: *Exchange 'X' does not exist yet; waiting for its owner* | The app that owns exchange X hasn't started | Start it; the subscriber connects on its own |
+| Log: *Exchange 'X' does not exist.* | The app that owns exchange X hasn't started | Start it; the subscriber connects on its own |
 | Log: *Queue 'X' already exists with different settings* | A shared-queue setting changed | [Trap 17.5](#175-changing-a-shared-queues-settings) |
 | Log: *PRECONDITION_FAILED … inequivalent arg 'type'* | Two apps declared one exchange with different types | Make them agree — keep `topic` |
 | Log: *NOT_ALLOWED – vhost X not found* | The virtual host doesn't exist | Use `/`, or create it |
@@ -763,9 +761,9 @@ _realtime.Publish(RealtimeGroups.Equipment(), new RealtimeEvent(nameof(Equipment
 ### A modern WPF app, receiving
 
 ```csharp
-services.AddMessaging(configuration);
-
-IDisposable sub = subscriber.Subscribe<EquipmentCreated>(OnCreated, SynchronizationContext.Current);
+IEventAggregator events = new EventAggregator();   // on the UI thread
+RabbitMQServiceRouter.FromConfiguration(events, configuration, logger).Init();
+events.GetEvent<Equipment.EquipmentCreated>().Subscribe(OnCreated, ThreadOption.UIThread);
 ```
 
 ### The numbers
@@ -817,12 +815,12 @@ IDisposable sub = subscriber.Subscribe<EquipmentCreated>(OnCreated, Synchronizat
 src/Messaging/
 ├── Directory.Build.props / Directory.Packages.props   build isolation and legacy package versions
 ├── Messaging.Abstractions/MessageAttribute.cs          [Message("wire name")]
-├── Messaging.RabbitMQ/RabbitMQBus.cs                   the engine: Enqueue (buffered)
+├── Messaging.RabbitMQ/RabbitMQBus.cs                   the engine: Publish (buffered)
 ├── Messaging.Hosting/MessagingServiceCollectionExtensions.cs   AddMessaging(configuration): buses from Messaging:Buses
 ├── Messaging.Hosting/MessagePublisher.cs               IMessagePublisher
 └── Messaging.Hosting/IMessageSubscriber.cs             the only way to receive
 
-src/Common.RabbitMQ/                   the legacy adapter (public API frozen, additions only)
+src/Common.RabbitMQ/                   the legacy adapter (wire format frozen)
 
 The worked example — Equipment, both channels:
 src/Modules/Equipment/Equipment.Messages/            EquipmentCreated / Updated / Deleted (netstandard2.0)
@@ -835,7 +833,7 @@ src/Api/CleanArch.Api/Program.cs                     AddMessaging, only when con
 tests/Common.RabbitMQ.Tests/           golden, public API, broker, hosting, legacy model
 tests/CleanArch.Api.IntegrationTests/EquipmentIntegrationEventsTests.cs
 tests/CleanArch.UnitTests/TransportIndependenceTests.cs   inner layers never reference a transport
-samples/MessagingPocs/                 three WPF apps receiving the same events three ways
+samples/MessagingPocs/                 WPF apps receiving the same events over the adapter and SignalR
 docs/messaging/                        the library guide, ADRs 0001–0003, assumptions, provenance
 ```
 

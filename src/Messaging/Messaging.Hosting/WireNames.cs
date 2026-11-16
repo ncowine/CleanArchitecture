@@ -9,7 +9,7 @@ namespace Messaging.Hosting
     {
         private static readonly ConcurrentDictionary<Type, string> cache = new ConcurrentDictionary<Type, string>();
 
-        public static string Get(Type messageType)
+        public static string GetWireName(Type messageType)
         {
             if (messageType == null)
             {
@@ -19,8 +19,8 @@ namespace Messaging.Hosting
             return cache.GetOrAdd(messageType, type =>
             {
                 string wireName = type.GetCustomAttribute<MessageAttribute>(inherit: false)?.WireName
-                    ?? throw new InvalidOperationException($"{type.FullName} has no [Message(\"<wire name>\")] attribute.");
-                MessageSerializer.EnsureNoTuples(type);
+                    ?? throw new InvalidOperationException($"{type.FullName} has no [Message] attribute.");
+                MessageSerializer.ThrowIfContainsTuple(type);
                 return wireName;
             });
         }

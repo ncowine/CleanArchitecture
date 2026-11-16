@@ -1,6 +1,6 @@
 namespace Common.RabbitMQ
 {
-    public class RabbitMQSubscription
+    internal sealed class RabbitMQSubscription
     {
         public string Exchange { get; set; }
     }

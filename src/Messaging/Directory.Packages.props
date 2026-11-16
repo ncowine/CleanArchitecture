@@ -1,40 +1,27 @@
 <Project>
-  <!--
-    Central package versions for the messaging projects copied from RabbitMQ-Refactor (docs/messaging/PROVENANCE.md).
-
-    Deliberately separate from the repository root's Directory.Packages.props: legacy apps share these exact
-    versions (docs/messaging/legacy-baseline-assumptions.md, F4), and the adapter compiles against the lowest
-    version any legacy app uses (ADR 0001, section 7). The root pins newer versions for this solution's own code.
-    The other copied folders import this file.
-  -->
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
-  <!-- The one serializer, on net472 and netstandard2.0 (net8 has it built in). The 8.0 line, like the other Microsoft packages. -->
   <ItemGroup>
     <PackageVersion Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 
-  <!-- Shared with the legacy apps. Newtonsoft.Json is now only the tests' baseline: what apps on the old library write. -->
   <ItemGroup>
     <PackageVersion Include="Newtonsoft.Json" Version="12.0.3" />
     <PackageVersion Include="Prism.Core" Version="8.1.97" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.1.2" />
   </ItemGroup>
 
-  <!-- Newtonsoft.Json 12.0.3: deeply nested JSON can overflow the stack. Accepted as a legacy constraint (ADR 0001, section 7). -->
   <ItemGroup>
     <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-5crp-9r3c-p9vr" />
   </ItemGroup>
 
-  <!-- appsettings.json, the one configuration format: legacy apps bind it onto RabbitMQConfig (tested on net472). -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
   </ItemGroup>
 
-  <!-- Messaging.Hosting, and Logging.Abstractions for the core: the 8.0 line, so net8 clients can opt in without being forced up. -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
@@ -44,7 +31,6 @@
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
   </ItemGroup>
 
-  <!-- Tests -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />

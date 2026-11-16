@@ -61,7 +61,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
                     subscriber.Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { Exchange = "Mistyped", RoutingKey = Key }));
-                Assert.Contains("no bus uses it", error.Message);
+                Assert.Contains("No bus subscribes", error.Message);
 
                 // A later subscription to a twin class with the same wire name is still allowed: the refused one left nothing behind.
                 subscriber.Subscribe<Employees.Contracts.CompatMessageTwin>(_ => { }).Dispose();
@@ -77,7 +77,7 @@ namespace Common.RabbitMQ.Tests.Hosting
 
                 InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
                     subscriber.Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { Exchange = "OldApp", RoutingKey = Key }));
-                Assert.Contains("SubscribeOptions.Bus", error.Message);
+                Assert.Contains("several buses", error.Message);
 
                 subscriber.Subscribe<CompatMessage>(_ => { }, options: new SubscribeOptions { Bus = "Second", Exchange = "OldApp", RoutingKey = Key }).Dispose();
             }

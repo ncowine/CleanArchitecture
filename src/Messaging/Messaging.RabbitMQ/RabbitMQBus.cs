@@ -7,7 +7,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -41,7 +40,7 @@ namespace Messaging.RabbitMQ
         private bool started;
         private bool disposed;
 
-        public RabbitMQBus(RabbitMQBusOptions options, IInboundDispatcher dispatcher, ILogger logger = null)
+        public RabbitMQBus(RabbitMQBusOptions options, IInboundDispatcher dispatcher, ILogger logger)
         {
             if (options == null)
             {
@@ -60,7 +59,7 @@ namespace Messaging.RabbitMQ
 
             this.options = options;
             this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
-            this.logger = logger ?? NullLogger.Instance;
+            this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
             instanceId = string.IsNullOrWhiteSpace(options.InstanceId) ? Guid.NewGuid().ToString("N") : options.InstanceId;
 
             if (options.QueueMode == QueueMode.Shared && (options.MaxAttempts < 1 || options.DeliveryLimit < 1))
@@ -95,7 +94,7 @@ namespace Messaging.RabbitMQ
 
         public void Start()
         {
-            EnsureNotDisposed();
+            ThrowIfDisposed();
 
             if (started)
             {
@@ -108,12 +107,12 @@ namespace Messaging.RabbitMQ
 
             Task.Run(() => KeepConnectedAsync(Consumer, () => IsConsumerConnected, CloseConsumerAsync, OpenConsumerAsync, token));
             Task.Run(() => KeepConnectedAsync(Publisher, () => IsPublisherConnected, ClosePublisherAsync, OpenPublisherAsync, token));
-            Task.Run(() => OutstandingQueueAsync(token));
+            Task.Run(() => PublishBufferedMessagesAsync(token));
         }
 
-        public void Enqueue(string wireName, object message, string routingKey = null)
+        public void Publish(string wireName, object message, string routingKey = null)
         {
-            EnsureNotDisposed();
+            ThrowIfDisposed();
 
             if (string.IsNullOrWhiteSpace(wireName))
             {
@@ -124,9 +123,9 @@ namespace Messaging.RabbitMQ
             outstandingMessages.Enqueue(new PendingMessage(wireName, key, Guid.NewGuid().ToString("N"), MessageSerializer.Serialize(message)));
         }
 
-        public void Subscribe(MessageRegistration registration)
+        public void StartReceiving(MessageRegistration registration)
         {
-            EnsureNotDisposed();
+            ThrowIfDisposed();
 
             if (registration == null)
             {
@@ -140,9 +139,12 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        public void Unsubscribe(string wireName)
+        public void StopReceiving(string wireName)
         {
-            EnsureNotDisposed();
+            if (disposed)
+            {
+                return;
+            }
 
             if (wireName != null)
             {
@@ -150,19 +152,19 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        public void Bind(string exchange, string routingKey)
+        public void BindRoutingKey(string exchange, string routingKey)
         {
-            EnsureNotDisposed();
+            ThrowIfDisposed();
 
             if (!string.IsNullOrWhiteSpace(exchange) && !UsesExchange(exchange))
             {
-                throw BusSelection.NotUsedBy(options.BusName, exchange);
+                throw BusSelection.ExchangeNotOnBusError(options.BusName, exchange);
             }
 
             bool changed = false;
             lock (bindingGate)
             {
-                foreach ((string Exchange, string RoutingKey) pair in BindingPairs(exchange, routingKey))
+                foreach ((string Exchange, string RoutingKey) pair in GetRoutingKeyBindings(exchange, routingKey))
                 {
                     requestedBindings.TryGetValue(pair, out int count);
                     requestedBindings[pair] = count + 1;
@@ -172,11 +174,11 @@ namespace Messaging.RabbitMQ
 
             if (changed)
             {
-                ApplyBindingsInBackground();
+                SyncRoutingKeysInBackground();
             }
         }
 
-        public void Unbind(string exchange, string routingKey)
+        public void UnbindRoutingKey(string exchange, string routingKey)
         {
             if (disposed)
             {
@@ -186,7 +188,7 @@ namespace Messaging.RabbitMQ
             bool changed = false;
             lock (bindingGate)
             {
-                foreach ((string Exchange, string RoutingKey) pair in BindingPairs(exchange, routingKey))
+                foreach ((string Exchange, string RoutingKey) pair in GetRoutingKeyBindings(exchange, routingKey))
                 {
                     if (!requestedBindings.TryGetValue(pair, out int count))
                     {
@@ -207,7 +209,7 @@ namespace Messaging.RabbitMQ
 
             if (changed)
             {
-                ApplyBindingsInBackground();
+                SyncRoutingKeysInBackground();
             }
         }
 
@@ -283,7 +285,7 @@ namespace Messaging.RabbitMQ
 
         private async Task<IConnection> ConnectAsync(string role, CancellationToken token)
         {
-            IConnection connection = await CreateConnectionFactory().CreateConnectionAsync(ConnectionName(role), token).ConfigureAwait(false);
+            IConnection connection = await CreateConnectionFactory().CreateConnectionAsync(GetConnectionName(role), token).ConfigureAwait(false);
             connection.ConnectionShutdownAsync += (sender, args) =>
             {
                 if (args.Initiator != ShutdownInitiator.Application)
@@ -310,29 +312,29 @@ namespace Messaging.RabbitMQ
                 await DeclareExchangeAsync(channel, token).ConfigureAwait(false);
                 foreach (string exchange in SubscribedExchanges())
                 {
-                    await CheckExchangeExistsAsync(channel, exchange, token).ConfigureAwait(false);
+                    await EnsureExchangeExistsAsync(channel, exchange, token).ConfigureAwait(false);
                 }
 
                 await channel.BasicQosAsync(0, options.PrefetchCount, false, token).ConfigureAwait(false);
 
                 QueueDeclareOk queue = options.QueueMode == QueueMode.Shared
                     ? await DeclareSharedQueueAsync(channel, token).ConfigureAwait(false)
-                    : await DeclareInstanceQueueAsync(channel, token).ConfigureAwait(false);
+                    : await DeclarePerInstanceQueueAsync(channel, token).ConfigureAwait(false);
 
-                foreach ((string Exchange, string RoutingKey) binding in ConfiguredBindings())
+                foreach ((string Exchange, string RoutingKey) binding in ExchangeNameBindings())
                 {
                     await channel.QueueBindAsync(queue.QueueName, binding.Exchange, binding.RoutingKey, cancellationToken: token).ConfigureAwait(false);
                 }
 
                 appliedBindings.Clear();
-                await ApplyBindingsAsync(connection, queue.QueueName, token).ConfigureAwait(false);
+                await SyncRoutingKeysAsync(connection, queue.QueueName, token).ConfigureAwait(false);
 
                 AsyncEventingBasicConsumer consumer = new AsyncEventingBasicConsumer(channel);
                 consumer.ReceivedAsync += OnMessageReceivedAsync;
                 await channel.BasicConsumeAsync(
                     queue: queue.QueueName,
                     autoAck: false,
-                    consumerTag: ConnectionName(Consumer),
+                    consumerTag: GetConnectionName(Consumer),
                     consumer: consumer,
                     cancellationToken: token).ConfigureAwait(false);
 
@@ -352,7 +354,7 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        private Task<QueueDeclareOk> DeclareInstanceQueueAsync(IChannel channel, CancellationToken token)
+        private Task<QueueDeclareOk> DeclarePerInstanceQueueAsync(IChannel channel, CancellationToken token)
         {
             return channel.QueueDeclareAsync(
                 queue: queueName,
@@ -400,11 +402,7 @@ namespace Messaging.RabbitMQ
             }
             catch (OperationInterruptedException ex) when (ex.ShutdownReason?.ReplyCode == 406)
             {
-                throw new InvalidOperationException(
-                    $"Queue '{name}' already exists with different settings ({ex.ShutdownReason.ReplyText}). A queue's settings " +
-                    "can't change after it's created. Put the setting (for example DeliveryLimit) back to the value the queue was " +
-                    "created with, or delete the queue so it's created again. Deleting it loses the messages in it.",
-                    ex);
+                throw new InvalidOperationException($"Queue '{name}' already exists with different settings ({ex.ShutdownReason.ReplyText}).", ex);
             }
         }
 
@@ -437,7 +435,7 @@ namespace Messaging.RabbitMQ
 
             try
             {
-                settlement = await ReceiveAsync(args).ConfigureAwait(false);
+                settlement = await HandleDeliveryAsync(args).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -448,12 +446,12 @@ namespace Messaging.RabbitMQ
             await SettleAsync(channel, args.DeliveryTag, settlement).ConfigureAwait(false);
         }
 
-        private async Task<MessageSettlement> ReceiveAsync(BasicDeliverEventArgs args)
+        private async Task<MessageSettlement> HandleDeliveryAsync(BasicDeliverEventArgs args)
         {
             CancellationToken token = cancellation.Token;
-            Dictionary<string, string> headers = ReadHeaders(args.BasicProperties?.Headers);
+            Dictionary<string, string> headers = DecodeHeaders(args.BasicProperties?.Headers);
 
-            if (IsOwnEcho(headers))
+            if (!IsShared && WasPublishedByThisInstance(headers))
             {
                 return MessageSettlement.Ack;
             }
@@ -469,10 +467,10 @@ namespace Messaging.RabbitMQ
 
             MessageContext context = new MessageContext(wireName, options.BusName, args.BasicProperties?.MessageId, args.Redelivered, headers, args.Exchange, args.RoutingKey);
 
-            return await HandleWithRetriesAsync(registration, context, args, token).ConfigureAwait(false);
+            return await DispatchWithRetriesAsync(registration, context, args, token).ConfigureAwait(false);
         }
 
-        private async Task<MessageSettlement> HandleWithRetriesAsync(MessageRegistration registration, MessageContext context, BasicDeliverEventArgs args, CancellationToken token)
+        private async Task<MessageSettlement> DispatchWithRetriesAsync(MessageRegistration registration, MessageContext context, BasicDeliverEventArgs args, CancellationToken token)
         {
             int attempts = IsShared ? options.MaxAttempts : 1;
             byte[] body = args.Body.ToArray();
@@ -517,9 +515,9 @@ namespace Messaging.RabbitMQ
 
         private MessageSettlement FailedSettlement => IsShared ? MessageSettlement.DeadLetter : MessageSettlement.Ack;
 
-        private bool IsOwnEcho(Dictionary<string, string> headers)
+        private bool WasPublishedByThisInstance(Dictionary<string, string> headers)
         {
-            return !IsShared && headers.TryGetValue(WireHeaders.SourceId, out string sourceId) && sourceId == instanceId;
+            return headers.TryGetValue(WireHeaders.SourceId, out string sourceId) && sourceId == instanceId;
         }
 
         private async Task SettleAsync(IChannel channel, ulong deliveryTag, MessageSettlement settlement)
@@ -584,7 +582,7 @@ namespace Messaging.RabbitMQ
             await CloseQuietlyAsync(channel, connection).ConfigureAwait(false);
         }
 
-        private async Task OutstandingQueueAsync(CancellationToken token)
+        private async Task PublishBufferedMessagesAsync(CancellationToken token)
         {
             while (!token.IsCancellationRequested)
             {
@@ -671,7 +669,7 @@ namespace Messaging.RabbitMQ
             return factory;
         }
 
-        private string ConnectionName(string role)
+        private string GetConnectionName(string role)
         {
             return $"{options.ClientName} [{options.BusName}] {role.ToLowerInvariant()} - {Environment.UserName}";
         }
@@ -697,7 +695,7 @@ namespace Messaging.RabbitMQ
                 cancellationToken: token);
         }
 
-        private static async Task CheckExchangeExistsAsync(IChannel channel, string exchange, CancellationToken token)
+        private static async Task EnsureExchangeExistsAsync(IChannel channel, string exchange, CancellationToken token)
         {
             try
             {
@@ -705,7 +703,7 @@ namespace Messaging.RabbitMQ
             }
             catch (OperationInterruptedException ex) when (ex.ShutdownReason?.ReplyCode == 404)
             {
-                throw new InvalidOperationException($"Exchange '{exchange}' does not exist yet; waiting for its owner to declare it.", ex);
+                throw new InvalidOperationException($"Exchange '{exchange}' does not exist.", ex);
             }
         }
 
@@ -717,7 +715,7 @@ namespace Messaging.RabbitMQ
                 .Distinct(StringComparer.Ordinal);
         }
 
-        private IEnumerable<(string Exchange, string RoutingKey)> ConfiguredBindings()
+        private IEnumerable<(string Exchange, string RoutingKey)> ExchangeNameBindings()
         {
             yield return (options.ExchangeName, options.ExchangeName);
 
@@ -727,7 +725,7 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        private List<(string Exchange, string RoutingKey)> BindingPairs(string exchange, string routingKey)
+        private List<(string Exchange, string RoutingKey)> GetRoutingKeyBindings(string exchange, string routingKey)
         {
             if (string.IsNullOrWhiteSpace(routingKey))
             {
@@ -741,7 +739,7 @@ namespace Messaging.RabbitMQ
             return exchanges.Select(e => (e, routingKey)).ToList();
         }
 
-        private void ApplyBindingsInBackground()
+        private void SyncRoutingKeysInBackground()
         {
             if (!started || disposed)
             {
@@ -758,7 +756,7 @@ namespace Messaging.RabbitMQ
                     {
                         if (IsOpen(consumerConnection, consumerChannel))
                         {
-                            await ApplyBindingsAsync(consumerConnection, consumerQueueName, token).ConfigureAwait(false);
+                            await SyncRoutingKeysAsync(consumerConnection, consumerQueueName, token).ConfigureAwait(false);
                         }
                     }
                     finally
@@ -776,7 +774,7 @@ namespace Messaging.RabbitMQ
             });
         }
 
-        private async Task ApplyBindingsAsync(IConnection connection, string queue, CancellationToken token)
+        private async Task SyncRoutingKeysAsync(IConnection connection, string queue, CancellationToken token)
         {
             HashSet<(string Exchange, string RoutingKey)> wanted;
             lock (bindingGate)
@@ -784,11 +782,11 @@ namespace Messaging.RabbitMQ
                 wanted = new HashSet<(string Exchange, string RoutingKey)>(requestedBindings.Keys);
             }
 
-            HashSet<(string Exchange, string RoutingKey)> configured = new HashSet<(string Exchange, string RoutingKey)>(ConfiguredBindings());
+            HashSet<(string Exchange, string RoutingKey)> configured = new HashSet<(string Exchange, string RoutingKey)>(ExchangeNameBindings());
 
             foreach ((string Exchange, string RoutingKey) pair in wanted.Where(p => !configured.Contains(p) && !appliedBindings.Contains(p)).ToList())
             {
-                if (await ChangeBindingAsync(connection, queue, pair, bind: true, token).ConfigureAwait(false))
+                if (await BindOnBrokerAsync(connection, queue, pair, token).ConfigureAwait(false))
                 {
                     appliedBindings.Add(pair);
                 }
@@ -796,30 +794,42 @@ namespace Messaging.RabbitMQ
 
             foreach ((string Exchange, string RoutingKey) pair in appliedBindings.Where(p => !wanted.Contains(p)).ToList())
             {
-                if (await ChangeBindingAsync(connection, queue, pair, bind: false, token).ConfigureAwait(false))
+                if (await UnbindOnBrokerAsync(connection, queue, pair, token).ConfigureAwait(false))
                 {
                     appliedBindings.Remove(pair);
                 }
             }
         }
 
-        private async Task<bool> ChangeBindingAsync(IConnection connection, string queue, (string Exchange, string RoutingKey) pair, bool bind, CancellationToken token)
+        private Task<bool> BindOnBrokerAsync(IConnection connection, string queue, (string Exchange, string RoutingKey) pair, CancellationToken token)
+        {
+            return ChangeOnBrokerAsync(connection, pair, bind: true,
+                channel => channel.QueueBindAsync(queue, pair.Exchange, pair.RoutingKey, null, cancellationToken: token), token);
+        }
+
+        private Task<bool> UnbindOnBrokerAsync(IConnection connection, string queue, (string Exchange, string RoutingKey) pair, CancellationToken token)
+        {
+            return ChangeOnBrokerAsync(connection, pair, bind: false,
+                channel => channel.QueueUnbindAsync(queue, pair.Exchange, pair.RoutingKey, null, token), token);
+        }
+
+        private async Task<bool> ChangeOnBrokerAsync(IConnection connection, (string Exchange, string RoutingKey) pair, bool bind,
+            Func<IChannel, Task> change, CancellationToken token)
         {
             IChannel channel = null;
             try
             {
                 channel = await connection.CreateChannelAsync(cancellationToken: token).ConfigureAwait(false);
-                if (bind)
-                {
-                    await channel.QueueBindAsync(queue, pair.Exchange, pair.RoutingKey, null, cancellationToken: token).ConfigureAwait(false);
-                }
-                else
-                {
-                    await channel.QueueUnbindAsync(queue, pair.Exchange, pair.RoutingKey, null, token).ConfigureAwait(false);
-                }
+                await change(channel).ConfigureAwait(false);
 
                 logger.LogInformation("[{Bus}] {Change} routing key '{RoutingKey}' on exchange '{Exchange}'.",
                     options.BusName, bind ? "Bound" : "Unbound", pair.RoutingKey, pair.Exchange);
+                return true;
+            }
+            catch (OperationInterruptedException ex) when (ex.ShutdownReason?.ReplyCode == 404 && !bind)
+            {
+                logger.LogInformation("[{Bus}] Exchange '{Exchange}' no longer exists, so routing key '{RoutingKey}' is already unbound.",
+                    options.BusName, pair.Exchange, pair.RoutingKey);
                 return true;
             }
             catch (OperationInterruptedException ex) when (ex.ShutdownReason?.ReplyCode == 404)
@@ -840,7 +850,7 @@ namespace Messaging.RabbitMQ
             }
         }
 
-        private void EnsureNotDisposed()
+        private void ThrowIfDisposed()
         {
             if (disposed)
             {
@@ -853,7 +863,7 @@ namespace Messaging.RabbitMQ
             return connection != null && connection.IsOpen && channel != null && channel.IsOpen;
         }
 
-        private static Dictionary<string, string> ReadHeaders(IDictionary<string, object> headers)
+        private static Dictionary<string, string> DecodeHeaders(IDictionary<string, object> headers)
         {
             Dictionary<string, string> result = new Dictionary<string, string>(StringComparer.Ordinal);
             if (headers == null)

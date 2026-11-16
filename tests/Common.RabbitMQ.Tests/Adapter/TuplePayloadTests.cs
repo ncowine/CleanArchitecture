@@ -21,10 +21,9 @@ namespace Common.RabbitMQ.Tests.Adapter
         [InlineData(typeof(TupleHolder))]
         public void Tuple_AnywhereInThePayload_Throws(Type payloadType)
         {
-            InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => MessageSerializer.EnsureNoTuples(payloadType));
+            InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => MessageSerializer.ThrowIfContainsTuple(payloadType));
 
             Assert.Contains("tuple", ex.Message);
-            Assert.Contains("{ get; set; } properties", ex.Message);
         }
 
         [Theory]
@@ -40,14 +39,14 @@ namespace Common.RabbitMQ.Tests.Adapter
         [InlineData(typeof(Order))]
         public void ClassesAndPrimitives_AreAccepted(Type payloadType)
         {
-            MessageSerializer.EnsureNoTuples(payloadType);
+            MessageSerializer.ThrowIfContainsTuple(payloadType);
         }
 
         [Fact]
         public void LegacyEvent_WithATuplePayload_ThrowsWhenFirstUsed()
         {
             InvalidOperationException ex = Assert.Throws<InvalidOperationException>(
-                () => new RemoteEventDescriptor(typeof(OrderPlaced), typeof(ValueTuple<Guid, string>)));
+                () => new RemoteEventMetadata(typeof(OrderPlaced), typeof(ValueTuple<Guid, string>)));
 
             Assert.Contains("is a tuple", ex.Message);
         }

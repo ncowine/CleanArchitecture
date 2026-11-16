@@ -3,8 +3,8 @@ using Microsoft.Extensions.Logging;
 namespace Poc.Shared;
 
 /// <summary>
-/// An ILogger that hands each line to the window. Legacy apps set it as the router's Logger; the net10 app adds it as a
-/// logging provider. A real app would use its usual logger instead.
+/// An ILogger that hands each line to the window. The apps pass it to RabbitMQServiceRouter.FromConfiguration.
+/// A real app would use its usual logger instead.
 /// </summary>
 public sealed class BusLog : ILogger, ILoggerProvider
 {

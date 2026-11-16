@@ -1,14 +1,15 @@
 # Messaging POCs: legacy, migrated and modern desktop apps on one broker
 
 Three WPF apps, one per framework, plus the SignalR POC. They all show the API's equipment list and keep it current,
-and they all talk to the **real `CleanArch.Api`**. What differs is the event format each one speaks and whose events
-it accepts.
+and they all talk to the **real `CleanArch.Api`**. What differs is the framework, the transport and whose events each
+one accepts. Desktop apps reach RabbitMQ through the legacy adapter (`Common.RabbitMQ`) until RabbitMQ leaves the
+desktop; `Messaging.Hosting` is for the API only.
 
 | App | Framework | Event format | Library | Receives from | Sends to |
 |---|---|---|---|---|---|
 | **`Poc.Net472`** | .NET Framework 4.7.2 | legacy (`RemotePubSubEvent<T>`) | `Common.RabbitMQ` + Prism | API, net472, net8 | net472, net8, **API** |
 | **`Poc.Net8`** | .NET 8 | legacy (`RemotePubSubEvent<T>`) | `Common.RabbitMQ` + Prism | API, net472, net8 | net472, net8 |
-| **`Poc.Net10`** | .NET 10 | modern (`[Message]` classes) | `Messaging.Hosting`, or SignalR | **API**, plus the POC shape events | nobody |
+| **`Poc.Net10`** | .NET 10 | legacy (`RemotePubSubEvent<T>`), or SignalR | `Common.RabbitMQ` + Prism's `EventAggregator`, or SignalR | **API**, plus the POC shape events | nobody |
 | `Poc3.SignalR` | .NET 8 | modern | SignalR client | API only | nobody |
 
 All of them **change equipment over HTTP** (Add / Delete). The broker carries only events.
@@ -49,8 +50,7 @@ Each app **owns one exchange** and publishes only there; what it receives is dec
 Every queue binds each exchange **once**, keyed by the exchange's name, which is the routing key its owner publishes
 everything with (the real legacy library does the same). So a queue receives everything on the exchanges it binds, and
 drops what nothing in the app subscribes to. **net10 gets notes and disposals from the legacy apps too, and drops
-them:** it subscribes only to `Equipment.Messages` and `Poc.Shapes` classes. It doesn't reference the legacy events
-project.
+them:** it subscribes only to the API's events (`FromApi/`) and the ten shape events.
 
 ### The events
 
@@ -113,13 +113,13 @@ API by its `[Message("…")]` name. The body is JSON either way. So:
 
 `Poc.Net8` is `Poc.Net472` with a different exchange and no disposal button. That's the point: a legacy app moved to
 .NET 8 keeps its Prism events and the legacy adapter (which targets both frameworks) and goes on talking to the
-.NET Framework apps exactly as before. Moving it to the modern format is a separate, later step; `Poc.Net10` shows
-where that ends.
+.NET Framework apps exactly as before. `Poc.Net10` is a new .NET 10 app on the same adapter, and SignalR is where
+desktop apps go next.
 
 ### net10: two transports, one app
 
-`Events:Transport` in `Poc.Net10/appsettings.json` picks how the API's events arrive. The view model, the list and the
-event classes are the same either way.
+`Events:Transport` in `Poc.Net10/appsettings.json` picks how the API's events arrive: through `Common.RabbitMQ`, or
+the API's SignalR hub. The view model, the list and the `Equipment.Messages` payloads are the same either way.
 
 | | `RabbitMQ` (default) | `SignalR` |
 |---|---|---|
@@ -200,16 +200,14 @@ Each is explained where it happens in the code.
 - ❌ Prism subscriptions with capturing lambdas. Weak references: they're collected and stop silently.
 - ❌ Deriving a local-only event from `RemotePubSubEvent<T>`. It isn't sent unless you call `PublishRemote`, but it
   says the wrong thing to the next reader. Use `PubSubEvent<T>`, which stays inside the app.
-- ❌ Using the legacy adapter in a NEW app. It exists so existing apps keep working unchanged.
+- ❌ Using `Messaging.Hosting` in a desktop app. It is for the API; desktop apps use the adapter, then SignalR.
 
-**Modern format (net10)**
+**net10 over RabbitMQ**
 
+- ❌ Creating the `EventAggregator` off the UI thread: `ThreadOption.UIThread` posts to the thread it was created on.
 - ❌ Expecting a message that arrived while nothing was subscribed. It is dropped on arrival: subscribing doesn't
   replay anything.
-- ❌ Forgetting to dispose `IMessageSubscriber` subscriptions. Strong references: closed windows leak.
-- ❌ Adding a legacy app's exchange to `Subscriptions` without routing keys: every event the app receives would bind
-  there, and its other events would follow.
-- ❌ Publishing. No `IMessagePublisher`: modern apps only listen.
+- ❌ Publishing. No `PublishRemote`: this app only listens.
 
 **SignalR (net10 in SignalR mode, POC 3)**
 
@@ -291,7 +289,7 @@ Poc.Shapes/          the ten shape payloads as [Message] classes, read by both f
 Poc.Shared/          EquipmentApi (HTTP), EquipmentList (load + apply), ApiOptions; SignalR/ (net8+ only). net472 + net8.0
 Poc.Net472/          legacy app: App.xaml.cs (RabbitMQServiceRouter.FromConfiguration), ViewModels/ (Subscribe, PublishRemote)
 Poc.Net8/            the same app on .NET 8
-Poc.Net10/           modern app: App.xaml.cs (Generic Host; RabbitMQ or SignalR), ViewModels/
+Poc.Net10/           new .NET 10 app: App.xaml.cs (Generic Host; Common.RabbitMQ or SignalR), ViewModels/
 Poc3.SignalR/        SignalR only, with presence
 Poc.Api.NoOutbox/    an API that publishes straight to RabbitMQ, with no database, and subscribes
 setup-exchanges.ps1  creates the four exchanges
@@ -310,12 +308,12 @@ folders: **App**, **Messaging** (the RabbitMQ library projects), **Events** (the
 |---|---|---|
 | `Poc.Net472.slnx` (legacy, Prism) | `Common.RabbitMQ`, `Poc.Legacy.Events`, `Poc.Shared` | `Messaging.RabbitMQ`, `Messaging.Abstractions`, `Equipment.Messages`, `Poc.Shapes` |
 | `Poc.Net8.slnx` (legacy, Prism, on .NET 8) | the same as net472 | the same as net472 |
-| `Poc.Net10.slnx` (modern, no Prism) | `Messaging.Hosting`, `Poc.Shapes`, `Poc.Shared` | `Messaging.RabbitMQ`, `Messaging.Abstractions`, `Equipment.Messages` |
+| `Poc.Net10.slnx` (.NET 10, Generic Host) | the same as net472 | the same as net472 |
 | `Poc3.SignalR.slnx` (SignalR only) | `Poc.Shared` | `Equipment.Messages`, `Messaging.Abstractions` (for `[Message]` on the contracts) |
 | `Poc.Api.NoOutbox.slnx` (API) | `Messaging.Hosting`, `Equipment.Messages`, `Poc.Shapes` | `Messaging.RabbitMQ`, `Messaging.Abstractions` |
 
-Only the messaging projects (`Common.RabbitMQ` for a legacy app, `Messaging.Hosting` for a modern one or an API) are
-needed in an app of your own. `Poc.Shared`, `Poc.Legacy.Events` and `Poc.Shapes` belong to these POCs, and
+Only the messaging projects (`Common.RabbitMQ` for a desktop app, `Messaging.Hosting` for an API) are needed in an
+app of your own. `Poc.Shared`, `Poc.Legacy.Events` and `Poc.Shapes` belong to these POCs, and
 `Equipment.Messages` is there because the POCs show the API's events.
 
 ## Clean-up

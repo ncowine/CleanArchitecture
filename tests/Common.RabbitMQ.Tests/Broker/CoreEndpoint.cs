@@ -36,7 +36,7 @@ namespace Common.RabbitMQ.Tests.Broker
             configure?.Invoke(options);
 
             bus = new RabbitMQBus(options, this, Log);
-            bus.Subscribe(new MessageRegistration(WireName, typeof(CompatPayload)));
+            bus.StartReceiving(new MessageRegistration(WireName, typeof(CompatPayload)));
             bus.Start();
         }
 
@@ -69,7 +69,7 @@ namespace Common.RabbitMQ.Tests.Broker
         /// <summary>Only sends: there are no local subscribers.</summary>
         public void PublishRemote(CompatPayload payload)
         {
-            bus.Enqueue(WireName, payload);
+            bus.Publish(WireName, payload);
         }
 
         public Task DispatchAsync(object message, MessageContext context, CancellationToken cancellationToken)

@@ -3,25 +3,26 @@ using Prism.Ioc;
 
 namespace Common.RabbitMQ
 {
-    public static class RabbitMQServiceProvider
+    internal static class RabbitMQServiceProvider
     {
         public static IRabbitMQService Current { get; set; }
 
         public static IRabbitMQService Resolve()
         {
-            if (Current != null)
+            if (Current == null)
             {
-                return Current;
+                IContainerProvider container = ContainerLocator.Container
+                    ?? throw new InvalidOperationException("No Prism container found.");
+
+                if (!container.IsRegistered<IRabbitMQService>())
+                {
+                    throw new InvalidOperationException("No IRabbitMQService registered in the Prism container.");
+                }
+
+                Current = container.Resolve<IRabbitMQService>();
             }
 
-            IContainerProvider container = ContainerLocator.Container;
-            if (container != null)
-            {
-                return container.Resolve<IRabbitMQService>();
-            }
-
-            throw new InvalidOperationException(
-                "No IRabbitMQService available. Set RabbitMQServiceProvider.Current, or register it in the Prism container.");
+            return Current;
         }
     }
 }

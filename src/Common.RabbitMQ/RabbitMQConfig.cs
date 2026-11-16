@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace Common.RabbitMQ
 {
-    public class RabbitMQConfig
+    internal sealed class RabbitMQConfig
     {
         public string BusName { get; set; }
 

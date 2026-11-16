@@ -7,7 +7,7 @@ using Prism.Events;
 
 namespace Common.RabbitMQ
 {
-    public sealed class RemoteEventDescriptor
+    internal sealed class RemoteEventMetadata
     {
         private static readonly MethodInfo getEventDefinition =
             typeof(IEventAggregator).GetMethod(nameof(IEventAggregator.GetEvent));
@@ -15,9 +15,9 @@ namespace Common.RabbitMQ
         private readonly MethodInfo getEventMethod;
         private readonly MethodInfo publishMethod;
 
-        public RemoteEventDescriptor(Type eventType, Type payloadType)
+        public RemoteEventMetadata(Type eventType, Type payloadType)
         {
-            MessageSerializer.EnsureNoTuples(payloadType);
+            MessageSerializer.ThrowIfContainsTuple(payloadType);
 
             EventType = eventType;
             PayloadType = payloadType;

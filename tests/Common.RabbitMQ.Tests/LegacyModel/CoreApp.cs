@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Common.RabbitMQ.Tests.Broker;
 using Messaging;
 using Messaging.RabbitMQ;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Common.RabbitMQ.Tests.LegacyModel
 {
@@ -67,7 +68,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         /// <summary>Creates the bus without starting it, to change its subscriptions first.</summary>
         public RabbitMQBus CreateBus(Microsoft.Extensions.Logging.ILogger logger = null)
         {
-            bus = new RabbitMQBus(options, this, logger);
+            bus = new RabbitMQBus(options, this, logger ?? NullLogger.Instance);
             return bus;
         }
 
@@ -76,7 +77,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             bus = bus ?? CreateBus();
             foreach (MessageRegistration registration in registrations)
             {
-                bus.Subscribe(registration);
+                bus.StartReceiving(registration);
             }
 
             bus.Start();
@@ -86,7 +87,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
         /// <param name="routingKey">Null for the wire name.</param>
         public void Publish(string wireName, object message, string routingKey = null)
         {
-            bus.Enqueue(wireName, message, routingKey);
+            bus.Publish(wireName, message, routingKey);
         }
 
         public Task DispatchAsync(object message, MessageContext context, CancellationToken cancellationToken)

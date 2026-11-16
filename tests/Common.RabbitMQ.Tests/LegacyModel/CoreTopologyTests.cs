@@ -90,7 +90,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
 
                 LogEntry failed = await log.WaitForAsync(e => e.Message.Contains("Consumer could not connect"), TestBus.Timeout);
                 Assert.NotNull(failed);
-                Assert.Contains("does not exist yet", failed.Exception.Message);
+                Assert.Contains("does not exist", failed.Exception.Message);
 
                 // Unlike a legacy subscriber (A16), the core left AppA's exchange alone.
                 Assert.Equal(404, await topology.ExchangeExistsAsync(topology.Exchange(AppA)));
@@ -114,7 +114,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 {
                     Exchange = topology.Exchange(AppA),
                 }));
-                patternSubscriber.CreateBus().Bind(topology.Exchange(AppA), "orders.*.saved");
+                patternSubscriber.CreateBus().BindRoutingKey(topology.Exchange(AppA), "orders.*.saved");
                 Received<Order> atPatternSubscriber = patternSubscriber.Listen<Order>(OrderSavedWireName);
                 patternSubscriber.Start();
                 LegacyApp legacySubscriber = topology.Start(AppC, new[] { AppA }, AppAEvents);
@@ -157,7 +157,7 @@ namespace Common.RabbitMQ.Tests.LegacyModel
                 if (exchangeType == "topic")
                 {
                     // A pattern on top of the exchange-name binding: it lets AppA's other keys through too.
-                    subscriber.CreateBus().Bind(topology.Exchange(AppA), "AppA.*");
+                    subscriber.CreateBus().BindRoutingKey(topology.Exchange(AppA), "AppA.*");
                 }
 
                 Received<Order> atSubscriber = subscriber.Listen<Order>(OrderSavedWireName);

@@ -28,7 +28,7 @@ namespace Common.RabbitMQ
             }
         }
 
-        public List<SubscribeOptions> RemoveEnded(ICollection<IEventSubscription> subscriptions)
+        public List<SubscribeOptions> RemoveUnsubscribedKeys(ICollection<IEventSubscription> currentSubscriptions)
         {
             lock (keys)
             {
@@ -38,9 +38,9 @@ namespace Common.RabbitMQ
                 }
 
                 HashSet<SubscriptionToken> live;
-                lock (subscriptions)
+                lock (currentSubscriptions)
                 {
-                    live = new HashSet<SubscriptionToken>(subscriptions.Select(s => s.SubscriptionToken));
+                    live = new HashSet<SubscriptionToken>(currentSubscriptions.Select(s => s.SubscriptionToken));
                 }
 
                 List<KeyValuePair<SubscriptionToken, SubscribeOptions>> ended = keys.Where(k => !live.Contains(k.Key)).ToList();

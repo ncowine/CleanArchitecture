@@ -25,21 +25,21 @@ namespace Messaging.Hosting
 
         public void Publish<TMessage>(TMessage message, PublishOptions options)
         {
-            string routingKey = !string.IsNullOrEmpty(options?.RoutingKey) ? options.RoutingKey : null;
-            GetBus(message, options).Enqueue(WireNames.Get(message.GetType()), message, routingKey);
-        }
-
-        private RabbitMQBus GetBus(object message, PublishOptions options)
-        {
             if (message == null)
             {
                 throw new ArgumentNullException(nameof(message));
             }
 
+            string routingKey = !string.IsNullOrEmpty(options?.RoutingKey) ? options.RoutingKey : null;
+            GetBusToPublishOn(options).Publish(WireNames.GetWireName(message.GetType()), message, routingKey);
+        }
+
+        private RabbitMQBus GetBusToPublishOn(PublishOptions options)
+        {
             string busName = !string.IsNullOrEmpty(options?.Bus) ? options.Bus : registry.DefaultBus;
             if (!registry.BusNames.Contains(busName))
             {
-                throw new InvalidOperationException($"Cannot publish {message.GetType().Name}: bus '{busName}' is not configured for this application.");
+                throw new InvalidOperationException($"Bus '{busName}' is not configured.");
             }
 
             return provider.GetRequiredKeyedService<RabbitMQBus>(busName);

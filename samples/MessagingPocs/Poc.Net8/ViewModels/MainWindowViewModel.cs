@@ -62,7 +62,7 @@ public sealed class MainWindowViewModel : BindableBase
         // The ten shape events, from any legacy window (this one included). Kept in a field: Prism holds them weakly.
         shapes = new ShapeEventsLog(events, AddLog);
 
-        bus = router.GetBus(App.BusName);
+        bus = router.GetRequiredBus(App.BusName);
         busLog.Written += message => Application.Current?.Dispatcher.InvokeAsync(() => AddLog($"[bus] {message}"));
 
         // ✅ DO (re)load whenever the connection comes (back) up: this app's queue is deleted with its connection, so

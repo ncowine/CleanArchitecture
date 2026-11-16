@@ -20,12 +20,12 @@ namespace Common.RabbitMQ
 
         public Task DispatchAsync(object message, MessageContext context, CancellationToken cancellationToken)
         {
-            if (!registry.TryGet(context.WireName, out RemoteEventDescriptor descriptor))
+            if (!registry.TryGet(context.WireName, out RemoteEventMetadata metadata))
             {
                 throw new InvalidOperationException($"No remote event named '{context.WireName}'.");
             }
 
-            descriptor.PublishLocal(eventAggregator, message);
+            metadata.PublishLocal(eventAggregator, message);
             return Task.CompletedTask;
         }
     }
