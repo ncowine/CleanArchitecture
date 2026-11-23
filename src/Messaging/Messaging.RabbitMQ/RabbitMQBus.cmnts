@@ -1,0 +1,1025 @@
+RabbitMQBus.cmnts
+=================
+
+Readable pseudo-code of RabbitMQBus.cs. Every step carries a "//" comment that
+explains WHY it is done that way, which alternatives were rejected, and what
+would break if it were done differently.
+
+Sections follow the order of RabbitMQBus.cs and are headed by the member name.
+Search by name; line numbers are not used because they drift.
+
+
+==============================================================================
+THE SHAPE OF THE CLASS
+==============================================================================
+
+  RabbitMQBus
+    one consumer connection   + one long-lived channel   (receives)
+    one publisher connection  + one long-lived channel   (sends)
+    three background loops:
+      KeepConnected(consumer)       rebuilds the consumer when it dies
+      KeepConnected(publisher)      rebuilds the publisher when it dies
+      PublishBufferedMessages       drains the in-memory send buffer
+
+  // WHY two connections instead of one:
+  //   When the broker runs low on memory or disk it "blocks" connections that
+  //   publish. A blocked connection stops being read by the broker, so on a
+  //   shared connection our ACKS for received messages would stall too. The
+  //   broker would then stop delivering (prefetch is full of unacked
+  //   messages), and the app would freeze in both directions. With separate
+  //   connections a publishing problem cannot stop consumption.
+  //   This is also RabbitMQ's own recommendation.
+
+  // WHY our own reconnect loops instead of RabbitMQ.Client's
+  // AutomaticRecoveryEnabled:
+  //   1. The library's recovery only works after the FIRST connect succeeded.
+  //      If the broker is down when the app starts, the library just throws.
+  //      We need a retry loop for startup anyway; once we have one, it can
+  //      handle later drops too, and there is only one code path to test.
+  //   2. On reconnect we must do more than replay topology: passively check
+  //      other apps' exchanges, re-sync the run-time bindings
+  //      (appliedBindings), and re-attach our own consumer callback. Two
+  //      recovery mechanisms running at once (library + ours) would race and
+  //      could create duplicate consumers.
+  //   So the library's recovery is switched off (AutomaticRecoveryEnabled =
+  //   false, TopologyRecoveryEnabled = false) and ours is the only one.
+
+  // WHY Publish() only buffers:
+  //   Callers are UI event handlers and API requests. They must never wait for
+  //   the network or fail because the broker is briefly down. Publish puts the
+  //   message in memory and returns; a loop sends it when it can.
+  //   Trade-off: the buffer is in memory only. If the process exits while
+  //   messages are buffered, they are lost (Dispose logs how many).
+
+
+==============================================================================
+FIELDS
+==============================================================================
+
+  options, dispatcher, logger         // set once in the constructor, readonly
+  instanceId                          // unique per bus object
+  queueName                           // computed once, never changes
+  routingKeyPrefix                    // "" when not configured, never null,
+                                      // so "prefix + key" needs no null checks
+
+  outstandingMessages : ConcurrentQueue
+      // Written by app threads (Publish), read by the publish loop. A
+      // concurrent queue gives thread safety and FIFO order without a lock.
+
+  registrations : ConcurrentDictionary<wireName, (type)>
+      // Read on every delivery (consumer thread), written by subscribe calls
+      // (app threads). Concurrent dictionary avoids locking the hot path.
+
+  consumerLock : SemaphoreSlim(1)
+      // Guards "the consumer is being opened / closed / its bindings changed".
+      // A SemaphoreSlim, not `lock`, because the guarded code awaits network
+      // calls, and `lock` cannot be held across an await.
+
+  publisherLock : SemaphoreSlim(1)
+      // Same idea for the publisher: opening and closing it never overlap.
+      // See OpenPublisherAsync for the shutdown race it prevents.
+
+  requestedBindings : Dictionary<(exchange, key), refCount>  + bindingGate
+      // What the APP asked for. Protected by a plain `lock (bindingGate)`
+      // because the code inside never awaits; it is just dictionary edits.
+      // Kept separate from consumerLock so BindRoutingKey (called from app
+      // code, possibly a UI thread) never waits behind a slow reconnect.
+
+  appliedBindings : HashSet<(exchange, key)>
+      // What is REALLY on the broker for the current queue. Only changed
+      // while consumerLock is held (OpenConsumer and the sync), so it needs no
+      // lock of its own.
+
+  consumerConnection, consumerChannel, consumerQueueName
+  publisherConnection, publisherChannel
+      // null while disconnected. Assigned only after a FULLY successful open
+      // (see OpenConsumerAsync), so other code never sees half-built objects.
+
+
+==============================================================================
+CONSTRUCTOR
+==============================================================================
+
+  if options is null                                  -> throw
+  if BusName/ExchangeName/ClientName/ExchangeType blank -> throw
+  if any subscription has no Exchange                 -> throw
+  if dispatcher or logger is null                     -> throw
+      // WHY validate here: everything after Start() runs on background loops
+      // that log and retry forever. A missing ExchangeName found there would
+      // be a warning repeated every 5 seconds instead of a crash at startup
+      // that points at the config. Fail fast where the caller can see it.
+      // WHY logger is required (no "null logger" fallback): a messaging
+      // library that fails silently is worse than one that refuses to start.
+
+  instanceId = options.InstanceId or new GUID
+      // The legacy adapter (RabbitMQService) passes its own id so the id it
+      // reports matches the bus's. Otherwise each bus gets a fresh one.
+
+  if Shared mode and (MaxAttempts < 1 or DeliveryLimit < 1) -> throw
+      // 0 attempts would dead-letter everything unread; a delivery limit of 0
+      // makes the broker dead-letter on first delivery.
+
+  routingKeyPrefix = options.RoutingKeyPrefix ?? ""
+
+  if Shared:
+      queueName = prefix + (SharedQueueName ?? lower("client_bus"))
+      // Same name on every copy of the service: that is what makes them share
+      // one queue (competing consumers).
+      // Prefix included: a debug copy with "dbg." must NOT join the real
+      // service's queue, or it would silently take half of the real traffic.
+      // No user name or instance id: the queue belongs to the service, not to
+      // whoever happens to run it.
+  else (PerInstance):
+      queueName = lower("client_bus_windowsUser_instanceId")
+      // Must be unique per running copy, so every copy gets every event.
+      // The user name is there only so a human can tell queues apart in the
+      // management UI ("whose queue is this?").
+      // No prefix needed: already unique, and the prefix works through the
+      // bindings, not the queue name.
+      // Lower case: keeps names consistent regardless of how ClientName was
+      // typed in config.
+
+
+==============================================================================
+UsesExchange(exchange)
+==============================================================================
+
+  return exchange == own exchange or exchange is in Subscriptions
+      // Used to reject BindRoutingKey on an exchange this bus never declared
+      // or checked, and by the bus router to choose which bus a binding
+      // belongs to. Ordinal comparison because broker names are
+      // case-sensitive.
+
+
+==============================================================================
+Start()
+==============================================================================
+
+  throw if disposed or already started
+      // Two sets of loops would fight over the same connection fields.
+  started = true
+  fire and forget:
+      KeepConnected(consumer)
+      KeepConnected(publisher)
+      PublishBufferedMessages
+  return immediately
+      // WHY not wait for the broker: the app (a WPF window, an API) should
+      // start even if RabbitMQ is down; messaging catches up when the broker
+      // comes back. Each loop catches and logs its own errors, so not
+      // awaiting the tasks loses nothing.
+
+
+==============================================================================
+Publish(wireName, message, routingKey = null)
+==============================================================================
+
+  throw if disposed or wireName blank
+  key  = prefix + (routingKey if given, else own ExchangeName)
+      // Default key = own exchange name: the legacy routing convention.
+      // Subscribers bind once per exchange with that key and receive all of
+      // that app's events. (One binding per event type was tried and
+      // crashed the broker at ~300k bindings.)
+  body = Serialize(message)  NOW, on the caller's thread
+      // WHY serialize now and not in the background loop:
+      //   - Errors (unsupported types such as tuples) are thrown to the code
+      //     that called Publish, where they make sense. In the loop they would
+      //     just be a log line and a message stuck at the head of the buffer
+      //     forever, blocking everything behind it.
+      //   - It snapshots the object. If the caller changes it after Publish,
+      //     what was published does not change.
+  enqueue PendingMessage(wireName, key, new MessageId, body, CreatedUtc = now)
+      // MessageId: lets receivers detect duplicates (delivery is
+      // at-least-once, see the publish loop).
+      // CreatedUtc: the AMQP timestamp is "when the app published", not "when
+      // the buffer got round to it", which may be minutes later after an
+      // outage.
+
+
+==============================================================================
+StartReceiving(registration) / StopReceiving(wireName)
+==============================================================================
+
+  StartReceiving:
+    add registration if the wire name is not registered yet
+    if it was added AND the bus is already started AND Shared mode:
+        warn "subscribed after start; earlier messages were dropped"
+      // WHY warn: deliveries with no registration are acked and dropped
+      // (see HandleDeliveryAsync). A durable shared queue can hold messages
+      // from before this app started; if they arrive before the subscription
+      // exists, they are gone. Per-instance queues are brand new and empty at
+      // connect, so nothing can be lost there and no warning is needed.
+
+  StopReceiving:
+    if disposed: return quietly
+      // Shutdown code unsubscribes in no particular order, sometimes after
+      // the bus is gone. Throwing there would only break shutdown.
+    remove the registration
+      // Later deliveries for this wire name are acked and dropped. The queue
+      // binding stays: it is per exchange, shared by all of that app's events.
+
+
+==============================================================================
+BindRoutingKey(exchange, key)
+==============================================================================
+
+  throw if disposed
+  if exchange given and not UsesExchange(exchange) -> throw
+      // Binding needs the exchange to exist and be part of this bus's
+      // topology; otherwise it is a config mistake, better reported now.
+
+  lock bindingGate:
+      for each pair in GetRoutingKeyBindings(exchange, key):
+          requestedBindings[pair] += 1
+          if it went from 0 to 1: changed = true
+      // WHY reference counts: two subscriptions may ask for the same key.
+      // When one unsubscribes, the binding must stay for the other. Counting
+      // means the broker is only touched on 0 -> 1 and 1 -> 0.
+
+  if changed: SyncRoutingKeysInBackground()
+      // Runs in the background so the caller (possibly a UI thread) never
+      // waits for the network. If not connected yet, nothing happens now:
+      // OpenConsumerAsync applies requested bindings at connect.
+      // WHY "changed" check: avoids a pointless broker round trip when only a
+      // count went up.
+
+
+==============================================================================
+UnbindRoutingKey(exchange, key)
+==============================================================================
+
+  if disposed: return quietly          // same reason as StopReceiving
+  lock bindingGate:
+      for each pair:
+          if not requested: skip       // unbinding something never bound is
+                                       // harmless, so do not throw
+          if count > 1: count -= 1     // someone else still needs it
+          else: remove it, changed = true
+  if changed: SyncRoutingKeysInBackground()
+
+  // While the consumer is disconnected the sync does nothing. The pair stays
+  // in appliedBindings but is no longer wanted, so the sync at the next
+  // connect unbinds it (see ForgetBindingsTheQueueLost).
+  // Still not covered: bindings left on a shared queue by a PREVIOUS run of
+  // the process. appliedBindings starts empty at startup, so the bus does not
+  // know about them; they need removing by hand.
+
+
+==============================================================================
+Dispose()
+==============================================================================
+
+  if disposed: return                  // safe to call twice
+  disposed = true
+  if never started:
+      dispose the cancellation source; return
+      // No loops and no connections exist, nothing else to clean up.
+
+  cancel the token
+      // Stops all three loops and aborts in-flight waits and network calls.
+      // Handlers in progress see shutdown and leave their message unacked so
+      // it is redelivered (see DispatchWithRetriesAsync).
+  if send buffer not empty: warn with the count
+      // The buffer is memory-only; this makes the loss visible in the logs.
+  run on a pool thread, wait at most 5 s:
+      CloseConsumer, then ClosePublisher
+      // Consumer first: stop taking new messages before anything else.
+      // Closing the consumer channel hands unacked messages back to the
+      // broker for redelivery.
+      // WHY Task.Run(...).Wait instead of await: IDisposable.Dispose is
+      // synchronous. Blocking directly on async code from a WPF UI thread can
+      // deadlock (the continuation wants the UI thread that is blocked);
+      // running it on a pool thread avoids that.
+      // WHY a 5 s cap: a dead broker or network must not hang app shutdown.
+  on error: warn, do not throw         // shutdown must not crash the app
+  dispose the cancellation source
+
+
+==============================================================================
+KeepConnectedAsync(role, isConnected, close, open, token)
+==============================================================================
+
+  loop until cancelled:
+      try:
+          if not isConnected():
+              close()
+              // WHY close before open: "not connected" includes half-dead
+              // states, e.g. the connection is open but its channel was closed
+              // by a broker error. Closing first means we never leak a
+              // connection and never end up with two.
+              open(token)
+      catch cancelled during shutdown: exit loop
+      catch anything else: warn "could not connect, retrying"
+          // The loop must never die. A wrong password, a broker restart or a
+          // missing exchange are all "try again later".
+      wait ReconnectDelay (default 5 s); exit if cancelled
+
+  // WHY poll every few seconds instead of reacting to the "connection lost"
+  // event: one simple loop covers the first connect, a dropped connection, a
+  // channel killed by an error, and a failed reconnect. Event-driven
+  // recovery needs extra code for each of those and for events arriving
+  // while a reconnect is already running. The cost is up to ReconnectDelay of
+  // extra downtime, which is acceptable here.
+
+
+==============================================================================
+ConnectAsync(role, token)
+==============================================================================
+
+  connection = factory.CreateConnection(name = "Client [Bus] role - user")
+      // The name shows in the management UI's connection list. All apps log
+      // in with the same broker account, so the name is the only way to tell
+      // them apart there.
+  on connection shutdown:
+      if the broker or network closed it (not us): warn
+      // Only logs. Reconnecting is KeepConnectedAsync's job, so there is one
+      // place that reconnects. Shutdowns we asked for are not warnings.
+  return connection
+
+
+==============================================================================
+OpenConsumerAsync(token)
+==============================================================================
+
+  take consumerLock
+      // Nothing else may touch the consumer, or appliedBindings, while it is
+      // being built.
+  try:
+      connection = Connect("Consumer")
+      channel    = connection.CreateChannel()
+
+      declare OWN exchange (durable, configured type)
+          // WHY here as well as in the publisher: the queue is about to be
+          // bound to it. If the consumer connects before the publisher, the
+          // exchange might not exist yet, and binding to a missing exchange
+          // fails with 404. Declare is idempotent, so doing it twice is free.
+
+      for each subscribed exchange (other apps'):
+          PASSIVE declare ("does it exist?")   -> throw if 404
+          // WHY never create other apps' exchanges: only the owner knows the
+          // correct type and durability. If we created "AppA" as topic and
+          // AppA later declared it as direct, AppA's own startup would fail
+          // with 406. So we only check.
+          // WHY fail the whole connect instead of skipping that exchange: a
+          // half-subscribed app looks healthy but silently misses events.
+          // Failing makes KeepConnected retry every few seconds and log why,
+          // until the other app has started once and created its exchange.
+
+      set prefetch = PrefetchCount (per consumer)
+          // Without a limit the broker pushes the whole backlog into memory at
+          // once. With a limit, a slow app gets work at the pace it acks.
+
+      declare the queue (Shared or PerInstance, see below)
+
+      for each (exchange, key) in ExchangeNameBindings:
+          bind queue to exchange with key
+          // The configured, always-on bindings: own exchange with own name,
+          // each subscribed exchange with its name, all with the prefix.
+          // Done directly here (not via the sync) because they are fixed by
+          // config and must exist before consuming starts.
+
+      ForgetBindingsTheQueueLost()
+      SyncRoutingKeys(connection, queue)
+          // Re-apply the run-time bindings the app asked for, and remove the
+          // ones it stopped wanting while disconnected.
+          // ForgetBindingsTheQueueLost decides what "applied" should mean for
+          // the queue we just declared:
+          //   PerInstance: forget everything. The old exclusive queue died
+          //     with the old connection, taking its bindings with it; this is
+          //     a NEW, empty queue.
+          //   Shared: the durable queue survived with all its bindings.
+          //     - Forget the pairs that are still WANTED, so the sync binds
+          //       them again. Bind is idempotent, so this is harmless when the
+          //       binding is there, and repairs it when someone deleted and
+          //       recreated the queue meanwhile.
+          //     - KEEP the pairs that are applied but no longer wanted (the
+          //       app unbound them while disconnected). The sync sees
+          //       "applied, not wanted" and unbinds them. Clearing everything
+          //       here, as the code once did, forgot them and left them on the
+          //       broker for good.
+
+      consumer = new AsyncEventingBasicConsumer(channel)
+      consumer.Received += OnMessageReceivedAsync
+      channel.Consume(queue, autoAck = false, consumerTag = connection name)
+          // autoAck false: the broker keeps each message until WE ack it after
+          // handling. With autoAck true the broker deletes it on send, and a
+          // crash mid-handling would lose it.
+          // consumerTag = connection name: readable in the queue's consumer
+          // list in the management UI.
+
+      consumerConnection, consumerChannel, consumerQueueName = the new ones
+          // Assigned LAST, only after everything succeeded. Until this line
+          // IsConsumerConnected stays false, so nothing else uses a
+          // half-built consumer, and a failure leaves the fields as "nothing".
+      log "Consumer connected"
+  on any error:
+      close the half-built channel/connection quietly
+      rethrow                          // KeepConnected logs it and retries
+  finally:
+      release consumerLock
+
+
+==============================================================================
+DeclarePerInstanceQueueAsync
+==============================================================================
+
+  declare queueName: durable = false, exclusive = true, autoDelete = true
+      // A desktop app's queue is temporary by nature:
+      //   exclusive  - only this connection may use it; the broker deletes it
+      //                when the connection closes. A crashed or killed app
+      //                leaves no orphan queue collecting messages forever.
+      //   autoDelete - also removed when the consumer goes away.
+      //   durable    - pointless for a queue that dies with the connection.
+      // Consequence (accepted): events sent while the app is closed are not
+      // received. Desktop apps only care about "now".
+
+
+==============================================================================
+DeclareSharedQueueAsync
+==============================================================================
+
+  declare "<queue>.dead-letter" as a durable quorum queue      FIRST
+      // It must exist before anything can be dead-lettered into it; a message
+      // dead-lettered to a missing queue is simply dropped.
+
+  declare "<queue>" as a durable quorum queue with:
+      x-delivery-limit          = DeliveryLimit (default 5)
+          // CRASH GUARD. Normal failures never reach this: the handler is
+          // retried in-process and then rejected to the DLQ. But if the PROCESS
+          // dies while handling (crash, kill, deploy), the message is
+          // redelivered. A poison message that crashes the process every time
+          // would loop forever and take every instance down with it. The
+          // broker counts deliveries and dead-letters it after the limit.
+          // This is why the queue is quorum: classic queues have no delivery
+          // counter.
+      x-dead-letter-exchange    = ""  (the default exchange)
+      x-dead-letter-routing-key = "<queue>.dead-letter"
+          // The default exchange delivers to the queue NAMED like the routing
+          // key. So no extra dead-letter exchange has to be declared, owned,
+          // bound or cleaned up. Two arguments and it works.
+      x-dead-letter-strategy    = at-least-once
+          // Without it, dead-lettering is fire-and-forget inside the broker
+          // and a message can be lost on the way to the DLQ. With it, the
+          // broker keeps the message until the DLQ confirms it.
+      x-overflow                = reject-publish
+          // Required by the broker for at-least-once dead-lettering (the
+          // default "drop oldest" overflow would discard messages the strategy
+          // promises to keep).
+
+
+==============================================================================
+DeclareDurableQueueAsync(name, arguments)
+==============================================================================
+
+  declare durable, not exclusive, not auto-delete
+      // Permanent and shared by every copy of the service.
+  on 406 (exists with different settings):
+      throw "Queue 'X' already exists with different settings (broker text)."
+      // The broker's raw error is a channel shutdown that is hard to read.
+      // Happens when someone created the queue by hand as a classic queue, or
+      // DeliveryLimit changed. The broker never changes an existing queue's
+      // arguments, so a human must delete it; the message names which one.
+
+
+==============================================================================
+CloseConsumerAsync()
+==============================================================================
+
+  take consumerLock
+      copy connection/channel to locals
+      set fields to null
+  release consumerLock
+  close the locals quietly
+      // WHY swap under the lock and close outside: the lock is held only for
+      // the instant it takes to swap. From that instant everyone sees "not
+      // connected". The slow part (network close, possibly timing out on a
+      // dead broker) does not block a waiting sync or reopen.
+
+
+==============================================================================
+OnMessageReceivedAsync(sender, delivery)
+==============================================================================
+
+  channel = the channel of the consumer that raised the event
+      // NOT the consumerChannel field: a reconnect may have replaced the
+      // field already. A delivery tag only means something on the channel the
+      // message arrived on; acking it on another channel is a protocol error
+      // that closes that channel.
+  try:
+      settlement = HandleDelivery(delivery)
+  catch anything:
+      log error; settlement = FailedSettlement
+      // Last-resort net. Every delivery must end in exactly one decision.
+      // If an exception escaped into RabbitMQ.Client, the message would stay
+      // unacked, occupying a prefetch slot until the channel closes.
+  Settle(channel, delivery.tag, settlement)
+
+
+==============================================================================
+HandleDeliveryAsync(delivery)
+==============================================================================
+
+  headers = DecodeHeaders(delivery.headers)
+
+  if PerInstance and header "source-id" == our instanceId:
+      return Ack (ignore)
+      // WHY the echo: an app binds its OWN exchange with its own name as key
+      // and publishes with that same key, so it receives its own events.
+      // Desktop apps react to other apps' events; reacting to their own would
+      // mean double handling (the app already did the work before publishing).
+      // WHY not in Shared mode: all copies read ONE queue and each message goes
+      // to only one copy. A message published by copy X may be handed to X
+      // itself; if X dropped it, NO copy would handle it.
+
+  wireName = header "event-type"
+             else routing key without the prefix
+      // The header is what this library always sends. The routing key
+      // fallback is for publishers that do not send the header. The prefix
+      // is stripped so a debug run looks up the same names as a normal run.
+
+  if no registration for wireName:
+      debug log; return Ack
+      // Normal, not an error: the per-exchange binding delivers ALL of
+      // another app's events and this app may care about only a few.
+      // WHY Ack and not reject/requeue: requeue would redeliver it forever;
+      // reject in Shared mode would fill the DLQ with events nobody wanted.
+
+  context = (wireName, bus, messageId, redelivered, headers, exchange, key)
+      // Handlers can see where a message came from and whether it is a
+      // redelivery (a hint that it might be a duplicate).
+  return DispatchWithRetries(registration, context, delivery)
+
+
+==============================================================================
+DispatchWithRetriesAsync(registration, context, delivery)
+==============================================================================
+
+  attempts = Shared ? MaxAttempts : 1
+      // WHY no retries for desktop: there is no dead-letter queue for a
+      // temporary queue, and a UI event is usually stale by the time a retry
+      // would succeed. Log and move on.
+  body = copy of delivery.body
+      // The body memory belongs to RabbitMQ.Client and may be reused once the
+      // delivery is finished; owning a copy keeps every retry safe.
+
+  loop attempt = 1, 2, ...:
+      message = Deserialize(body, registration.type)
+          // A FRESH object per attempt: if a handler changed the object and
+          // then threw, the next attempt still gets the original data.
+      try:
+          dispatcher.Dispatch(message, context)
+          return Ack
+      catch (only if attempt < attempts and not shutting down):
+          warn "attempt n of N failed; retrying"
+          // On the LAST attempt this catch does not match (exception filter),
+          // so the exception falls through to the outer catches below.
+      wait RetryDelay; if cancelled -> return None
+
+  // WHY retry in-process instead of rejecting with requeue = true:
+  //   requeue puts the message straight back and it is redelivered at once,
+  //   a tight loop with no delay; and each requeue counts against the
+  //   delivery limit, so the crash guard would fire on ordinary failures.
+  //   In-process retries give a real delay and a clean count.
+  //   Cost: while a message waits for its retry, this consumer's slot is busy,
+  //   and later messages wait behind it.
+
+  outer catch, if shutting down:
+      info log; return None
+      // The handler did not really fail; we interrupted it. Leaving it unacked
+      // makes the broker redeliver it (to another copy, or to us next time)
+      // instead of dead-lettering a perfectly good message.
+  outer catch, anything else (all attempts used):
+      error log saying what happens next; return FailedSettlement
+      // Shared: DeadLetter, kept for a human. PerInstance: Ack, dropped.
+      // The log says which, so nobody has to guess where the message went.
+
+
+==============================================================================
+SettleAsync(channel, tag, settlement)
+==============================================================================
+
+  if None: return                       // leave unacked -> redelivered later
+  if channel closed: return
+      // The tag belongs to a dead channel; the broker already took the message
+      // back for redelivery. Acking would just throw.
+  if DeadLetter: reject(tag, requeue = false)
+      // requeue = false is what sends it to the dead-letter target instead of
+      // back to the head of the queue.
+  else: ack(tag, multiple = false)
+      // multiple = false: ack only this message. "multiple" would also ack
+      // every earlier unacked message on the channel, including ones other
+      // handlers are still working on.
+  on error: warn only
+      // Worst case the message is redelivered and handled again; that is the
+      // normal at-least-once risk, not worth crashing over.
+
+
+==============================================================================
+OpenPublisherAsync(token)
+==============================================================================
+
+  take publisherLock (with the bus token)
+  connection = Connect("Publisher")
+  channel = CreateChannel(confirms = on, confirm tracking = on)
+      // Confirms: the broker answers each publish with ack/nack.
+      // Tracking: RabbitMQ.Client then makes BasicPublishAsync WAIT for that
+      // answer and throw on nack. So "publish returned normally" means "the
+      // broker has it", which is exactly what the publish loop needs to decide
+      // whether a message may leave the buffer. Without confirms a message
+      // written to a socket that is just dying is silently lost.
+  declare own exchange
+      // Publishing to a missing exchange makes the broker close the channel
+      // (404). Declaring first guarantees it exists, even on a fresh broker.
+  publisherConnection, publisherChannel = the new ones     (last, on success)
+  on error: close quietly, rethrow (KeepConnected retries)
+  finally: release publisherLock
+
+  // WHY the lock: Dispose closes the publisher from another thread while the
+  // reconnect loop may be in the middle of opening one. Without the lock,
+  // Dispose could close (nothing), and a moment later the opener stores a
+  // brand-new connection that nobody ever closes. With the lock:
+  //   - Open in progress -> Dispose's close waits for it, then closes what it
+  //     stored.
+  //   - Open starting after Dispose cancelled the token -> WaitAsync(token)
+  //     throws at once, so no connection is ever created.
+  // The publish loop still reads publisherChannel without the lock: it takes
+  // a local copy and only needs "is it open right now".
+
+
+==============================================================================
+ClosePublisherAsync()
+==============================================================================
+
+  under publisherLock: copy fields to locals, null the fields
+  close the locals quietly (outside the lock)
+      // Same "swap under the lock, close outside it" idea as
+      // CloseConsumerAsync.
+
+
+==============================================================================
+PublishBufferedMessagesAsync(token)
+==============================================================================
+
+  loop until cancelled:
+      channel = publisherChannel           // read ONCE into a local
+          // The reconnect loop may null or replace the field at any moment.
+          // A local copy cannot change between the "is it open?" check and
+          // the publish call.
+      if channel open and buffer has a message:
+          message = PEEK (look, do not remove)
+          PublishMessage(channel, message)   // waits for the broker's confirm
+          DEQUEUE                            // remove only after the confirm
+          continue immediately               // drain the backlog fast
+          // WHY peek-then-dequeue: if publishing throws (connection drop,
+          // nack), the message is still first in line and is retried. Nothing
+          // is lost to a network blip, and ORDER is kept, because nothing
+          // behind it can overtake it.
+          // Accepted side effect: if the broker stored the message but its
+          // confirm was lost with the connection, the retry sends it again.
+          // Receivers may see a duplicate (same MessageId). That is the price
+          // of never losing one ("at least once").
+          // WHY one message at a time: simplest way to keep strict order and
+          // exact retry. Throughput is limited to one broker round trip per
+          // message, which is far more than these apps publish.
+      on error (not shutdown):
+          warn with wire name and id; message stays buffered
+      wait OutstandingPollInterval (default 100 ms); exit if cancelled
+          // Only reached when idle, disconnected, or after an error. A short
+          // poll is simpler than a signal between Publish and the loop, and
+          // 100 ms of latency is fine for these events.
+
+
+==============================================================================
+PublishMessageAsync(channel, message)
+==============================================================================
+
+  headers:
+      event-type = wireName      // how receivers pick the .NET type; the
+                                 // routing key cannot be used for that because
+                                 // it is the app's name, shared by all events
+      source-id  = instanceId    // lets a per-instance receiver drop its echo
+  properties:
+      ContentType = application/json
+      MessageId   = the id made in Publish      // duplicate detection
+      AppId       = ClientName                  // who sent it, in the UI
+      Timestamp   = CreatedUtc in Unix seconds  // AMQP timestamps are seconds
+  basicPublish(exchange = OWN exchange, key = message.key, mandatory = false)
+      // Own exchange only: in this design an app publishes to its own
+      // exchange and others bind to it. Publishers never need to know who
+      // listens.
+      // mandatory = false: if nobody is bound for this key, the broker drops
+      // the message quietly. In pub/sub "nobody listening right now" is
+      // normal; mandatory = true would return every such message and need a
+      // handler for returns that would only log noise.
+
+
+==============================================================================
+CreateConnectionFactory()
+==============================================================================
+
+  host, port, vhost, user, password, heartbeat from options
+      // Heartbeat: without it a silently dead network (e.g. VPN drop) is only
+      // noticed after the OS TCP timeout, possibly many minutes. With 30 s
+      // heartbeats both sides notice within about a minute and reconnect.
+  TLS enabled = UseTls; ServerName = TlsServerName or HostName
+      // The certificate is checked against ServerName. It defaults to the
+      // host, but must be overridable for connecting by IP or by alias.
+  AutomaticRecoveryEnabled = false, TopologyRecoveryEnabled = false
+      // See "THE SHAPE OF THE CLASS": our loop is the only recovery.
+  ClientProperties: app, bus, user, machine, process_id, instance_id
+      // Shown on a connection's page in the management UI. With one shared
+      // broker account for everyone, this is how you find "which machine and
+      // process owns this connection" when something misbehaves.
+
+
+==============================================================================
+GetConnectionName(role) / ProcessId
+==============================================================================
+
+  "ClientName [BusName] role - WindowsUser"
+      // Readable in the connection list; also used as the consumer tag.
+
+  ProcessId = Process.GetCurrentProcess().Id, disposing the Process object
+      // Environment.ProcessId would be shorter but does not exist on
+      // net472 / netstandard2.0, which this project also targets.
+      // The Process object holds an OS handle, hence the `using`.
+
+
+==============================================================================
+DeclareExchangeAsync / EnsureExchangeExistsAsync
+==============================================================================
+
+  DeclareExchange: own exchange, configured type, durable, not auto-delete
+      // durable: survives broker restarts, so subscribers' bindings survive.
+      // not auto-delete: other apps' bindings must not disappear just because
+      // this app is not running.
+
+  EnsureExchangeExists(other): passive declare; 404 -> "Exchange 'X' does not
+  exist."
+      // See OpenConsumerAsync for why other apps' exchanges are only checked.
+      // The short message replaces the broker's channel-shutdown text.
+
+
+==============================================================================
+SubscribedExchanges / ExchangeNameBindings
+==============================================================================
+
+  SubscribedExchanges = subscription exchanges, minus our own, distinct
+      // Someone may list their own exchange as a subscription, or list one
+      // twice. Our own exchange is declared, not passively checked, so it
+      // is excluded here.
+
+  ExchangeNameBindings:
+      (own exchange,  prefix + own name)
+      (each subscription exchange, prefix + its name)
+      // One binding per exchange, key = app name (the legacy convention).
+      // Receives everything that app publishes; filtering by event happens in
+      // HandleDeliveryAsync via registrations. Per-event bindings were tried
+      // and overloaded the broker at scale.
+      // Own exchange included: needed so the app receives its own events in
+      // Shared mode (other copies of the service), and harmless in PerInstance
+      // mode thanks to the echo filter.
+
+
+==============================================================================
+WithoutPrefix(key)
+==============================================================================
+
+  if key starts with the prefix: strip it, else return key unchanged
+      // Only used for the wire-name fallback. Keys that do not start with the
+      // prefix are returned unchanged rather than rejected, so a misrouted
+      // message still gets its normal "unknown wire name" handling.
+
+
+==============================================================================
+GetRoutingKeyBindings(exchange, key)
+==============================================================================
+
+  if key blank -> throw
+  exchanges = [exchange] if given, else [own] + subscribed
+      // "No exchange" means "this key, wherever I listen". Convenient for
+      // custom keys that several apps might publish.
+  return each exchange paired with (prefix + key)
+      // The prefix is applied HERE, once, so the reference counts, the sync
+      // and the broker all use the same final key.
+
+
+==============================================================================
+SyncRoutingKeysInBackground()
+==============================================================================
+
+  if not started or disposed: return
+      // Before Start there is no consumer; OpenConsumerAsync will sync at
+      // connect.
+  on a pool thread:
+      take consumerLock
+          // So a reconnect cannot swap the connection or clear appliedBindings
+          // in the middle of a sync.
+      if consumer connected: SyncRoutingKeys(consumerConnection, queue)
+      release consumerLock
+      ignore cancellation / disposed     // shutting down; nothing to report
+      warn on anything else              // next connect re-syncs anyway
+
+
+==============================================================================
+SyncRoutingKeysAsync(connection, queue)
+==============================================================================
+
+  wanted     = copy of requestedBindings keys   (under bindingGate)
+      // A snapshot, so app code can keep calling Bind/Unbind while the slow
+      // broker calls run, without "collection modified" errors.
+  configured = ExchangeNameBindings
+
+  for each pair in wanted, not configured, not applied:   bind;   if ok add to applied
+  for each pair in applied, not wanted:                   unbind; if ok remove from applied
+
+  // WHY compare "wanted" with "applied" instead of replaying each Bind/Unbind
+  // call: the result is right no matter how many calls happened, in which
+  // order, or whether a reconnect happened in between. Ten bind/unbind calls
+  // while disconnected become one comparison at connect.
+  // WHY skip configured pairs: those are owned by OpenConsumerAsync. If an app
+  // bound and then unbound a custom key that equals a configured one, the
+  // sync must not remove the configured binding and silently cut off a
+  // subscription.
+  // WHY only "if ok": a failed bind is not recorded as applied, so the next
+  // sync or connect tries again.
+  // .ToList() before each loop: the loop changes appliedBindings, and a set
+  // may not be modified while it is being enumerated.
+
+
+==============================================================================
+BindOnBrokerAsync / UnbindOnBrokerAsync / ChangeOnBrokerAsync
+==============================================================================
+
+  Bind/Unbind just pass QueueBind or QueueUnbind into ChangeOnBroker.
+
+  ChangeOnBroker(connection, pair, bind, change):
+      channel = connection.CreateChannel()     // NEW, short-lived
+      change(channel)
+      log info "Bound/Unbound key on exchange"; return true
+      on 404 while unbinding: info; return true
+          // The exchange was deleted, which removes its bindings too. The
+          // goal ("not bound") is already met.
+      on 404 while binding: warn; return false
+          // The exchange does not exist (yet). Not recorded as applied, so it
+          // is tried again at the next sync or reconnect.
+      on other errors (not cancellation): warn; return false
+      finally: close the channel quietly
+
+  WHY A NEW CHANNEL, and not the consumer or publisher channel:
+
+    1. A failed command kills its channel. In AMQP, an error such as 404
+       (exchange missing) or 403 (no permission) is a channel-level error:
+       the broker closes the channel the command ran on. If that were the
+       consumer channel:
+         - consumption would stop until the reconnect loop noticed (up to
+           ReconnectDelay),
+         - every unacked message on it would be handed back and redelivered,
+           including ones currently being handled (duplicate work),
+         - the handlers' acks for those messages would fail.
+       All of that because one optional binding failed. A throw-away channel
+       confines the damage to itself.
+
+    2. Channels must not be used by two threads at once. The consumer
+       channel is busy with deliveries and acks on the consumer's thread; the
+       sync runs on a pool thread. Interleaving a bind with an ack on the same
+       channel is not safe in RabbitMQ.Client. A private channel has no
+       sharing at all.
+
+    3. The publisher channel is the wrong owner too: it has confirm tracking
+       and its own loop, and a binding error there would also kill
+       publishing.
+
+    4. It is cheap. A channel is a lightweight slot inside an existing
+       connection, opened in one round trip. Binding changes are rare
+       (subscribe/unsubscribe), so the cost does not matter.
+
+  WHY THE CONSUMER CONNECTION, and not a new connection:
+    A per-instance queue is EXCLUSIVE: only the connection that declared it
+    may touch it. Binding it from any other connection fails with 405
+    RESOURCE_LOCKED. So the channel must live on the consumer connection, and
+    a new connection would also be far more expensive than a channel.
+
+
+==============================================================================
+SMALL HELPERS
+==============================================================================
+
+  ThrowIfDisposed
+      // Public methods that start work refuse to run after Dispose; the
+      // "stop" methods (StopReceiving, UnbindRoutingKey) return quietly
+      // instead, see their sections.
+
+  IsOpen(connection, channel) = both non-null and both open
+      // A connection can be fine while its channel was killed by an error;
+      // checking only the connection would leave the bus "connected" but
+      // deaf. Checking both makes KeepConnected rebuild it.
+
+  DecodeHeaders
+      // AMQP delivers string headers as raw bytes, so byte[] is decoded as
+      // UTF-8; other value types are turned into strings. Always returns a
+      // dictionary (never null) so callers need no null checks.
+
+  TryDelayAsync(delay) -> false when cancelled
+      // Lets every loop write "if (!await TryDelay(...)) break;" instead of a
+      // try/catch around each wait.
+
+  CloseQuietlyAsync(channel, connection)
+      // Close channel, then connection, swallowing every error. Used on
+      // things that are usually already broken; an error closing them tells
+      // us nothing and must not hide the original failure. Channel first
+      // because it lives inside the connection.
+
+
+==============================================================================
+BEHAVIOUR THAT IS NOT VISIBLE IN ANY ONE METHOD
+==============================================================================
+
+These follow from how the pieces above combine. They are the usual answers to
+"why did X happen?" questions.
+
+1. Messages are handled ONE AT A TIME per bus.
+     The consumer channel is created without ConsumerDispatchConcurrency, so
+     RabbitMQ.Client uses its default of 1: OnMessageReceivedAsync is never
+     running twice at once on the same bus.
+     // Upside: handlers need no locking against each other, and messages from
+     // one queue are handled in arrival order.
+     // Downside: one slow handler delays every message behind it. Prefetch
+     // (50) only decides how many messages wait in the app's memory; it does
+     // NOT make them run in parallel.
+     // Shared mode: during retries (MaxAttempts x RetryDelay, default
+     // 3 x 1 s) the bus receives nothing else.
+     // Shared mode with several copies of a service: order is only kept
+     // within one copy. Across copies, message 2 can finish before message 1.
+
+2. Delivery is AT LEAST ONCE, in both directions. Duplicates happen when:
+     - the publisher's confirm was lost with the connection, and the publish
+       loop sends the message again (same MessageId);
+     - the consumer connection dropped (or the app shut down) after a handler
+       finished but before the ack reached the broker, so the broker
+       redelivers it (Redelivered = true);
+     - the process crashed mid-handling (Shared mode; the delivery limit caps
+       how often).
+     // So handlers that change data should be idempotent: running them twice
+     // with the same MessageId must be harmless.
+
+3. The send buffer has NO size limit.
+     If the broker is down for a long time, every Publish adds to memory
+     (see OutstandingCount). Nothing is ever dropped while the process lives,
+     but a busy publisher during a long outage keeps growing, and everything
+     buffered is lost if the process exits.
+
+4. A message that cannot be DESERIALIZED is not retried.
+     Deserialize runs inside the attempt loop but OUTSIDE the inner try, so a
+     bad payload (wrong JSON shape for the registered type) goes straight to
+     the outer catch: Shared -> dead-letter queue at once, PerInstance ->
+     dropped. Retrying could never fix bad data, so this is the right result,
+     but it means the error log says "failed" after attempt 1 of N.
+
+5. Shared mode + different app versions = silently lost messages.
+     All copies of a service read one queue. During a rolling deploy, an OLD
+     copy without the registration for a new event receives some of those
+     events, finds no registration, and ACKS them (HandleDeliveryAsync).
+     They are gone, not dead-lettered. Deploy new subscriptions to all copies
+     before anything publishes the new event.
+
+6. Registrations: first one wins, silently.
+     StartReceiving uses TryAdd. A second registration for the same wire name
+     (for example with a different .NET type) is ignored without an error.
+
+7. One missing subscribed exchange blocks ALL receiving on that bus.
+     OpenConsumerAsync passively checks every subscribed exchange before it
+     consumes. If one is missing, the whole consumer open fails and is
+     retried every ReconnectDelay. Until the other app has started once,
+     this bus receives nothing at all, not even events from exchanges that
+     do exist. Publishing is not affected (separate connection).
+
+8. Config mismatches retry forever rather than stopping.
+     Wrong password, wrong vhost, own exchange already existing with another
+     type (406), shared queue existing with other arguments (406): all are
+     thrown inside the reconnect loop, so the app keeps running and logs the
+     same warning every ReconnectDelay. Watch the logs at startup.
+
+9. Self-healing after someone deletes things in the management UI.
+     - Own exchange deleted: the next publish fails with 404, the broker
+       closes the publisher channel, IsOpen turns false, KeepConnected
+       reopens and redeclares it. The message stayed buffered and goes out.
+     - Queue deleted: the broker cancels the consumer, but the channel may
+       stay open, so IsConsumerConnected can still say true and the bus does
+       not notice by itself. A reconnect (or restart) recreates the queue.
+
+10. Shutdown and in-flight handlers.
+     Dispose cancels the bus token and closes the consumer, waiting 5 s at
+     most for everything. A handler that is running is not stopped by force:
+     it receives RabbitMQ.Client's per-delivery token (args.CancellationToken),
+     not the bus token. If it finishes after the channel closed, SettleAsync
+     skips the ack (channel closed) and the broker redelivers the message
+     later: one more case of point 2.
+     Publish() after Dispose throws. Publish() before Start() is accepted
+     and buffered, but nothing is sent until Start() is called.
+
+11. Leftover bindings from an earlier run.
+     A shared queue keeps run-time bindings across process restarts. The bus
+     only knows what it bound in THIS run, so a key the previous run bound and
+     this run never asks for stays bound. Harmless except for extra traffic
+     that ends up acked as "unknown wire name"; remove it in the management
+     UI.

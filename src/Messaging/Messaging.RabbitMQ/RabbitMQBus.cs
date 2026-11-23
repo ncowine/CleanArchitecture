@@ -25,6 +25,7 @@ namespace Messaging.RabbitMQ
         private readonly ConcurrentDictionary<string, MessageRegistration> registrations =
             new ConcurrentDictionary<string, MessageRegistration>(StringComparer.Ordinal);
         private readonly SemaphoreSlim consumerLock = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim publisherLock = new SemaphoreSlim(1, 1);
         private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
 
         private readonly Dictionary<(string Exchange, string RoutingKey), int> requestedBindings =
@@ -328,7 +329,7 @@ namespace Messaging.RabbitMQ
                     await channel.QueueBindAsync(queue.QueueName, binding.Exchange, binding.RoutingKey, cancellationToken: token).ConfigureAwait(false);
                 }
 
-                appliedBindings.Clear();
+                ForgetBindingsTheQueueLost();
                 await SyncRoutingKeysAsync(connection, queue.QueueName, token).ConfigureAwait(false);
 
                 AsyncEventingBasicConsumer consumer = new AsyncEventingBasicConsumer(channel);
@@ -553,6 +554,8 @@ namespace Messaging.RabbitMQ
 
         private async Task OpenPublisherAsync(CancellationToken token)
         {
+            await publisherLock.WaitAsync(token).ConfigureAwait(false);
+
             IConnection connection = null;
             IChannel channel = null;
             try
@@ -572,14 +575,29 @@ namespace Messaging.RabbitMQ
                 await CloseQuietlyAsync(channel, connection).ConfigureAwait(false);
                 throw;
             }
+            finally
+            {
+                publisherLock.Release();
+            }
         }
 
         private async Task ClosePublisherAsync()
         {
-            IConnection connection = publisherConnection;
-            IChannel channel = publisherChannel;
-            publisherConnection = null;
-            publisherChannel = null;
+            IConnection connection;
+            IChannel channel;
+
+            await publisherLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                connection = publisherConnection;
+                channel = publisherChannel;
+                publisherConnection = null;
+                publisherChannel = null;
+            }
+            finally
+            {
+                publisherLock.Release();
+            }
 
             await CloseQuietlyAsync(channel, connection).ConfigureAwait(false);
         }
@@ -746,6 +764,20 @@ namespace Messaging.RabbitMQ
                 : new[] { options.ExchangeName }.Concat(SubscribedExchanges());
 
             return exchanges.Select(e => (e, routingKeyPrefix + routingKey)).ToList();
+        }
+
+        private void ForgetBindingsTheQueueLost()
+        {
+            if (!IsShared)
+            {
+                appliedBindings.Clear();
+                return;
+            }
+
+            lock (bindingGate)
+            {
+                appliedBindings.RemoveWhere(requestedBindings.ContainsKey);
+            }
         }
 
         private void SyncRoutingKeysInBackground()
