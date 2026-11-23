@@ -19,6 +19,7 @@ namespace Messaging.RabbitMQ
         private readonly IInboundDispatcher dispatcher;
         private readonly string instanceId;
         private readonly string queueName;
+        private readonly string routingKeyPrefix;
         private readonly ILogger logger;
         private readonly ConcurrentQueue<PendingMessage> outstandingMessages = new ConcurrentQueue<PendingMessage>();
         private readonly ConcurrentDictionary<string, MessageRegistration> registrations =
@@ -67,8 +68,9 @@ namespace Messaging.RabbitMQ
                 throw new ArgumentException("MaxAttempts and DeliveryLimit must be at least 1.", nameof(options));
             }
 
+            routingKeyPrefix = options.RoutingKeyPrefix ?? string.Empty;
             queueName = options.QueueMode == QueueMode.Shared
-                ? (string.IsNullOrWhiteSpace(options.SharedQueueName) ? $"{options.ClientName}_{options.BusName}".ToLowerInvariant() : options.SharedQueueName)
+                ? routingKeyPrefix + (string.IsNullOrWhiteSpace(options.SharedQueueName) ? $"{options.ClientName}_{options.BusName}".ToLowerInvariant() : options.SharedQueueName)
                 : $"{options.ClientName}_{options.BusName}_{Environment.UserName}_{instanceId}".ToLowerInvariant();
         }
 
@@ -119,7 +121,7 @@ namespace Messaging.RabbitMQ
                 throw new ArgumentException("A wire name is required.", nameof(wireName));
             }
 
-            string key = string.IsNullOrEmpty(routingKey) ? options.ExchangeName : routingKey;
+            string key = routingKeyPrefix + (string.IsNullOrEmpty(routingKey) ? options.ExchangeName : routingKey);
             outstandingMessages.Enqueue(new PendingMessage(wireName, key, Guid.NewGuid().ToString("N"), MessageSerializer.Serialize(message)));
         }
 
@@ -458,7 +460,7 @@ namespace Messaging.RabbitMQ
 
             string wireName = headers.TryGetValue(WireHeaders.MessageType, out string messageType) && messageType != null
                 ? messageType
-                : args.RoutingKey;
+                : WithoutPrefix(args.RoutingKey);
             if (!registrations.TryGetValue(wireName, out MessageRegistration registration))
             {
                 logger.LogDebug("[{Bus}] Ignored event '{WireName}': nothing here subscribes to it.", options.BusName, wireName);
@@ -717,12 +719,19 @@ namespace Messaging.RabbitMQ
 
         private IEnumerable<(string Exchange, string RoutingKey)> ExchangeNameBindings()
         {
-            yield return (options.ExchangeName, options.ExchangeName);
+            yield return (options.ExchangeName, routingKeyPrefix + options.ExchangeName);
 
             foreach (SubscriptionOptions subscription in options.Subscriptions)
             {
-                yield return (subscription.Exchange, subscription.Exchange);
+                yield return (subscription.Exchange, routingKeyPrefix + subscription.Exchange);
             }
+        }
+
+        private string WithoutPrefix(string routingKey)
+        {
+            return routingKeyPrefix.Length > 0 && routingKey != null && routingKey.StartsWith(routingKeyPrefix, StringComparison.Ordinal)
+                ? routingKey.Substring(routingKeyPrefix.Length)
+                : routingKey;
         }
 
         private List<(string Exchange, string RoutingKey)> GetRoutingKeyBindings(string exchange, string routingKey)
@@ -736,7 +745,7 @@ namespace Messaging.RabbitMQ
                 ? new[] { exchange }
                 : new[] { options.ExchangeName }.Concat(SubscribedExchanges());
 
-            return exchanges.Select(e => (e, routingKey)).ToList();
+            return exchanges.Select(e => (e, routingKeyPrefix + routingKey)).ToList();
         }
 
         private void SyncRoutingKeysInBackground()

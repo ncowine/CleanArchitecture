@@ -141,6 +141,7 @@ namespace Common.RabbitMQ
                 PrefetchCount = (ushort)config.PrefetchCount,
                 Heartbeat = TimeSpan.FromSeconds(config.HeartbeatSeconds),
                 ExchangeType = string.IsNullOrWhiteSpace(config.ExchangeType) ? "topic" : config.ExchangeType,
+                RoutingKeyPrefix = config.RoutingKeyPrefix,
                 Subscriptions = config.Subscriptions
                     .Where(s => s != null)
                     .Select(s => new SubscriptionOptions { Exchange = s.Exchange })

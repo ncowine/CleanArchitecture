@@ -573,6 +573,7 @@ The step-by-step version is in
 | `TlsServerName` | `HostName` | The name the broker's certificate must match, when it differs from `HostName` (e.g. connecting by IP). |
 | `ExchangeName` | *(required)* | This app's own exchange. **Set it explicitly**: others bind to it by name. |
 | `ExchangeType` | `topic` | `topic`, `direct`, `fanout` or `headers`. Keep `topic` while legacy apps subscribe to it. |
+| `RoutingKeyPrefix` | *(none)* | For debugging in isolation, e.g. `dbg-jsmith.`. Put in front of every routing key this bus publishes and binds, and of the shared queue name, so only apps with the same prefix exchange events. Apps without it (including unchanged legacy apps) neither see your events nor send you theirs. Wildcard bindings such as `#` still match. Leave it unset in production. |
 | `Subscriptions` | *(none)* | Other apps' exchanges, by `Exchange`. Each is bound with the exchange name; other keys are bound by subscribing with `SubscribeOptions`. |
 | `ClientName` | the app's name | Shown in the management UI, sent as app-id, used in queue names. |
 | `QueueMode` | `PerInstance` | `PerInstance` (desktop) or `Shared` (servers). |
@@ -611,7 +612,7 @@ Example (`src/WebApi/appsettings.json`):
 
 The same section as above. The section key is the bus name; `Messaging:DefaultBus`, next to `Buses`, names the default
 and is required. `HostName`, `Port`, `VirtualHost`, `UserName`, `Password`, `UseTls`, `TlsServerName`,
-`ExchangeName`, `ExchangeType`, `ClientName`, `PrefetchCount` and `Subscriptions` (`Exchange`) mean
+`ExchangeName`, `ExchangeType`, `RoutingKeyPrefix`, `ClientName`, `PrefetchCount` and `Subscriptions` (`Exchange`) mean
 the same and have the same defaults. The differences:
 
 | Key | Default | Meaning |

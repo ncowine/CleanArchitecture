@@ -25,6 +25,8 @@ namespace Messaging.RabbitMQ
 
         public string ExchangeType { get; set; } = "topic";
 
+        public string RoutingKeyPrefix { get; set; }
+
         public List<SubscriptionOptions> Subscriptions { get; set; } = new List<SubscriptionOptions>();
 
         public string ClientName { get; set; }
