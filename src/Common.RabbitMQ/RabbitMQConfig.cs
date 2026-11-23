@@ -34,6 +34,8 @@ namespace Common.RabbitMQ
 
         public string ExchangeType { get; set; } = "topic";
 
+        public string RoutingKeyPrefix { get; set; }
+
         public List<RabbitMQSubscription> Subscriptions { get; set; } = new List<RabbitMQSubscription>();
     }
 }

@@ -26,6 +26,7 @@ namespace Common.RabbitMQ.Tests.Adapter
         ""TlsServerName"": ""broker.example.com"",
         ""ExchangeName"": ""AppB"",
         ""ExchangeType"": ""direct"",
+        ""RoutingKeyPrefix"": ""dbg."",
         ""ClientName"": ""AppB"",
         ""Subscriptions"": [
           { ""Exchange"": ""AppA"" },
@@ -75,6 +76,8 @@ namespace Common.RabbitMQ.Tests.Adapter
             Assert.Equal(legacy.TlsServerName, modern.TlsServerName);
             Assert.Equal(legacy.ExchangeName, modern.ExchangeName);
             Assert.Equal(legacy.ExchangeType, modern.ExchangeType);
+            Assert.Equal("dbg.", modern.RoutingKeyPrefix);
+            Assert.Equal(legacy.RoutingKeyPrefix, modern.RoutingKeyPrefix);
             Assert.Equal(legacy.ClientName, modern.ClientName);
             Assert.Equal(
                 legacy.Subscriptions.Select(s => s.Exchange),

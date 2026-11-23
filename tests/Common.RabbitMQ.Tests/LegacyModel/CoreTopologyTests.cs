@@ -140,6 +140,39 @@ namespace Common.RabbitMQ.Tests.LegacyModel
             }
         }
 
+        [Fact]
+        public async Task RoutingKeyPrefix_OnlySamePrefixReceives()
+        {
+            await using (LegacyTopology topology = await LegacyTopology.CreateAsync())
+            {
+                CoreApp owner = topology.CreateCore(AppA, options => options.RoutingKeyPrefix = "dbg.").Start();
+                await topology.WaitUntilConnectedAsync(owner);
+
+                CoreApp debugSubscriber = topology.CreateCore(AppB, options =>
+                {
+                    options.RoutingKeyPrefix = "dbg.";
+                    options.Subscriptions.Add(SubscriptionFor(topology.Exchange(AppA)));
+                });
+                CoreApp plainSubscriber = topology.CreateCore(AppC, options => options.Subscriptions.Add(SubscriptionFor(topology.Exchange(AppA))));
+                Received<Order> atDebug = debugSubscriber.Listen<Order>(OrderSavedWireName);
+                Received<Order> atPlain = plainSubscriber.Listen<Order>(OrderSavedWireName);
+                debugSubscriber.Start();
+                plainSubscriber.Start();
+                await topology.WaitUntilConnectedAsync(debugSubscriber);
+                await topology.WaitUntilConnectedAsync(plainSubscriber);
+                WireCapture capture = await topology.CaptureAsync(AppA);
+
+                owner.Publish(OrderSavedWireName, GoldenOrder());
+
+                AssertGolden(await atDebug.NextAsync(TestBus.Timeout));
+                CapturedMessage message = await capture.NextAsync(TestBus.Timeout);
+                Assert.Equal("dbg." + topology.Exchange(AppA), message.RoutingKey);
+                Assert.Equal(OrderSavedWireName, debugSubscriber.Contexts.Single().WireName);
+                await Task.Delay(QuietPeriod, TestContext.Current.CancellationToken);
+                Assert.Equal(0, atPlain.Count);
+            }
+        }
+
         [Theory]
         [InlineData("topic")]
         [InlineData("direct")]
